@@ -13,7 +13,7 @@ jobs:
   # Build Job
   build:
     name: 'Build'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       - name: 'Checkout Code'
         uses: actions/checkout@v5
@@ -34,7 +34,7 @@ jobs:
     permissions:
       pages: write
       id-token: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
