@@ -111,10 +111,10 @@ const loop = new GameLoop((dt) => {
 function updateUI(): void {
     scoreEl.textContent = `Score: ${state.score}`;
     phaseEl.textContent = {
-        watching:  "Listen carefully...",
-        repeating: "Your turn!",
-        success:   "Correct!",
-        failure:   "Wrong!",
+        watching:  "Luister goed...",
+        repeating: "Jouw beurt!",
+        success:   "Klopt!",
+        failure:   "Fout!",
     }[state.phase];
 }
 input.start();
