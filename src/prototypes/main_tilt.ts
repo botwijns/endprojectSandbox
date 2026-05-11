@@ -1,12 +1,12 @@
-import { AudioManager } from "./audio/audioManager.ts";
-import { GameLoop } from "./gameLoop.ts";
-import { InputHandler } from "./inputHandler.ts";
-import { createInitialState, generateSequence, type Direction } from "./gameState.ts";
-import { SynthManager, NOTE } from "./audio/SynthManager.ts";
+import { AudioManager } from "../audio/audioManager.ts";
+import { GameLoop } from "../gameLoop.ts";
+import { InputHandler } from "../inputHandler.ts";
+import { createInitialState, generateSequence, type Direction } from "../gameState.ts";
+import { SynthManager, NOTE } from "../audio/SynthManager.ts";
 
 const synth = new SynthManager();
 const audio = new AudioManager();
-const input = new InputHandler();
+const input = new InputHandler(true);
 const state = createInitialState();
 const scoreEl = document.getElementById("score")!;
 const phaseEl = document.getElementById("phase")!;
@@ -43,14 +43,19 @@ audio.load("failure", { src: ["sounds/failure.webm", "sounds/failure.mp3"] });
 // state.running = true;
 // loop.start();
 
-// How long to wait between playing each step during the "watching" phase
+// How long to wait between playing each step
+const chord = [NOTE.E4, NOTE.GS4 ,NOTE.B4]
 const STEP_INTERVAL = 1.0; // seconds
 let stepTimer = 0;
-
+let wait_count = 0; //amount of steps during counting that is being measured
+let average_orientation = 0;
+let twoSeconds = false
+let baseline = 0;
 function startRound(): void {
     updateUI()
     console.log("Starting Round");
-    const length = state.score + 3; // sequence grows each round
+    console.log(state.randomNumbers)
+    const length = 5; // sequence grows each round
     state.sequence = generateSequence(length);
     state.playerInput = [];
     state.currentStep = 0;
@@ -95,21 +100,64 @@ input.onAction((action) => {
 const loop = new GameLoop((dt) => {
     if (!state.running) return;
     const {beta, gamma} = input.getOrientation()
-    console.log(beta, gamma)
+    // console.log(beta, gamma)
+    // check every half second if the average orientation of the last half second is roughly equal to the chosen location
     // if (gamma !== null && gamma < -20) handleInput("left");
     // if (gamma !== null && gamma > 20)  handleInput("right");
-    if (beta !== null && beta> 20) synth.playNote(NOTE.C4);
+    // if (beta !== null && beta> 20) synth.playNote(NOTE.C4);
+    wait_count += 1;
+    if (gamma!== null){
+        average_orientation = (average_orientation*wait_count+gamma)/(wait_count+1);
+    }
+    stepTimer += dt;
     if (state.phase === "watching") {
-        stepTimer += dt;
+        // when waiting, for permission, the current orientation is being used to calculate an average for how you hold your phone right now
         if (stepTimer >= STEP_INTERVAL) {
+            // five seconds is enough to orient so we make state.sequence.length =5
             stepTimer = 0;
-            audio.play(state.sequence[state.currentStep]);
+            // audio.play(state.sequence[state.currentStep]);
             state.currentStep++;
 
             if (state.currentStep >= state.sequence.length) {
+                console.log("baseline is:")
+                console.log(average_orientation)
+                console.log(state.randomNumbers[0])
                 state.phase = "repeating";
                 state.currentStep = 0;
+                // reset the environment to check for the average orientation every second. store the first five seconds for Baseline
+                wait_count = 0;
+                baseline = average_orientation;
+                average_orientation = 0;
             }
+        }
+    } else{
+        if (gamma!== null){
+            if (Math.abs(gamma-baseline+state.randomNumbers[state.currentStep])<10){
+                console.log("stay here!")
+            }
+        }
+        if (stepTimer >= (STEP_INTERVAL)) {
+
+            console.log(beta, gamma)
+            // check every second if the average of last second was close enough to the target
+            stepTimer = 0;
+            // audio.play(state.sequence[state.currentStep]);
+            if (Math.abs(average_orientation-baseline+state.randomNumbers[state.currentStep])<10){
+                console.log("new hit!")
+                state.currentStep++;
+            }
+            average_orientation = 0;
+            wait_count = 0;
+
+            if (twoSeconds && state.currentStep >0) {
+                console.log("success!")
+                for (let i = 0; i <= state.currentStep; i++) {
+                    console.log(chord[i])
+                    synth.playNote(chord[i])
+                }
+            }
+            // flip seconds count
+            twoSeconds = !twoSeconds
         }
     }
 });
@@ -126,4 +174,5 @@ function updateUI(): void {
 input.start();
 state.running = true;
 startRound();
+console.log(chord[0])
 loop.start();
