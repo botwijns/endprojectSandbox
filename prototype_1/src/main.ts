@@ -96,8 +96,8 @@ const loop = new GameLoop((dt) => {
     if (!state.running) return;
     const {beta, gamma} = input.getOrientation()
     console.log(beta, gamma)
-    // if (gamma !== null && gamma < -20) handleInput("left");
-    // if (gamma !== null && gamma > 20)  handleInput("right");
+    if (gamma !== null && gamma < -20) handleInput("left");
+    if (gamma !== null && gamma > 20)  handleInput("right");
     if (beta !== null && beta> 20) synth.playNote(NOTE.C4);
     if (state.phase === "watching") {
         stepTimer += dt;
