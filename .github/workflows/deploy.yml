@@ -41,12 +41,11 @@ jobs:
         run: npm run build
       - name: Setup Pages
         uses: actions/configure-pages@v6
-      - name: Debug dist
+      - name: Create unified dist
         run: |
-          pwd
-          ls -la
-          ls -la dist || echo "dist missing"
-          find . -maxdepth 3 -type d
+          mkdir -p dist
+          cp -r prototype_1/dist/prototype_1 dist/
+          cp -r prototype_2/dist/prototype_2 dist/
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
