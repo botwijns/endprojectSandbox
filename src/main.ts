@@ -18,6 +18,20 @@ audio.load("left",    { src: ["sounds/left.webm",    "sounds/left.mp3"]    });
 audio.load("right",   { src: ["sounds/right.webm",   "sounds/right.mp3"]   });
 audio.load("success", { src: ["sounds/success.webm", "sounds/success.mp3"] });
 audio.load("failure", { src: ["sounds/failure.webm", "sounds/failure.mp3"] });
+audio.load("bow", {
+    src: ["sounds/bow.webm", "sounds/bow.mp3", "sounds/bow.wav"],
+    sprite: {
+        drawShort: [966,1785],
+        shootShort: [1905,5610],
+        hitShort: [2801,3273],
+        drawMedium: [4423,5312],
+        shootMedium: [5340,6180],
+        hitMedium: [6349,7443],
+        drawLong: [7492, 9319],
+        shootLong: [9474,10258],
+        hitLong: [10413,11153]
+    }
+})
 // input.onAction((action) => {
 //     if (action === "moveLeft")  {
 //         state.player.x -= 1;
