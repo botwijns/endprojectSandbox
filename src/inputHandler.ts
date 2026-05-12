@@ -59,4 +59,21 @@ export class InputHandler {
             beta:  (y - 0.5) * 360, // -180 to 180
         };
     };
+
+    async requestOrientationPermission(): Promise<boolean> {
+        // Only iOS Safari requires explicit permission
+        if (typeof DeviceOrientationEvent !== "undefined" &&
+            typeof (DeviceOrientationEvent as any).requestPermission === "function"
+        ) {
+            try {
+                const response = await (DeviceOrientationEvent as any).requestPermission();
+                return response === "granted";
+            } catch (e) {
+                console.warn("Permission request failed:", e);
+                return false;
+            }
+        }
+        // Android and desktop grant automatically
+        return true;
+    }
 }
