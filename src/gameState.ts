@@ -15,6 +15,7 @@ export interface State {
     currentStep: number;
     score: number;
     running: boolean;
+    drawn: boolean;
     randomNumbers: number[];
 }
 export function createEntity(id: string, x: number, y:number, soundId:string) : Entity {
@@ -30,6 +31,7 @@ export function createInitialState(): State {
         currentStep: 0,
         score: 0,
         running: false,
+        drawn: false,
         randomNumbers: [Math.floor(Math.random()*90 - 45), Math.floor(Math.random()*90 - 45), Math.floor(Math.random()*90 - 45)],
     };
 }
