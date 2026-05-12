@@ -123,7 +123,26 @@ function updateUI(): void {
         failure:   "Fout!",
     }[state.phase];
 }
-input.start();
-state.running = true;
-startRound();
-loop.start();
+startBtn.addEventListener("click", async () => {
+    // Unlock AudioContext on the user gesture
+    audio.resume();
+    synth.resume();
+
+    // Request orientation permission
+    const granted = await input.requestOrientationPermission();
+    if (!granted) {
+        startBtn.textContent = "Permission denied — tap to retry";
+        return;
+    }
+
+
+
+    input.start();
+    state.running = true;
+    startRound();
+    console.log(chord[0])
+    loop.start();
+// Hide the button once the game starts
+    startBtn.style.display = "none";
+    updateUI();
+}
