@@ -145,4 +145,4 @@ startBtn.addEventListener("click", async () => {
 // Hide the button once the game starts
     startBtn.style.display = "none";
     updateUI();
-}
+});
