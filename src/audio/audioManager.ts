@@ -1,11 +1,12 @@
 import { Howl, Howler } from "howler";
-
+export interface SpriteMap {
+    [name: string]: [number, number];
+}
 interface SoundConfig {
     src: string[];
     loop?: boolean;
     volume?: number;
-    start?: number;
-    end?: number;
+    sprite?: SpriteMap;
 }
 
 export class AudioManager {
@@ -16,11 +17,14 @@ export class AudioManager {
             src: config.src,
             loop: config.loop ?? false,
             volume: config.volume ?? 1.0,
+            sprite: config.sprite,
         }));
     }
 
-    play(id: string): number | null {
-        return this.sounds.get(id)?.play() ?? null;
+    play(id: string, sprite?: string): number | null {
+        const sound = this.sounds.get(id);
+        if (!sound) return null;
+        return sprite? sound.play(sprite) : sound.play();
     }
 
     stop(id: string): void {
@@ -28,12 +32,12 @@ export class AudioManager {
     }
 
     // Spatial audio — pan from -1 (left) to 1 (right)
-    playAt(id: string, x: number, listenerX: number, range = 10): void {
+    playAt(id: string, x: number, listenerX: number, range = 10, sprite?: string): void {
         const sound = this.sounds.get(id);
         if (!sound) return;
         const pan = Math.max(-1, Math.min(1, (x - listenerX) / range));
         sound.stereo(pan);
-        sound.play();
+        sprite? sound.play(sprite) : sound.play();
     }
     setPos(id: string, x: number, y: number): void {
         const sound = this.sounds.get(id);
