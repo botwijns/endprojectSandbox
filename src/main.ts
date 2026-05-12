@@ -10,6 +10,7 @@ const input = new InputHandler();
 const state = createInitialState();
 const scoreEl = document.getElementById("score")!;
 const phaseEl = document.getElementById("phase")!;
+const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
 // audio.load("footstep", { src: ["sounds/footstep.webm", "sounds/footstep.mp3"] });
 // audio.load("bgm",      { src: ["sounds/bgm.webm", "sounds/bgm.mp3"], loop: true, volume: 0.4 });
 
