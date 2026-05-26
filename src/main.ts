@@ -3,9 +3,9 @@ import { InputHandler } from "./inputHandler.ts";
 import { createInitialState, generateSequence, type Direction } from "./gameState.ts";
 import { SynthManager } from "./audio/SynthManager.ts";
 import {Howl , Howler} from "howler";
-const debug = true
+// const debug = true
 const synth = new SynthManager();
-const input = new InputHandler(debug);
+const input = new InputHandler();
 const state = createInitialState();
 const scoreEl = document.getElementById("score")!;
 const phaseEl = document.getElementById("phase")!;
