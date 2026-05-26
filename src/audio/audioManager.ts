@@ -1,12 +1,9 @@
-import { Howl, Howler } from "howler";
-export interface SpriteMap {
-    [name: string]: [number, number];
-}
+import {Howl, Howler, type SoundSpriteDefinitions} from "howler";
 interface SoundConfig {
     src: string[];
     loop?: boolean;
     volume?: number;
-    sprite?: SpriteMap;
+    sprite?: SoundSpriteDefinitions;
 }
 
 export class AudioManager {
@@ -21,10 +18,17 @@ export class AudioManager {
         }));
     }
 
-    play(id: string, sprite?: string): number | null {
+    play(id: string, rate?: number, sprite?: string, volume?: number): number | null {
         const sound = this.sounds.get(id);
         if (!sound) return null;
-        return sprite? sound.play(sprite) : sound.play();
+        if (volume) sound.volume(volume);
+        if (rate) sound.rate(rate);
+        if (sprite){
+            console.log("playing sprite")
+            return sound.play(sprite);
+        }
+
+        return sound.play();
     }
 
     stop(id: string): void {

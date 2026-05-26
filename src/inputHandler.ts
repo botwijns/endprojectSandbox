@@ -1,7 +1,6 @@
 export type Action = "moveLeft" | "moveRight" | "interact" | "pause";
 
 type ActionCallback = (action: Action) => void;
-
 export interface Orientation {
     beta: number | null;  // forward/back tilt, -180 to 180
     gamma: number | null; // left/right tilt, -90 to 90
@@ -24,6 +23,7 @@ export class InputHandler {
 
     start(): void {
         window.addEventListener("keydown", this.handleKey);
+        window.addEventListener("pointerdown", this.handlePointer);
         if (this.debug){
             window.addEventListener("mousemove", this.handleMouse);
         } else{
@@ -33,6 +33,12 @@ export class InputHandler {
 
     stop(): void {
         window.removeEventListener("keydown", this.handleKey);
+        window.removeEventListener("pointerdown", this.handlePointer);
+        if (this.debug){
+            window.removeEventListener("mousemove", this.handleMouse);
+        } else{
+            window.removeEventListener("deviceorientation", this.handleOrientation);
+        }
     }
 
     onAction(cb: ActionCallback): void {
@@ -58,6 +64,10 @@ export class InputHandler {
             gamma: (x - 0.5) * 180, // -90 to 90
             beta:  (y - 0.5) * 360, // -180 to 180
         };
+    };
+    private handlePointer = (e: PointerEvent): void => {
+        const action = e.clientX < window.innerWidth / 2 ? "moveLeft" : "moveRight";
+        this.callbacks.forEach(cb => cb(action));
     };
 
     async requestOrientationPermission(): Promise<boolean> {

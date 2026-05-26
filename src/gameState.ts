@@ -32,7 +32,7 @@ export function createInitialState(): State {
         score: 0,
         running: false,
         drawn: false,
-        randomNumbers: [Math.floor(Math.random()*90 - 45), Math.floor(Math.random()*90 - 45), Math.floor(Math.random()*90 - 45)],
+        randomNumbers: [Math.floor(Math.random()*10 - 5), Math.floor(Math.random()*10 - 5), Math.floor(Math.random()*10 - 5)],
     };
 }
 
