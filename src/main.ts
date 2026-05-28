@@ -73,6 +73,7 @@ let stepTimer = 0;
 var armBeta: number|null = null;
 var alpha: number|null = null;
 var armAngleBaseline: number|null = null;
+var nextSound: boolean = true
 function startRound(): void {
     updateUI()
     console.log("Starting Round");
@@ -88,6 +89,7 @@ function startRound(): void {
 function generateSoundLocation(angle:number, distance:number): number[]{
     const x = Math.sin(angle)*distance;
     const y = Math.cos(angle)*distance;
+    log("x: "+x +" y: "+y);
     return [x, y];
 }
 function handleInput(dir: Direction): void {
@@ -126,7 +128,10 @@ input.onAction((action) => {
         state.phase = "watching"
     }
     if (action === "shoot") {
+        log("shot")
         if (state.drawn){
+            //stop the sound of the drawn bow
+            synth.stopAll()
             soundBow.play("shootShort")
             console.log("shooting bow")
             state.drawn = false;
@@ -168,7 +173,7 @@ const loop = new GameLoop((dt) => {
         ? 180 + orientation.beta
         : orientation.beta;
     // console.log(beta, gamma)
-    log("alpha:" + orientation.alpha + " beta: " + beta + " gamma: " + orientation.gamma);
+    // log("alpha:" + orientation.alpha + " beta: " + beta + " gamma: " + orientation.gamma);
     if (state.phase =="watching"){
         //set baseline for alpha orientation at the beginning of each round
         armAngleBaseline = orientation.alpha
@@ -193,11 +198,13 @@ const loop = new GameLoop((dt) => {
         // audio.play("bow", 1,"drawShort")
         console.log("drawing bow")
         console.log("bow drawn to first state")
+        state.drawn = true;
+        nextSound = false;
         //wait with setting the drawn state unitl the sound is done
-        setTimeout(() =>{state.drawn = true;},819)
+        setTimeout(() =>{nextSound=true},819)
     }
 
-    if (beta!== null && armBeta!== null && state.drawn) {
+    if (beta!== null && armBeta!== null && state.drawn &&nextSound) {
         //check if the bow is drawn to the next state
         if ((armBeta-beta) >=10 &&(armBeta-beta) <20){
             //bow drawn to first state
