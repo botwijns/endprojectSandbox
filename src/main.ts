@@ -165,7 +165,7 @@ const loop = new GameLoop((dt) => {
     const orientation = input.getOrientation();
     //if beta is smaller than zero, we have crossed the z plane, to prevent errors, we will update the beta to a number that keeps increasing and is always positive
     const beta = orientation.beta !== null && orientation.beta < 0
-        ? 180 - orientation.beta
+        ? 180 + orientation.beta
         : orientation.beta;
     // console.log(beta, gamma)
     log("alpha:" + orientation.alpha + " beta: " + beta + " gamma: " + orientation.gamma);
