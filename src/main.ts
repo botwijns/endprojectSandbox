@@ -11,6 +11,11 @@ const state = createInitialState();
 const scoreEl = document.getElementById("score")!;
 const phaseEl = document.getElementById("phase")!;
 const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
+const logEl = document.getElementById("log")!;
+
+function log(message: string): void {
+    logEl.textContent = message;
+}
 // audio.load("footstep", { src: ["sounds/footstep.webm", "sounds/footstep.mp3"] });
 // audio.load("bgm",      { src: ["sounds/bgm.webm", "sounds/bgm.mp3"], loop: true, volume: 0.4 });
 // var soundLeft = new Howl({src: ["sounds/left.webm",    "sounds/left.mp3"]})
@@ -148,6 +153,8 @@ input.onAction((action) => {
         }
 
         state.armed = false
+        // ensure sound stops when arming is stopped
+        soundArm.stop()
         armBeta = null
     }
 });
@@ -161,6 +168,7 @@ const loop = new GameLoop((dt) => {
         ? 180 - orientation.beta
         : orientation.beta;
     // console.log(beta, gamma)
+    log("alpha:" + orientation.alpha + " beta: " + orientation.beta + " gamma: " + orientation.gamma);
     if (state.phase =="watching"){
         //set baseline for alpha orientation at the beginning of each round
         armAngleBaseline = orientation.alpha
@@ -170,6 +178,9 @@ const loop = new GameLoop((dt) => {
         soundFrog.play()
         soundFrog.pos(coords[0],coords[1])
         soundFrog.volume(1)
+        console.log("frog at:")
+        console.log(coords[0], coords[1])
+
     }
     if (state.armed && armBeta==null){
         //if state was just armed, measure the orientation and set the beta for arming to the current beta
