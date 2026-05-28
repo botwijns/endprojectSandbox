@@ -24,8 +24,8 @@ export class InputHandler {
 
     start(): void {
         window.addEventListener("keydown", this.handleKey);
-        window.addEventListener("pointerdown", this.handlePointer);
-        window.addEventListener("pointerup", this.handlePointerUp)
+        document.body.addEventListener("pointerdown", this.handlePointer);
+        document.body.addEventListener("pointerup", this.handlePointerUp)
         if (this.debug){
             window.addEventListener("mousemove", this.handleMouse);
         } else{
@@ -35,7 +35,8 @@ export class InputHandler {
 
     stop(): void {
         window.removeEventListener("keydown", this.handleKey);
-        window.removeEventListener("pointerdown", this.handlePointer);
+        document.body.removeEventListener("pointerdown", this.handlePointer);
+        document.body.removeEventListener("pointerup", this.handlePointerUp);
         if (this.debug){
             window.removeEventListener("mousemove", this.handleMouse);
         } else{
