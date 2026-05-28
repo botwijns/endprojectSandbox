@@ -1,9 +1,19 @@
 body {
-  touch-action: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100vh;
   margin: 0;
+  touch-action: none;
+  box-sizing: border-box;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+#score, #phase, #log {
+  width: 100%;
+  text-align: center;
+  word-break: break-word;
+  font-size: clamp(0.8rem, 4vw, 1.5rem);
 }
