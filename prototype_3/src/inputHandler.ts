@@ -1,14 +1,13 @@
-export type Action = "moveLeft" | "moveRight" | "interact" | "pause" |"shoot";
+export type Action = "moveLeft" | "moveRight" | "interact" | "pause";
 
 type ActionCallback = (action: Action) => void;
 export interface Orientation {
-    alpha: number | null;
     beta: number | null;  // forward/back tilt, -180 to 180
     gamma: number | null; // left/right tilt, -90 to 90
 }
 export class InputHandler {
     private callbacks: ActionCallback[] = [];
-    private orientation: Orientation = {alpha: null, beta:null, gamma:null};
+    private orientation: Orientation = {beta:null, gamma:null};
     private keyMap: Record<string, Action> = {
         ArrowLeft: "moveLeft",
         ArrowRight: "moveRight",
@@ -25,7 +24,6 @@ export class InputHandler {
     start(): void {
         window.addEventListener("keydown", this.handleKey);
         window.addEventListener("pointerdown", this.handlePointer);
-        window.addEventListener("pointerup", this.handlePointerUp)
         if (this.debug){
             window.addEventListener("mousemove", this.handleMouse);
         } else{
@@ -56,51 +54,7 @@ export class InputHandler {
         if (action) this.callbacks.forEach(cb => cb(action));
     };
     private handleOrientation = (e: DeviceOrientationEvent): void => {
-        const angle = screen.orientation?.angle ?? 0;
-
-        switch (angle) {
-            case 0:
-                // Portrait, top up — standard mapping
-                this.orientation = {
-                    alpha: e.alpha,
-                    beta:  e.beta,
-                    gamma: e.gamma,
-
-                };
-                break;
-
-            case 90:
-                // Landscape, device rotated clockwise (home button right)
-                // gamma and beta swap, gamma needs to be flipped
-                this.orientation = {
-                    alpha: e.alpha,
-                    beta:  e.gamma,
-                    gamma: -(e.beta ?? 0),
-                };
-                break;
-
-            case 270:
-            case -90:
-                // Landscape, device rotated counter-clockwise (home button left)
-                this.orientation = {
-                    alpha: e.alpha,
-                    beta:  -(e.gamma ?? 0),
-                    gamma: e.beta,
-                };
-                break;
-
-            case 180:
-                // Portrait, upside down
-                this.orientation = {
-                    alpha: e.alpha,
-                    beta:  -(e.beta ?? 0),
-                    gamma: -(e.gamma ?? 0),
-                };
-                break;
-
-            default:
-                this.orientation = { alpha: e.alpha, beta: e.beta, gamma: e.gamma };
-        }
+        this.orientation = {beta: e.beta, gamma: e.gamma};
     }
 
     private handleMouse = (e: MouseEvent): void => {
@@ -108,21 +62,13 @@ export class InputHandler {
         const y = e.clientY / window.innerHeight; // 0 to 1
         this.orientation = {
             gamma: (x - 0.5) * 180, // -90 to 90
-            alpha:  (y - 0.5) * 360, // -180 to 180
-            beta: 0
+            beta:  (y - 0.5) * 360, // -180 to 180
         };
     };
     private handlePointer = (e: PointerEvent): void => {
         const action = e.clientX < window.innerWidth / 2 ? "moveLeft" : "moveRight";
         this.callbacks.forEach(cb => cb(action));
     };
-    private handlePointerUp = (e: PointerEvent): void => {
-        if (e.clientX < window.innerWidth / 2){
-            const action = "shoot"
-            this.callbacks.forEach(cb => cb(action));
-        }
-    };
-
 
     async requestOrientationPermission(): Promise<boolean> {
         // Only iOS Safari requires explicit permission

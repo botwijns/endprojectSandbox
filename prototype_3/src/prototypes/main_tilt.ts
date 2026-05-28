@@ -54,7 +54,7 @@ let baseline = 0;
 function startRound(): void {
     updateUI()
     console.log("Starting Round");
-    console.log(state.randomAngles)
+    console.log(state.randomNumbers)
     const length = 5; // sequence grows each round
     state.sequence = generateSequence(length);
     state.playerInput = [];
@@ -121,7 +121,7 @@ const loop = new GameLoop((dt) => {
             if (state.currentStep >= state.sequence.length) {
                 console.log("baseline is:")
                 console.log(average_orientation)
-                console.log(state.randomAngles[0])
+                console.log(state.randomNumbers[0])
                 state.phase = "repeating";
                 state.currentStep = 0;
                 // reset the environment to check for the average orientation every second. store the first five seconds for Baseline
@@ -132,7 +132,7 @@ const loop = new GameLoop((dt) => {
         }
     } else{
         if (gamma!== null){
-            if (Math.abs(gamma-baseline+state.randomAngles[state.currentStep])<10){
+            if (Math.abs(gamma-baseline+state.randomNumbers[state.currentStep])<10){
                 console.log("stay here!")
             }
         }
@@ -142,7 +142,7 @@ const loop = new GameLoop((dt) => {
             // check every second if the average of last second was close enough to the target
             stepTimer = 0;
             // audio.play(state.sequence[state.currentStep]);
-            if (Math.abs(average_orientation-baseline+state.randomAngles[state.currentStep])<10){
+            if (Math.abs(average_orientation-baseline+state.randomNumbers[state.currentStep])<10){
                 console.log("new hit!")
                 state.currentStep++;
             }

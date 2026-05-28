@@ -11,15 +11,12 @@ export interface State {
     sequence: Direction[];
     playerInput: Direction[];
     entities: Entity[];
-    phase: "watching" | "playing" | "success" | "failure";
+    phase: "watching" | "repeating" | "success" | "failure";
     currentStep: number;
     score: number;
     running: boolean;
     drawn: boolean;
-    randomAngles: number[];
-    randomDistances: number[];
-    drawnStage: number;
-    armed: boolean;
+    randomNumbers: number[];
 }
 export function createEntity(id: string, x: number, y:number, soundId:string) : Entity {
     return { id, x, y , soundId}
@@ -35,17 +32,10 @@ export function createInitialState(): State {
         score: 0,
         running: false,
         drawn: false,
-        randomAngles: [],
-        randomDistances: [],
-        drawnStage: 0,
-        armed: false,
+        randomNumbers: [Math.floor(Math.random()*10 - 5), Math.floor(Math.random()*10 - 5), Math.floor(Math.random()*10 - 5)],
     };
 }
-export function generateNumberSequence(length:number, start: number, end:number): number[] {
-    // start is always smaller than end
-    const range = Math.abs(end- start);
-    return Array.from({ length: length }, () => Math.random()*range+start)
-}
+
 export function generateSequence(length: number): Direction[] {
     return Array.from({ length }, () => Math.random() < 0.5 ? "left" : "right");
 }

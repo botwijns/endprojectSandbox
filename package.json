@@ -7,8 +7,9 @@
     "dev": "vite",
     "build:prototype_1": "vite build --config vite.prototype_1.config.ts",
     "build:prototype_2": "vite build --config vite.prototype_2.config.ts",
+    "build:prototype_3": "vite build --config vite.prototype_3.config.ts",
     "build:current": "vite build --config vite.config.ts",
-    "build": "npm run build:prototype_1 && npm run build:prototype_2 && npm run build:current",
+    "build": "npm run build:prototype_1 && npm run build:prototype_2 && npm run build:prototype_3 && npm run build:current",
     "preview": "vite preview"
   },
   "devDependencies": {
