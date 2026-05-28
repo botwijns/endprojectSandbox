@@ -89,7 +89,7 @@ function startRound(): void {
 function generateSoundLocation(angle:number, distance:number): number[]{
     const x = Math.sin(angle)*distance;
     const y = Math.cos(angle)*distance;
-    log("x: "+x +" y: "+y);
+    log("x: "+x +" y: "+y + " distance: "+ distance);
     return [x, y];
 }
 function handleInput(dir: Direction): void {
@@ -129,7 +129,7 @@ input.onAction((action) => {
         state.phase = "watching"
     }
     if (action === "shoot") {
-        log("shot")
+        // log("shot")
         if (state.drawn){
             //stop the sound of the drawn bow
             synth.stopAll()
@@ -143,6 +143,7 @@ input.onAction((action) => {
             else{
                 // shot misses! failure sound is played, but based on which side you need to move to, its either on the left or right. the volume indicates if you need to aim further or closer
                 console.log("miss!")
+                log("aimed at: "+alpha + "with baseline at: " + armAngleBaseline + " distance: " + state.drawnStage)
                 const volume = 1-(state.drawnStage-state.randomDistances[state.currentStep])/3
                 setTimeout(() => {
                     if (alpha !== null && armAngleBaseline !== null) {
