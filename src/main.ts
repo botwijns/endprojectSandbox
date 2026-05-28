@@ -120,6 +120,7 @@ input.onAction((action) => {
     // audio.resume();
     Howler.ctx?.resume();
     if (action === "moveLeft")  {
+        log("arm")
         state.armed = true
         soundArm.play()
     }
