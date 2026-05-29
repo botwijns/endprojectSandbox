@@ -4,7 +4,7 @@ import {createInitialState, type Direction, generateNumberSequence, generateSequ
 import {NOTE, SynthManager} from "./audio/SynthManager.ts";
 import {Howl, Howler} from "howler";
 
-const debug = false
+const debug= !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
 const synth = new SynthManager();
 const input = new InputHandler(debug);
 const state = createInitialState();
@@ -279,26 +279,33 @@ function updateUI(): void {
         failure:   "Fout!",
     }[state.phase];
 }
+let gameRunning = false;
+
 startBtn.addEventListener("click", async () => {
-    // Unlock AudioContext on the user gesture
-    Howler.ctx?.resume();
-    // audio.resume();
-    synth.resume();
+    if (!gameRunning) {
+        Howler.ctx?.resume();
+        synth.resume();
 
-    // Request orientation permission
-    const granted = await input.requestOrientationPermission();
-    if (!granted) {
-        startBtn.textContent = "Permission denied — tap to retry";
-        return;
+        const granted = await input.requestOrientationPermission();
+        if (!granted) {
+            startBtn.textContent = "Permission denied — tap to retry";
+            return;
+        }
+
+        input.start();
+        state.running = true;
+        startRound();
+        loop.start();
+        startBtn.textContent = "Stop";
+        gameRunning = true;
+        updateUI();
+    } else {
+        state.running = false;
+        input.stop();
+        loop.stop();
+        soundFrog.stop();
+        synth.stopAll();
+        startBtn.textContent = "Start";
+        gameRunning = false;
     }
-
-
-
-    input.start();
-    state.running = true;
-    startRound();
-    loop.start();
-// Hide the button once the game starts
-    startBtn.style.display = "none";
-    updateUI();
 });
