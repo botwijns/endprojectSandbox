@@ -178,7 +178,7 @@ const loop = new GameLoop((dt) => {
         ? 180 + orientation.beta
         : orientation.beta;
     // console.log(beta, gamma)
-    // log("alpha:" + orientation.alpha + " beta: " + beta + " gamma: " + orientation.gamma);
+    log("alpha:" + orientation.alpha + " beta: " + beta + " gamma: " + orientation.gamma);
     if (state.phase =="watching"){
         //set baseline for alpha orientation at the beginning of each round
         armAngleBaseline = orientation.alpha
@@ -197,7 +197,7 @@ const loop = new GameLoop((dt) => {
         //if state was just armed, measure the orientation and set the beta for arming to the current beta
         armBeta = beta;
     }
-    if (beta!== null && armBeta!== null && (armBeta-beta) > 10 && !state.drawn) {
+    if (beta!== null && armBeta!== null && (beta-armBeta) > 10 && !state.drawn) {
 
         const id = soundBow.play("drawShort");
         console.log("play() returned:", id);
@@ -212,20 +212,20 @@ const loop = new GameLoop((dt) => {
 
     if (beta!== null && armBeta!== null && state.drawn &&nextSound) {
         //check if the bow is drawn to the next state
-        if ((armBeta-beta) >=10 &&(armBeta-beta) <20){
+        if ((beta-armBeta) >=10 &&(beta-armBeta) <20){
             //bow drawn to first state
             synth.stopAll()
             synth.playNote(NOTE.C4)
             state.drawnStage = 1
         }
-        else if ((armBeta-beta) >=20 &&(armBeta-beta) <30){
+        else if ((beta-armBeta) >=20 &&(beta-armBeta) <30){
             //bow drawn to second state
             console.log("drawing bow to second state")
             synth.stopAll()
             synth.playNote(NOTE.D4)
             state.drawnStage = 2
         }
-        else if ((armBeta-beta) >=30 &&(armBeta-beta) <40){
+        else if ((beta-armBeta) >=30 &&(beta-armBeta) <40){
             //bow drawn to third state
             console.log("drawing bow to third state")
             synth.stopAll()
