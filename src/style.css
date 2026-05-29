@@ -32,3 +32,6 @@ h3 {
   font-size: clamp(0.9rem, 4.5vw, 1.75rem);
   word-break: break-word;
 }
+* {
+  user-select: none;
+}

@@ -179,7 +179,6 @@ const loop = new GameLoop((dt) => {
     if (state.phase =="watching"){
         //set baseline for alpha orientation at the beginning of each round
         armAngleBaseline = orientation.alpha
-        alpha = orientation.alpha
         state.phase = "playing"
         let coords = generateSoundLocation(state.randomAngles[state.currentStep],state.randomDistances[state.currentStep])
         soundFrog.play()
@@ -189,6 +188,7 @@ const loop = new GameLoop((dt) => {
         console.log(coords[0], coords[1])
 
     }
+    alpha = orientation.alpha
     if (state.armed && armBeta==null){
         //if state was just armed, measure the orientation and set the beta for arming to the current beta
         armBeta = beta;
