@@ -17,7 +17,7 @@ export class InputHandler {
     };
 
     private debug = false;
-
+    private shootCooldown = false;
     constructor(debug = false) {
         this.debug = debug;
     }
@@ -114,14 +114,18 @@ export class InputHandler {
         };
     };
     private handlePointer = (e: PointerEvent): void => {
+        if (this.shootCooldown) return;
         const action = e.clientX < window.innerWidth / 2 ? "moveLeft" : "moveRight";
         this.callbacks.forEach(cb => cb(action));
     };
     private handlePointerUp = (e: PointerEvent): void => {
+        if (this.shootCooldown) return;
+        this.shootCooldown = true;
         if (e.clientX < window.innerWidth / 2){
             const action = "shoot"
             this.callbacks.forEach(cb => cb(action));
         }
+        setTimeout(() =>{this.shootCooldown = false;}, 300);
     };
 
 
