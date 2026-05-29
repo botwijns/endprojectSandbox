@@ -129,6 +129,9 @@ input.onAction((action) => {
         state.phase = "watching"
     }
     if (action === "shoot") {
+        state.armed = false
+        soundArm.stop()
+        armBeta = null
         // log("shot")
         if (state.drawn){
             //stop the sound of the drawn bow
@@ -138,6 +141,7 @@ input.onAction((action) => {
             state.drawn = false;
             if (alpha!==null && armAngleBaseline!==null&& state.drawnStage==state.randomDistances[state.currentStep]&& (Math.abs(state.randomAngles[state.currentStep]-(armAngleBaseline-alpha))<5)){
                 state.phase = "success"
+                state.score++
                 setTimeout(() =>soundBow.play("hitShort"), 500);
             }
             else{
@@ -157,12 +161,11 @@ input.onAction((action) => {
                     }
                 }, 500);
             }
+            state.drawnStage = 0
         }
 
-        state.armed = false
+
         // ensure sound stops when arming is stopped
-        soundArm.stop()
-        armBeta = null
     }
 });
 
@@ -186,6 +189,7 @@ const loop = new GameLoop((dt) => {
         soundFrog.volume(1)
         console.log("frog at:")
         console.log(coords[0], coords[1])
+        log("angle: "+ state.randomAngles[state.currentStep] + "distance: " + state.randomDistances[state.currentStep])
 
     }
     alpha = orientation.alpha
@@ -214,7 +218,7 @@ const loop = new GameLoop((dt) => {
             synth.playNote(NOTE.C4)
             state.drawnStage = 1
         }
-        if ((armBeta-beta) >=20 &&(armBeta-beta) <30){
+        else if ((armBeta-beta) >=20 &&(armBeta-beta) <30){
             //bow drawn to second state
             console.log("drawing bow to second state")
             synth.stopAll()
@@ -230,7 +234,6 @@ const loop = new GameLoop((dt) => {
         }
     }
     if (state.phase === "success") {
-        state.score++
         state.currentStep = state.currentStep + 1;
         // create new target locations
         if (state.currentStep>2) {

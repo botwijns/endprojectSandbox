@@ -35,3 +35,8 @@ h3 {
 * {
   user-select: none;
 }
+#info {
+  line-height: 1.8;
+  text-align: center;
+  font-size: clamp(0.8rem, 4vw, 1.5rem);
+}
