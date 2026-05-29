@@ -87,8 +87,8 @@ function startRound(): void {
     state.randomDistances = generateNumberSequence(3, 1,3)
 }
 function generateSoundLocation(angle:number, distance:number): number[]{
-    const x = Math.sin(angle)*distance;
-    const y = Math.cos(angle)*distance;
+    const x = Math.sin(angle)*distance*5;
+    const y = Math.cos(angle)*distance*5;
     log("x: "+x +" y: "+y + " distance: "+ distance);
     return [x, y];
 }
