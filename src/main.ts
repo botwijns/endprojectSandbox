@@ -178,7 +178,7 @@ const loop = new GameLoop((dt) => {
         ? 180 + orientation.beta
         : orientation.beta;
     // console.log(beta, gamma)
-    // log("alpha:" + orientation.alpha + " beta: " + beta + " gamma: " + orientation.gamma);
+    log("alpha:" + orientation.alpha + " beta: " + beta + " gamma: " + orientation.gamma);
     if (state.phase =="watching"){
         //set baseline for alpha orientation at the beginning of each round
         armAngleBaseline = orientation.alpha
