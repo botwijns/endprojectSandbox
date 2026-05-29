@@ -1,7 +1,7 @@
 import {GameLoop} from "./gameLoop.ts";
 import {InputHandler} from "./inputHandler.ts";
-import {createInitialState, type Direction, generateNumberSequence, generateSequence} from "./gameState.ts";
-import {NOTE, SynthManager} from "./audio/SynthManager.ts";
+import {createInitialState,  generateNumberSequence, generateSequence} from "./gameState.ts";
+import {SynthManager} from "./audio/SynthManager.ts";
 import {Howl, Howler} from "howler";
 
 const debug= !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
@@ -73,6 +73,7 @@ let stepTimer = 0;
 var armBeta: number|null = null;
 var alpha: number|null = null;
 var armAngleBaseline: number|null = null;
+// @ts-ignore
 var nextSound: boolean = true;
 var nextSoundTimeout: ReturnType<typeof setTimeout> | null = null; // add this
 var armTime: number = 0;
@@ -86,7 +87,7 @@ function startRound(): void {
     state.phase = "watching";
     stepTimer = 0;
     state.randomAngles = generateNumberSequence(3, -45,45)
-    state.randomDistances = generateNumberSequence(3, 1,3)
+    state.randomDistances = generateNumberSequence(3, 0,0)
     armTime = 0;
     armBeta = null;
     state.drawnStage = 0
@@ -105,29 +106,29 @@ function generateSoundLocation(angle:number, distance:number): number[]{
     log("x: "+x +" y: "+y + " distance: "+ distance);
     return [x, y];
 }
-function handleInput(dir: Direction): void {
-    console.log(dir);
-    if (state.phase !== "playing") return;
-    // we always walk first, then we make the sound faster or slower
-    // audio.play("walking")
-    // soundWalking.play()
-    // console.log(dir)
-    // let xAfter = state.player.x
-    // if (dir=="left"){
-    //     xAfter--;
-    // }
-    // else{
-    //     xAfter ++;
-    // }
-    // const newDistance = Math.abs(state.randomNumbers[state.currentStep] - xAfter);
-    // if (newDistance<distance){
-    //     rate+=0.2;
-    // }
-    // else{
-    //     rate-=0.2;
-    // }
-    // distance = newDistance;
-}
+// function handleInput(dir: Direction): void {
+//     console.log(dir);
+//     if (state.phase !== "playing") return;
+//     // we always walk first, then we make the sound faster or slower
+//     // audio.play("walking")
+//     // soundWalking.play()
+//     // console.log(dir)
+//     // let xAfter = state.player.x
+//     // if (dir=="left"){
+//     //     xAfter--;
+//     // }
+//     // else{
+//     //     xAfter ++;
+//     // }
+//     // const newDistance = Math.abs(state.randomNumbers[state.currentStep] - xAfter);
+//     // if (newDistance<distance){
+//     //     rate+=0.2;
+//     // }
+//     // else{
+//     //     rate-=0.2;
+//     // }
+//     // distance = newDistance;
+// }
 
 input.onAction((action) => {
     // audio.resume();
@@ -137,7 +138,11 @@ input.onAction((action) => {
         state.armed = true
         soundArm.play()
     }
-    if (action === "moveRight") handleInput("right");
+    if (action === "moveRight"){
+        log("arm")
+        state.armed = true
+        soundArm.play()
+    }
     if (action === "interact") {
         state.phase = "watching"
     }
@@ -158,7 +163,7 @@ input.onAction((action) => {
             soundBow.play("shootShort")
             console.log("shooting bow")
             state.drawn = false;
-            if (alpha!==null && armAngleBaseline!==null&& state.drawnStage==state.randomDistances[state.currentStep]&& (Math.abs(state.randomAngles[state.currentStep]-(armAngleBaseline-alpha))<5)){
+            if (alpha!==null && armAngleBaseline!==null&& state.drawnStage==state.randomDistances[state.currentStep]&& (Math.abs(state.randomAngles[state.currentStep]-(armAngleBaseline-alpha))<20)){
                 state.phase = "success"
                 state.score++
                 setTimeout(() =>soundBow.play("hitShort"), 500);
@@ -244,36 +249,36 @@ const loop = new GameLoop((dt) => {
         //wait with setting the drawn state unitl the sound is done
     }
 
-    if (beta!== null && armBeta!== null && armTime > 0.3 && state.drawn &&nextSound &&state.armed) {
-        //check if the bow is drawn to the next state
-        if ((beta-armBeta) >=10 &&(beta-armBeta) <20){
-            //bow drawn to first state
-            if (state.drawnStage!=1) {
-                synth.stopAll()
-                synth.playNote(NOTE.C4)
-                state.drawnStage = 1
-            }
-        }
-        else if ((beta-armBeta) >=20 &&(beta-armBeta) <30){
-            //bow drawn to second state
-            console.log("drawing bow to second state")
-            if(state.drawnStage!=2) {
-                synth.stopAll()
-                synth.playNote(NOTE.D4)
-                state.drawnStage = 2
-            }
-        }
-        else if ((beta-armBeta) >=30 &&(beta-armBeta) <40){
-            //bow drawn to third state
-            console.log("drawing bow to third state")
-            if (state.drawnStage!=3){
-                synth.stopAll()
-                synth.playNote(NOTE.E4)
-                state.drawnStage = 3
-
-            }
-        }
-    }
+    // if (beta!== null && armBeta!== null && armTime > 0.3 && state.drawn &&nextSound &&state.armed) {
+    //     //check if the bow is drawn to the next state
+    //     if ((beta-armBeta) >=10 &&(beta-armBeta) <20){
+    //         //bow drawn to first state
+    //         if (state.drawnStage!=1) {
+    //             synth.stopAll()
+    //             synth.playNote(NOTE.C4)
+    //             state.drawnStage = 1
+    //         }
+    //     }
+    //     else if ((beta-armBeta) >=20 &&(beta-armBeta) <30){
+    //         //bow drawn to second state
+    //         console.log("drawing bow to second state")
+    //         if(state.drawnStage!=2) {
+    //             synth.stopAll()
+    //             synth.playNote(NOTE.D4)
+    //             state.drawnStage = 2
+    //         }
+    //     }
+    //     else if ((beta-armBeta) >=30 &&(beta-armBeta) <40){
+    //         //bow drawn to third state
+    //         console.log("drawing bow to third state")
+    //         if (state.drawnStage!=3){
+    //             synth.stopAll()
+    //             synth.playNote(NOTE.E4)
+    //             state.drawnStage = 3
+    //
+    //         }
+    //     }
+    // }
     if (state.phase === "success") {
         state.currentStep = state.currentStep + 1;
         // create new target locations
