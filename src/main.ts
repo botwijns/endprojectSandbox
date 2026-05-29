@@ -74,6 +74,7 @@ var armBeta: number|null = null;
 var alpha: number|null = null;
 var armAngleBaseline: number|null = null;
 var nextSound: boolean = true
+var armTime: number = 0;
 function startRound(): void {
     updateUI()
     console.log("Starting Round");
@@ -85,6 +86,12 @@ function startRound(): void {
     stepTimer = 0;
     state.randomAngles = generateNumberSequence(3, -45,45)
     state.randomDistances = generateNumberSequence(3, 1,3)
+    armTime = 0;
+    armBeta = null;
+    state.drawnStage = 0
+    state.drawn = false;
+    state.armed = false;
+
 }
 function generateSoundLocation(angle:number, distance:number): number[]{
     const x = Math.sin(angle)*distance*5;
@@ -132,6 +139,7 @@ input.onAction((action) => {
         state.armed = false
         soundArm.stop()
         armBeta = null
+        armTime =0
         // log("shot")
         if (state.drawn){
             //stop the sound of the drawn bow
@@ -168,7 +176,6 @@ input.onAction((action) => {
         // ensure sound stops when arming is stopped
     }
 });
-
 const loop = new GameLoop((dt) => {
     if (!state.running) return;
 
@@ -196,8 +203,10 @@ const loop = new GameLoop((dt) => {
     if (state.armed && armBeta==null){
         //if state was just armed, measure the orientation and set the beta for arming to the current beta
         armBeta = beta;
+        armTime = 0;
     }
-    if (beta!== null && armBeta!== null && (beta-armBeta) > 10 && !state.drawn &&state.armed) {
+    armTime += dt;
+    if (beta!== null && armBeta!== null && armTime > 0.3 && (beta-armBeta) > 10 && !state.drawn &&state.armed) {
 
         const id = soundBow.play("drawShort");
         console.log("play() returned:", id);
@@ -210,7 +219,7 @@ const loop = new GameLoop((dt) => {
         setTimeout(() =>{nextSound=true},819)
     }
 
-    if (beta!== null && armBeta!== null && state.drawn &&nextSound &&state.armed) {
+    if (beta!== null && armBeta!== null && armTime > 0.3 && state.drawn &&nextSound &&state.armed) {
         //check if the bow is drawn to the next state
         if ((beta-armBeta) >=10 &&(beta-armBeta) <20){
             //bow drawn to first state
