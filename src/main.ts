@@ -73,7 +73,8 @@ let stepTimer = 0;
 var armBeta: number|null = null;
 var alpha: number|null = null;
 var armAngleBaseline: number|null = null;
-var nextSound: boolean = true
+var nextSound: boolean = true;
+var nextSoundTimeout: ReturnType<typeof setTimeout> | null = null; // add this
 var armTime: number = 0;
 function startRound(): void {
     updateUI()
@@ -91,6 +92,11 @@ function startRound(): void {
     state.drawnStage = 0
     state.drawn = false;
     state.armed = false;
+    if (nextSoundTimeout !== null) {
+        clearTimeout(nextSoundTimeout);
+        nextSoundTimeout = null;
+    }
+    nextSound = true;
 
 }
 function generateSoundLocation(angle:number, distance:number): number[]{
@@ -141,6 +147,11 @@ input.onAction((action) => {
         armBeta = null
         armTime =0
         // log("shot")
+        if (nextSoundTimeout !== null) {
+            clearTimeout(nextSoundTimeout);
+            nextSoundTimeout = null;
+        }
+        nextSound = true;
         if (state.drawn){
             //stop the sound of the drawn bow
             synth.stopAll()
@@ -185,6 +196,15 @@ const loop = new GameLoop((dt) => {
         ? 180 + orientation.beta
         : orientation.beta;
     // console.log(beta, gamma)
+    if (state.armed && armBeta == null) {
+        armBeta = beta;
+        armTime = 0;
+        nextSound = true;  // reset on fresh arm
+        if (nextSoundTimeout !== null) {
+            clearTimeout(nextSoundTimeout);  // cancel any leftover timeout
+            nextSoundTimeout = null;
+        }
+    }
     log("alpha:" + orientation.alpha + " beta: " + beta + " gamma: " + orientation.gamma);
     if (state.phase =="watching"){
         //set baseline for alpha orientation at the beginning of each round
@@ -200,23 +220,28 @@ const loop = new GameLoop((dt) => {
 
     }
     alpha = orientation.alpha
-    if (state.armed && armBeta==null){
-        //if state was just armed, measure the orientation and set the beta for arming to the current beta
+    if (state.armed && armBeta == null) {
         armBeta = beta;
         armTime = 0;
+        nextSound = true;  // reset on fresh arm
+        if (nextSoundTimeout !== null) {
+            clearTimeout(nextSoundTimeout);  // cancel any leftover timeout
+            nextSoundTimeout = null;
+        }
     }
     armTime += dt;
     if (beta!== null && armBeta!== null && armTime > 0.3 && (beta-armBeta) > 10 && !state.drawn &&state.armed) {
-
+        log(beta+" "+ armBeta + armTime + state.drawn +state.armed)
         const id = soundBow.play("drawShort");
         console.log("play() returned:", id);
         // audio.play("bow", 1,"drawShort")
         console.log("drawing bow")
         console.log("bow drawn to first state")
         state.drawn = true;
+        if (nextSoundTimeout !== null) clearTimeout(nextSoundTimeout); // cancel any pending reset
         nextSound = false;
+        nextSoundTimeout = setTimeout(() => { nextSound = true; }, 819);
         //wait with setting the drawn state unitl the sound is done
-        setTimeout(() =>{nextSound=true},819)
     }
 
     if (beta!== null && armBeta!== null && armTime > 0.3 && state.drawn &&nextSound &&state.armed) {
