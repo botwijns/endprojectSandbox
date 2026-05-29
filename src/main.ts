@@ -214,23 +214,30 @@ const loop = new GameLoop((dt) => {
         //check if the bow is drawn to the next state
         if ((beta-armBeta) >=10 &&(beta-armBeta) <20){
             //bow drawn to first state
-            synth.stopAll()
-            synth.playNote(NOTE.C4)
-            state.drawnStage = 1
+            if (state.drawnStage!=1) {
+                synth.stopAll()
+                synth.playNote(NOTE.C4)
+                state.drawnStage = 1
+            }
         }
         else if ((beta-armBeta) >=20 &&(beta-armBeta) <30){
             //bow drawn to second state
             console.log("drawing bow to second state")
-            synth.stopAll()
-            synth.playNote(NOTE.D4)
-            state.drawnStage = 2
+            if(state.drawnStage!=2) {
+                synth.stopAll()
+                synth.playNote(NOTE.D4)
+                state.drawnStage = 2
+            }
         }
         else if ((beta-armBeta) >=30 &&(beta-armBeta) <40){
             //bow drawn to third state
             console.log("drawing bow to third state")
-            synth.stopAll()
-            synth.playNote(NOTE.E4)
-            state.drawnStage = 3
+            if (state.drawnStage!=3){
+                synth.stopAll()
+                synth.playNote(NOTE.E4)
+                state.drawnStage = 3
+
+            }
         }
     }
     if (state.phase === "success") {
