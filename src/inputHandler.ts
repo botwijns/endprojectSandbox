@@ -115,11 +115,13 @@ export class InputHandler {
     };
     private handlePointer = (e: PointerEvent): void => {
         if (this.shootCooldown) return;
+        if (e.pointerType === "mouse" && !this.debug) return;
         const action = e.clientX < window.innerWidth / 2 ? "moveLeft" : "moveRight";
         this.callbacks.forEach(cb => cb(action));
     };
     private handlePointerUp = (e: PointerEvent): void => {
         if (this.shootCooldown) return;
+        if (e.pointerType === "mouse" && !this.debug) return;
         this.shootCooldown = true;
         if (e.clientX < window.innerWidth / 2){
             const action = "shoot"
