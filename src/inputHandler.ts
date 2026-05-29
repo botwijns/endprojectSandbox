@@ -75,7 +75,7 @@ export class InputHandler {
                 // gamma and beta swap, gamma needs to be flipped
                 this.orientation = {
                     alpha: e.alpha,
-                    beta:  e.gamma,
+                    beta:  -(e.gamma ?? 0),
                     gamma: -(e.beta ?? 0),
                 };
                 break;
@@ -85,7 +85,7 @@ export class InputHandler {
                 // Landscape, device rotated counter-clockwise (home button left)
                 this.orientation = {
                     alpha: e.alpha,
-                    beta:  -(e.gamma ?? 0),
+                    beta:  e.gamma,
                     gamma: e.beta,
                 };
                 break;

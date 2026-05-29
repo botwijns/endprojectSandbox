@@ -197,7 +197,7 @@ const loop = new GameLoop((dt) => {
         //if state was just armed, measure the orientation and set the beta for arming to the current beta
         armBeta = beta;
     }
-    if (beta!== null && armBeta!== null && (beta-armBeta) > 10 && !state.drawn) {
+    if (beta!== null && armBeta!== null && (beta-armBeta) > 10 && !state.drawn &&state.armed) {
 
         const id = soundBow.play("drawShort");
         console.log("play() returned:", id);
@@ -210,7 +210,7 @@ const loop = new GameLoop((dt) => {
         setTimeout(() =>{nextSound=true},819)
     }
 
-    if (beta!== null && armBeta!== null && state.drawn &&nextSound) {
+    if (beta!== null && armBeta!== null && state.drawn &&nextSound &&state.armed) {
         //check if the bow is drawn to the next state
         if ((beta-armBeta) >=10 &&(beta-armBeta) <20){
             //bow drawn to first state
