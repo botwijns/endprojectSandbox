@@ -173,12 +173,12 @@ const loop = new GameLoop((dt) => {
     if (!state.running) return;
 
     const orientation = input.getOrientation();
-    //if beta is smaller than zero, we have crossed the z plane, to prevent errors, we will update the beta to a number that keeps increasing and is always positive
-    const beta = orientation.beta !== null && orientation.beta < 0
+    //if beta is smaller than zero, we have crossed the z plane, to prevent errors, we will update the beta to a number that is always positive
+    const beta = orientation.beta !== null
         ? 180 + orientation.beta
         : orientation.beta;
     // console.log(beta, gamma)
-    log("alpha:" + orientation.alpha + " beta: " + beta + " gamma: " + orientation.gamma);
+    // log("alpha:" + orientation.alpha + " beta: " + beta + " gamma: " + orientation.gamma);
     if (state.phase =="watching"){
         //set baseline for alpha orientation at the beginning of each round
         armAngleBaseline = orientation.alpha
