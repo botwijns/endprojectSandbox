@@ -11,7 +11,7 @@ export interface State {
     sequence: Direction[];
     playerInput: Direction[];
     entities: Entity[];
-    phase: "watching" | "playing" | "success" | "failure";
+    phase: "idle"|"throwing"|"waiting"| "reeling" | "success"|"failure";
     currentStep: number;
     score: number;
     running: boolean;
@@ -30,7 +30,7 @@ export function createInitialState(): State {
         sequence: [],
         playerInput: [],
         entities: [],
-        phase: "watching",
+        phase: "idle",
         currentStep: 0,
         score: 0,
         running: false,

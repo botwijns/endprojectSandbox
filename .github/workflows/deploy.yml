@@ -46,6 +46,8 @@ jobs:
           mkdir -p dist
           cp -r prototype_1/dist/prototype_1 dist/
           cp -r prototype_2/dist/prototype_2 dist/
+          cp -r prototype_3/dist/prototype_3 dist/
+          cp -r prototype_4/dist/prototype_4 dist/
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
