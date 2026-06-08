@@ -341,6 +341,7 @@ const loop = new GameLoop((dt) => {
             crankAngle = 0
             soundSuccess.play()
             soundFishingReel.stop();
+            isSoundPlaying = false;
             state.score++
             updateUI()
         }
@@ -348,6 +349,7 @@ const loop = new GameLoop((dt) => {
             crankAngle = 0
             state.phase = "failure"
             soundFishingReel.stop();
+            isSoundPlaying = false;
             soundFailure.play()
             updateUI()
         }
