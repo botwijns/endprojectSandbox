@@ -74,8 +74,8 @@ var soundFishingReel = new Howl({src: ["sounds/fishingreel.webm", "sounds/fishin
 var soundFishingReelThrow = new Howl({
     src: ["sounds/fishing-reel-throw.webm", "sounds/fishing-reel-throw.wav", "sounds/fishing-reel-throw.mp3"],
     sprite: {
-        throw: [0,4750],
-        reel: [5200,3500]
+        throw: [0,1000],
+        reel: [5200,1000]
     }
 })
 // var soundBow = new Howl({
@@ -283,9 +283,13 @@ const loop = new GameLoop((dt) => {
             soundThrow.stop()
             soundThrow.play()
             soundFishingReelThrow.play("throw")
-            setTimeout(() => {soundDobber.play("land")},4750)
-            stepTimer=0
-            state.phase = "waiting"
+            armBetaBaseline = null
+            // set beta to null to ensure that we stay in this state for a little longer without triggering this gameloop
+            setTimeout(() => {
+                soundDobber.play("land")
+                stepTimer=0
+                state.phase = "waiting"
+            },1000)
         }
     }
     else if (state.phase =="waiting"){
@@ -335,10 +339,12 @@ const loop = new GameLoop((dt) => {
         // success if crank is rotated n times withing m seconds?
         if (crankAngle >= 2*360){
             state.phase = "success"
+            crankAngle = 0
             soundSuccess.play()
             state.score++
         }
-        if (stepTimer>5*STEP_INTERVAL){
+        if (stepTimer>10*STEP_INTERVAL){
+            crankAngle = 0
             state.phase = "failure"
             soundFailure.play()
         }
