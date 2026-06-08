@@ -41,7 +41,7 @@ export class InputHandler {
     };
 
     private debug = false;
-    private shootCooldown = false;
+    // private shootCooldown = false;
     private joystick: JoystickState = { x: 0, y: 0, active: false };
     private joystickStartPos: { x: number; y: number } | null = null;
     private joystickPointerId: number | null = null;
@@ -52,8 +52,8 @@ export class InputHandler {
 
     start(): void {
         window.addEventListener("keydown", this.handleKey);
-        document.body.addEventListener("pointerdown", this.handlePointer);
-        document.body.addEventListener("pointerup", this.handlePointerUp);
+        // document.body.addEventListener("pointerdown", this.handlePointer);
+        // document.body.addEventListener("pointerup", this.handlePointerUp);
         document.body.addEventListener("pointerdown", this.handleJoystickStart);
         document.body.addEventListener("pointermove", this.handleJoystickMove);
         document.body.addEventListener("pointerup", this.handleJoystickEnd);
@@ -68,8 +68,8 @@ export class InputHandler {
 
     stop(): void {
         window.removeEventListener("keydown", this.handleKey);
-        document.body.removeEventListener("pointerdown", this.handlePointer);
-        document.body.removeEventListener("pointerup", this.handlePointerUp);
+        // document.body.removeEventListener("pointerdown", this.handlePointer);
+        // document.body.removeEventListener("pointerup", this.handlePointerUp);
         document.body.removeEventListener("pointerdown", this.handleJoystickStart);
         document.body.removeEventListener("pointermove", this.handleJoystickMove);
         document.body.removeEventListener("pointerup", this.handleJoystickEnd);
@@ -132,22 +132,22 @@ export class InputHandler {
         };
     };
 
-    private handlePointer = (e: PointerEvent): void => {
-        if (this.shootCooldown) return;
-        if (e.pointerType === "mouse" && !this.debug) return;
-        const action = e.clientX < window.innerWidth / 2 ? "moveLeft" : "moveRight";
-        this.callbacks.forEach(cb => cb(action));
-    };
+    // private handlePointer = (e: PointerEvent): void => {
+    //     if (this.shootCooldown) return;
+    //     if (e.pointerType === "mouse" && !this.debug) return;
+    //     const action = e.clientX < window.innerWidth / 2 ? "moveLeft" : "moveRight";
+    //     this.callbacks.forEach(cb => cb(action));
+    // };
 
-    private handlePointerUp = (e: PointerEvent): void => {
-        if (this.shootCooldown) return;
-        if (e.pointerType === "mouse" && !this.debug) return;
-        this.shootCooldown = true;
-        if (e.clientX < window.innerWidth / 2) {
-            this.callbacks.forEach(cb => cb("shoot"));
-        }
-        setTimeout(() => { this.shootCooldown = false; }, 300);
-    };
+    // private handlePointerUp = (e: PointerEvent): void => {
+    //     if (this.shootCooldown) return;
+    //     if (e.pointerType === "mouse" && !this.debug) return;
+    //     this.shootCooldown = true;
+    //     if (e.clientX < window.innerWidth / 2) {
+    //         this.callbacks.forEach(cb => cb("shoot"));
+    //     }
+    //     setTimeout(() => { this.shootCooldown = false; }, 300);
+    // };
 
     private handleJoystickStart = (e: PointerEvent): void => {
         // Only claim this pointer if no joystick is active yet

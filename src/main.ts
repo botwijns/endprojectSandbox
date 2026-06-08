@@ -146,7 +146,7 @@ function startRound(): void {
     }
     nextSound = true;
     soundFishingBackground.play()
-    soundFishingBackground.volume(0.5)
+    soundFishingBackground.volume(0.3)
     soundFishingBackground.loop(true)
 }
 // function generateSoundLocation(angle:number, distance:number): number[]{
@@ -273,6 +273,7 @@ const loop = new GameLoop((dt) => {
             // we change the state to throwing, as we change the state, the baseline remains the same for the rest of the round
             soundThrow.play()
             state.phase = "throwing"
+            updateUI()
         }
     }
     //wait a tick between phases
@@ -284,11 +285,12 @@ const loop = new GameLoop((dt) => {
             soundThrow.play()
             soundFishingReelThrow.play("throw")
             armBetaBaseline = null
-            // set beta to null to ensure that we stay in this state for a little longer without triggering this gameloop
+            // set beta to null to ensure that we stay in this state for a little longer without triggering the next state
             setTimeout(() => {
                 soundDobber.play("land")
                 stepTimer=0
                 state.phase = "waiting"
+                updateUI()
             },1000)
         }
     }
@@ -300,6 +302,7 @@ const loop = new GameLoop((dt) => {
             soundCaught.play("caught")
             state.phase = "reeling"
             stepTimer = 0
+            updateUI()
         }
         // armAngleBaseline = orientation.alpha
         // state.phase = "reeling"
@@ -343,12 +346,14 @@ const loop = new GameLoop((dt) => {
             soundSuccess.play()
             soundFishingReel.stop();
             state.score++
+            updateUI()
         }
         if (stepTimer>10*STEP_INTERVAL){
             crankAngle = 0
             state.phase = "failure"
             soundFishingReel.stop();
             soundFailure.play()
+            updateUI()
         }
         // Use crankAngle however you need — e.g. drive a gear, a drum, a wheel
         log("crank: " + crankAngle.toFixed(1) + " °");
@@ -420,6 +425,7 @@ const loop = new GameLoop((dt) => {
         }
 
         state.phase = "idle"
+        updateUI()
     }
 });
 
