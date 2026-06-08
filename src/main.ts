@@ -62,11 +62,7 @@ var soundDobber = new Howl({
     }
 })
 var soundCaught = new Howl({
-    src: ["sounds/fishingHook.webm", "sounds/fishingHook.wav", "sounds/fishingHook.mp3"],
-    sprite: {
-        land: [0,2000],
-        caught: [2000,13500]
-    }
+    src: ["sounds/fishCaught.webm", "sounds/fishCaught.wav", "sounds/fishCaught.mp3"],
 })
 var soundFishingBackground = new Howl({src: ["sounds/fishing-background.webm", "sounds/fishing-background.mp3","sounds/fishing-background.wav"]})
 var soundThrow = new Howl({src: ["sounds/throw-woosh.webm", "sounds/throw-woosh.wav", "sounds/throw-woosh.mp3"]})
@@ -299,7 +295,7 @@ const loop = new GameLoop((dt) => {
         stepTimer+=dt
         if (stepTimer>=STEP_INTERVAL*state.randomDistances[state.currentStep]){
             //start playing the sound for being caught
-            soundCaught.play("caught")
+            soundCaught.play()
             state.phase = "reeling"
             stepTimer = 0
             updateUI()
