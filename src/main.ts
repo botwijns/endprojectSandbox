@@ -337,15 +337,17 @@ const loop = new GameLoop((dt) => {
         }
 
         // success if crank is rotated n times withing m seconds?
-        if (crankAngle >= 2*360){
+        if (Math.abs(crankAngle) >= 2*360){
             state.phase = "success"
             crankAngle = 0
             soundSuccess.play()
+            soundFishingReel.stop();
             state.score++
         }
         if (stepTimer>10*STEP_INTERVAL){
             crankAngle = 0
             state.phase = "failure"
+            soundFishingReel.stop();
             soundFailure.play()
         }
         // Use crankAngle however you need — e.g. drive a gear, a drum, a wheel
@@ -456,6 +458,7 @@ startBtn.addEventListener("click", async () => {
         state.running = false;
         input.stop();
         loop.stop();
+        Howler.stop()
         // soundFrog.stop();
         // synth.stopAll();
         soundFishingBackground.stop();
