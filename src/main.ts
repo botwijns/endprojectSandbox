@@ -70,7 +70,7 @@ var soundFishingReel = new Howl({src: ["sounds/fishingreel.webm", "sounds/fishin
 var soundFishingReelThrow = new Howl({
     src: ["sounds/fishing-reel-throw.webm", "sounds/fishing-reel-throw.wav", "sounds/fishing-reel-throw.mp3"],
     sprite: {
-        throw: [0,1000],
+        throw: [0,3000],
         reel: [5200,1000]
     }
 })
