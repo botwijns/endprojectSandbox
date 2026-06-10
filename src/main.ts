@@ -339,6 +339,7 @@ const loop = new GameLoop((dt) => {
         if (Math.abs(crankAngle) >= 2*360){
             state.phase = "success"
             crankAngle = 0
+            crankVelocity = 0
             soundSuccess.play()
             soundFishingReel.stop();
             isSoundPlaying = false;
@@ -347,6 +348,7 @@ const loop = new GameLoop((dt) => {
         }
         if (stepTimer>10*STEP_INTERVAL){
             crankAngle = 0
+            crankVelocity = 0
             state.phase = "failure"
             soundFishingReel.stop();
             isSoundPlaying = false;
