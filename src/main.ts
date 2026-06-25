@@ -37,8 +37,8 @@ function scheduleNote(
 // ── Constants ─────────────────────────────────────────────────────────────────
 const BPM         = 90;
 const BEAT        = 60 / BPM;
-const HIT_WINDOW  = 0.25;   // ±seconds for a valid hit
-const PERFECT_W   = HIT_WINDOW * 0.4;
+const HIT_WINDOW  = 1;   // ±seconds for a valid hit
+const PERFECT_W   = HIT_WINDOW;
 const AUDIO_LATENCY = 0.15; // seconds — tune this to your headphones (100–200ms typical)
 // Pitches used as direction cues during listen phase
 const PITCH_LEFT  = 48;  // low C — left
