@@ -4,8 +4,11 @@ export interface Entity {
     y: number;
     soundId: string;
 }
-export type Direction = "left" | "right";
-
+export type Direction = "left" | "right" | "wait";
+export type Note = {
+    direction: Direction;
+    time: number;
+}
 export interface State {
     player: { x: number, y: number };
     sequence: Direction[];
@@ -20,6 +23,9 @@ export interface State {
     randomDistances: number[];
     drawnStage: number;
     armed: boolean;
+    notes: Note[];
+    nextNoteIndex: number;
+    songTime: number;
 }
 export function createEntity(id: string, x: number, y:number, soundId:string) : Entity {
     return { id, x, y , soundId}
@@ -39,6 +45,9 @@ export function createInitialState(): State {
         randomDistances: [],
         drawnStage: 0,
         armed: false,
+        notes: [],
+        nextNoteIndex: 0,
+        songTime: 0,
     };
 }
 export function generateNumberSequence(length:number, start: number, end:number): number[] {
@@ -47,5 +56,15 @@ export function generateNumberSequence(length:number, start: number, end:number)
     return Array.from({ length: length }, () => Math.random()*range+start)
 }
 export function generateSequence(length: number): Direction[] {
-    return Array.from({ length }, () => Math.random() < 0.5 ? "left" : "right");
+    return Array.from({ length }, () => {
+        const r = Math.random();
+
+        if (r < 0.25) {
+            return "left";
+        } else if (r < 0.75) {
+            return "wait";
+        } else {
+            return "right";
+        }
+    });
 }

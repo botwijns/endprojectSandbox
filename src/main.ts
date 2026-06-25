@@ -2,7 +2,126 @@ import {GameLoop} from "./gameLoop.ts";
 import {InputHandler} from "./inputHandler.ts";
 import {createInitialState,  generateNumberSequence, generateSequence} from "./gameState.ts";
 import {SynthManager} from "./audio/SynthManager.ts";
-import {Howl, Howler} from "howler";
+import { Howl, Howler } from "howler";
+import "webaudiofont";
+declare const WebAudioFontPlayer: any;
+// Font files loaded as side-effects — they attach globals
+
+declare const _tone_0000_GeneralUserGS_sf2_file: any;
+declare const _tone_0040_GeneralUserGS_sf2_file: any;
+declare const _drum_36_1_Chaos_sf2_file: any;
+declare const _drum_38_1_Chaos_sf2_file: any;
+declare const _drum_42_1_Chaos_sf2_file: any;
+// ── WebAudioFont setup ────────────────────────────
+const ctx = new AudioContext();
+const player = new WebAudioFontPlayer();
+
+player.loader.decodeAfterLoading(ctx, "_tone_0000_GeneralUserGS_sf2_file");
+player.loader.decodeAfterLoading(ctx, "_tone_0040_GeneralUserGS_sf2_file");
+
+const instruments = {
+    piano:  _tone_0000_GeneralUserGS_sf2_file,
+    violin: _tone_0040_GeneralUserGS_sf2_file,
+    kick: _drum_36_1_Chaos_sf2_file,
+    snare: _drum_38_1_Chaos_sf2_file,
+    highHat: _drum_42_1_Chaos_sf2_file,
+};
+
+// ── Helper (optional, keeps call sites clean) ─────
+function playNote(id: keyof typeof instruments, pitch: number, duration: number, volume = 0.25) {
+    player.queueWaveTable(ctx, ctx.destination, instruments[id], ctx.currentTime, pitch, duration, volume);
+}
+
+// ── Rhythm game ───────────────────────────────────────────────────────────────
+const BPM = 100;
+const BEAT = 60 / BPM;           // seconds per beat
+const HIT_WINDOW = 0.18;         // ±seconds around a beat that counts as a hit
+const LOOKAHEAD = 0.3;           // schedule beats this far ahead (seconds)
+const SCHEDULE_INTERVAL = 100;   // ms between scheduler ticks
+
+// Upcoming beats: { time: AudioContext time this beat fires }
+const scheduledBeats: { time: number }[] = [];
+let rhythmIntervalId: ReturnType<typeof setInterval> | null = null;
+let rhythmStartTime = 0;
+let nextBeatIndex = 0;
+let rhythmCombo = 0;
+
+// Pattern: kick on 1 & 3, snare on 2 & 4, hi-hat on every beat
+const BEAT_PATTERN: Array<{ id: keyof typeof instruments; pitch: number; beat: number }> = [
+    { id: "kick",    pitch: 36, beat: 0 },
+    { id: "highHat", pitch: 42, beat: 0 },
+    { id: "highHat", pitch: 42, beat: 1 },
+    { id: "snare",   pitch: 38, beat: 1 },
+    { id: "kick",    pitch: 36, beat: 2 },
+    { id: "highHat", pitch: 42, beat: 2 },
+    { id: "highHat", pitch: 42, beat: 3 },
+    { id: "snare",   pitch: 38, beat: 3 },
+];
+const PATTERN_LENGTH = 4; // beats before repeating
+
+function scheduleBeat(beatIndex: number, startTime: number): void {
+    const beatTime = startTime + beatIndex * BEAT;
+    for (const note of BEAT_PATTERN) {
+        if (note.beat === beatIndex % PATTERN_LENGTH) {
+            player.queueWaveTable(ctx, ctx.destination, instruments[note.id], beatTime, note.pitch, 0.15, 0.6);
+        }
+    }
+    scheduledBeats.push({ time: beatTime });
+}
+
+function startRhythm(): void {
+    rhythmStartTime = ctx.currentTime + 0.1;
+    nextBeatIndex = 0;
+    rhythmCombo = 0;
+    scheduledBeats.length = 0;
+
+    rhythmIntervalId = setInterval(() => {
+        const lookAheadUntil = ctx.currentTime + LOOKAHEAD;
+        while (rhythmStartTime + nextBeatIndex * BEAT < lookAheadUntil) {
+            scheduleBeat(nextBeatIndex, rhythmStartTime);
+            nextBeatIndex++;
+        }
+        // Prune beats that have passed
+        const now = ctx.currentTime;
+        while (scheduledBeats.length && scheduledBeats[0].time < now - HIT_WINDOW) {
+            scheduledBeats.shift();
+        }
+    }, SCHEDULE_INTERVAL);
+}
+
+function stopRhythm(): void {
+    if (rhythmIntervalId !== null) {
+        clearInterval(rhythmIntervalId);
+        rhythmIntervalId = null;
+    }
+    scheduledBeats.length = 0;
+}
+
+/**
+ * Call this whenever the player does a crank input during reeling.
+ * Returns "perfect" | "good" | "miss".
+ */
+function onCrankBeat(): "perfect" | "good" | "miss" {
+    const now = ctx.currentTime;
+    let closest = Infinity;
+    for (const beat of scheduledBeats) {
+        const diff = Math.abs(beat.time - now);
+        if (diff < closest) closest = diff;
+    }
+    if (closest < HIT_WINDOW * 0.4) {
+        rhythmCombo++;
+        log(`perfect! combo: ${rhythmCombo}`);
+        return "perfect";
+    }
+    if (closest < HIT_WINDOW) {
+        rhythmCombo++;
+        log(`good! combo: ${rhythmCombo}`);
+        return "good";
+    }
+    rhythmCombo = 0;
+    log("miss");
+    return "miss";
+}
 
 const debug= !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
 const synth = new SynthManager();
@@ -64,7 +183,7 @@ var soundDobber = new Howl({
 var soundCaught = new Howl({
     src: ["sounds/fishCaught.webm", "sounds/fishCaught.wav", "sounds/fishCaught.mp3"],
 })
-var soundFishingBackground = new Howl({src: ["sounds/fishing-background.webm", "sounds/fishing-background.mp3","sounds/fishing-background.wav"]})
+// var soundFishingBackground = new Howl({src: ["sounds/fishing-background.webm", "sounds/fishing-background.mp3","sounds/fishing-background.wav"]})
 var soundThrow = new Howl({src: ["sounds/throw-woosh.webm", "sounds/throw-woosh.wav", "sounds/throw-woosh.mp3"]})
 var soundFishingReel = new Howl({src: ["sounds/fishingreel.webm", "sounds/fishingreel.mp3","sounds/fishingreel.wav"]})
 var soundFishingReelThrow = new Howl({
@@ -141,9 +260,9 @@ function startRound(): void {
         nextSoundTimeout = null;
     }
     nextSound = true;
-    soundFishingBackground.play()
-    soundFishingBackground.volume(0.3)
-    soundFishingBackground.loop(true)
+    // soundFishingBackground.play()
+    // soundFishingBackground.volume(0.3)
+    // soundFishingBackground.loop(true)
 }
 // function generateSoundLocation(angle:number, distance:number): number[]{
 //     const x = Math.sin(angle)*distance*5;
@@ -175,19 +294,21 @@ function startRound(): void {
 //     // distance = newDistance;
 // }
 
-// input.onAction((action) => {
-//     // audio.resume();
+input.onAction((action) => {
+    // audio.resume();
 //     Howler.ctx?.resume();
-//     if (action === "moveLeft")  {
-//         log("arm")
-//         state.armed = true
-//         soundArm.play()
-//     }
-//     if (action === "moveRight"){
-//         log("arm")
-//         state.armed = true
-//         soundArm.play()
-//     }
+    if (action === "moveLeft")  {
+        log("left")
+        player.loader.waitLoad(() => {
+            playNote("snare", 38, 1.0);
+        });
+    }
+    if (action === "moveRight"){
+        log("right")
+        player.loader.waitLoad(() => {
+            playNote("kick", 36, 1.0);
+        });
+    }
 //     if (action === "interact") {
 //         state.phase = "waiting"
 //     }
@@ -236,7 +357,7 @@ function startRound(): void {
 //
 //         // ensure sound stops when arming is stopped
 //     }
-// });
+});
 
 const loop = new GameLoop((dt) => {
     if (!state.running) return;
@@ -298,6 +419,7 @@ const loop = new GameLoop((dt) => {
             soundCaught.play()
             state.phase = "reeling"
             stepTimer = 0
+            player.loader.waitLoad(() => startRhythm());
             updateUI()
         }
         // armAngleBaseline = orientation.alpha
@@ -317,6 +439,10 @@ const loop = new GameLoop((dt) => {
 
         if (joyAngle !== null && prevJoyAngle !== null) {
             const delta = shortestAngleDelta(prevJoyAngle, joyAngle);
+            // Detect a new crank stroke (direction commit) as a rhythm hit
+            if (Math.sign(delta) !== Math.sign(crankVelocity)) {
+                onCrankBeat();
+            }
             crankVelocity = delta;          // new input overrides decay
             crankAngle += delta;
         } else {
@@ -340,6 +466,9 @@ const loop = new GameLoop((dt) => {
             state.phase = "success"
             crankAngle = 0
             crankVelocity = 0
+            stopRhythm()
+            // Bonus score for rhythm combo
+            if (rhythmCombo >= 4) state.score++;
             soundSuccess.play()
             soundFishingReel.stop();
             isSoundPlaying = false;
@@ -350,6 +479,7 @@ const loop = new GameLoop((dt) => {
             crankAngle = 0
             crankVelocity = 0
             state.phase = "failure"
+            stopRhythm()
             soundFishingReel.stop();
             isSoundPlaying = false;
             soundFailure.play()
@@ -464,10 +594,11 @@ startBtn.addEventListener("click", async () => {
         state.running = false;
         input.stop();
         loop.stop();
+        stopRhythm();
         Howler.stop()
         // soundFrog.stop();
         // synth.stopAll();
-        soundFishingBackground.stop();
+        // soundFishingBackground.stop();
         startBtn.textContent = "Start";
         gameRunning = false;
     }
