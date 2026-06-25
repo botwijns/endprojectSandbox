@@ -37,9 +37,9 @@ function scheduleNote(
 // ── Constants ─────────────────────────────────────────────────────────────────
 const BPM         = 90;
 const BEAT        = 60 / BPM;
-const HIT_WINDOW  = 0.5;   // ±seconds for a valid hit
+const HIT_WINDOW  = 0.25;   // ±seconds for a valid hit
 const PERFECT_W   = HIT_WINDOW * 0.4;
-
+const AUDIO_LATENCY = 0.15; // seconds — tune this to your headphones (100–200ms typical)
 // Pitches used as direction cues during listen phase
 const PITCH_LEFT  = 48;  // low C — left
 const PITCH_RIGHT = 60;  // middle C — right
@@ -194,7 +194,7 @@ function onPlayerInput(dir: Direction): void {
     let bestIdx  = -1;
     let bestDiff = Infinity;
     pendingBeats.forEach((b, i) => {
-        const diff = Math.abs(b.time - now);
+        const diff = Math.abs(b.time - (now - AUDIO_LATENCY));
         if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
     });
 
