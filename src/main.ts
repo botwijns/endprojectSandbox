@@ -136,25 +136,38 @@ function startPlayPhase(): void {
     phase = "play";
     phaseEl.textContent = "🎮 Your turn!";
     log("reproduce the sequence");
+    const COUNTDOWN = [3, 2, 1];
+    const TICK = 800; // ms per countdown step
 
-    const bars      = Math.ceil(patternLength / 4);
-    const startTime = ctx.currentTime + 0.3;
+    COUNTDOWN.forEach((n, i) => {
+        setTimeout(() => {
+            if (!gameRunning) return;
+            phaseEl.textContent = `${n}…`;
+        }, i * TICK);
+    });
 
-    scheduleDrums(startTime, bars);
+    setTimeout(() => {
+        if (!gameRunning) return;
+        phaseEl.textContent = "🎮 Your turn!";
 
-    // Build pending beats — same quarter-note grid as listen phase
-    pendingBeats = pattern.map((direction, i) => ({
-        time: startTime + i * BEAT,
-        direction,
-    }));
+        const bars      = Math.ceil(patternLength / 4);
+        const startTime = ctx.currentTime + 0.3;
 
-    // phaseEndTime = startTime + patternLength * BEAT;
+        scheduleDrums(startTime, bars);
 
-    // After the pattern window closes, evaluate any remaining missed beats
-    const playDuration = (patternLength + 1) * BEAT * 1000;
-    songLoopId = setTimeout(() => {
-        if (gameRunning) endPlayPhase();
-    }, playDuration);
+        // Build pending beats — same quarter-note grid as listen phase
+        pendingBeats = pattern.map((direction, i) => ({
+            time: startTime + i * BEAT,
+            direction,
+        }));
+
+        // After the pattern window closes, evaluate any remaining missed beats
+        const playDuration = (patternLength + 1) * BEAT * 1000;
+        songLoopId = setTimeout(() => {
+            if (gameRunning) endPlayPhase();
+        }, playDuration);
+    }, COUNTDOWN.length * TICK);
+
 }
 
 // ── End of play phase ─────────────────────────────────────────────────────────
