@@ -1,581 +1,301 @@
-import {GameLoop} from "./gameLoop.ts";
-import {InputHandler} from "./inputHandler.ts";
-import {createInitialState,  generateNumberSequence, generateSequence} from "./gameState.ts";
-import {SynthManager} from "./audio/SynthManager.ts";
-import { Howl, Howler } from "howler";
+import { GameLoop } from "./gameLoop.ts";
+import { InputHandler } from "./inputHandler.ts";
+import { Howler } from "howler";
 import "webaudiofont";
 declare const WebAudioFontPlayer: any;
-// Font files loaded as side-effects — they attach globals
+declare const _tone_0000_GeneralUserGS_sf2_file: any; // piano
+declare const _tone_0040_GeneralUserGS_sf2_file: any; // violin
+declare const _drum_36_1_Chaos_sf2_file: any;         // kick
+declare const _drum_38_1_Chaos_sf2_file: any;         // snare
+declare const _drum_42_1_Chaos_sf2_file: any;         // hi-hat
 
-declare const _tone_0000_GeneralUserGS_sf2_file: any;
-declare const _tone_0040_GeneralUserGS_sf2_file: any;
-declare const _drum_36_1_Chaos_sf2_file: any;
-declare const _drum_38_1_Chaos_sf2_file: any;
-declare const _drum_42_1_Chaos_sf2_file: any;
-// ── WebAudioFont setup ────────────────────────────
+// ── WebAudioFont setup ────────────────────────────────────────────────────────
 const ctx = new AudioContext();
 const player = new WebAudioFontPlayer();
 
 player.loader.decodeAfterLoading(ctx, "_tone_0000_GeneralUserGS_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_tone_0040_GeneralUserGS_sf2_file");
+player.loader.decodeAfterLoading(ctx, "_drum_36_1_Chaos_sf2_file");
+player.loader.decodeAfterLoading(ctx, "_drum_38_1_Chaos_sf2_file");
+player.loader.decodeAfterLoading(ctx, "_drum_42_1_Chaos_sf2_file");
 
 const instruments = {
-    piano:  _tone_0000_GeneralUserGS_sf2_file,
-    violin: _tone_0040_GeneralUserGS_sf2_file,
-    kick: _drum_36_1_Chaos_sf2_file,
-    snare: _drum_38_1_Chaos_sf2_file,
+    piano:   _tone_0000_GeneralUserGS_sf2_file,
+    violin:  _tone_0040_GeneralUserGS_sf2_file,
+    kick:    _drum_36_1_Chaos_sf2_file,
+    snare:   _drum_38_1_Chaos_sf2_file,
     highHat: _drum_42_1_Chaos_sf2_file,
 };
 
-// ── Helper (optional, keeps call sites clean) ─────
-function playNote(id: keyof typeof instruments, pitch: number, duration: number, volume = 0.25) {
-    player.queueWaveTable(ctx, ctx.destination, instruments[id], ctx.currentTime, pitch, duration, volume);
+function scheduleNote(
+    id: keyof typeof instruments,
+    pitch: number,
+    when: number,
+    duration: number,
+    volume = 0.7
+): void {
+    player.queueWaveTable(ctx, ctx.destination, instruments[id], when, pitch, duration, volume);
 }
 
-// ── Rhythm game ───────────────────────────────────────────────────────────────
-const BPM = 100;
-const BEAT = 60 / BPM;           // seconds per beat
-const HIT_WINDOW = 0.18;         // ±seconds around a beat that counts as a hit
-const LOOKAHEAD = 0.3;           // schedule beats this far ahead (seconds)
-const SCHEDULE_INTERVAL = 100;   // ms between scheduler ticks
+// ── Song generation ───────────────────────────────────────────────────────────
 
-// Upcoming beats: { time: AudioContext time this beat fires }
-const scheduledBeats: { time: number }[] = [];
-let rhythmIntervalId: ReturnType<typeof setInterval> | null = null;
-let rhythmStartTime = 0;
-let nextBeatIndex = 0;
-let rhythmCombo = 0;
+type Direction = "left" | "right";
 
-// Pattern: kick on 1 & 3, snare on 2 & 4, hi-hat on every beat
-const BEAT_PATTERN: Array<{ id: keyof typeof instruments; pitch: number; beat: number }> = [
-    { id: "kick",    pitch: 36, beat: 0 },
-    { id: "highHat", pitch: 42, beat: 0 },
-    { id: "highHat", pitch: 42, beat: 1 },
-    { id: "snare",   pitch: 38, beat: 1 },
-    { id: "kick",    pitch: 36, beat: 2 },
-    { id: "highHat", pitch: 42, beat: 2 },
-    { id: "highHat", pitch: 42, beat: 3 },
-    { id: "snare",   pitch: 38, beat: 3 },
-];
-const PATTERN_LENGTH = 4; // beats before repeating
+interface Beat {
+    index: number;       // beat index within the pattern (0-based)
+    time: number;        // absolute AudioContext time
+    direction: Direction;
+    subdivision: number; // 0 = quarter, 1 = eighth-note offbeat
+}
 
-function scheduleBeat(beatIndex: number, startTime: number): void {
-    const beatTime = startTime + beatIndex * BEAT;
-    for (const note of BEAT_PATTERN) {
-        if (note.beat === beatIndex % PATTERN_LENGTH) {
-            player.queueWaveTable(ctx, ctx.destination, instruments[note.id], beatTime, note.pitch, 0.15, 0.6);
+interface Song {
+    bpm: number;
+    beats: Beat[];           // player-action beats (quarter + occasional eighth notes)
+    patternBeats: number;    // total length of pattern in quarter-note beats
+    scale: number[];         // MIDI pitches to draw melody from
+    melodyNotes: Array<{ pitch: number; beat: number; duration: number }>;
+}
+
+const SCALES = {
+    minor:      [0, 2, 3, 5, 7, 8, 10],
+    major:      [0, 2, 4, 5, 7, 9, 11],
+    dorian:     [0, 2, 3, 5, 7, 9, 10],
+    pentatonic: [0, 3, 5, 7, 10],
+};
+
+function rand(min: number, max: number): number {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function pick<T>(arr: T[]): T {
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function generateSong(startTime: number): Song {
+    const bpm = rand(85, 130);
+    const beat = 60 / bpm;
+    const patternBeats = 8; // 2 bars of 4/4
+
+    // Pick a random scale and root note
+    const scaleType = pick(Object.keys(SCALES)) as keyof typeof SCALES;
+    const root = rand(48, 60); // C3–C4 range
+    const scale = SCALES[scaleType].map(i => root + i);
+
+    // ── Drum groove ───────────────────────────────────────────────────────────
+    // Kick: always on beat 1, randomise beat 3 vs 3-and
+    // Snare: always on 2 & 4
+    // Hi-hat: every eighth note, occasional 16th flourish
+
+    for (let b = 0; b < patternBeats; b++) {
+        const t = startTime + b * beat;
+        const beatInBar = b % 4;
+
+        // Kick
+        if (beatInBar === 0) scheduleNote("kick", 36, t, beat * 0.4, 0.9);
+        if (beatInBar === 2 && Math.random() > 0.4) scheduleNote("kick", 36, t, beat * 0.3, 0.8);
+        if (beatInBar === 2 && Math.random() > 0.7) scheduleNote("kick", 36, t + beat * 0.5, beat * 0.2, 0.7); // off-beat kick
+
+        // Snare
+        if (beatInBar === 1 || beatInBar === 3) scheduleNote("snare", 38, t, beat * 0.3, 0.85);
+
+        // Hi-hat eighth notes
+        scheduleNote("highHat", 42, t,               beat * 0.1, 0.5);
+        scheduleNote("highHat", 42, t + beat * 0.5,  beat * 0.1, Math.random() > 0.3 ? 0.35 : 0.55);
+    }
+
+    // ── Melody ────────────────────────────────────────────────────────────────
+    // Generate a short motif (4 notes) and repeat/vary it across the 8 beats
+    const motif: number[] = Array.from({ length: 4 }, () => pick(scale));
+    const melodyNotes: Song["melodyNotes"] = [];
+    const melodyInstrument: keyof typeof instruments = Math.random() > 0.5 ? "piano" : "violin";
+
+    // Place motif on beats 0,2,4,6 with slight variation on repeat
+    for (let rep = 0; rep < 2; rep++) {
+        motif.forEach((pitch, i) => {
+            const beatPos = rep * 4 + i;
+            const variedPitch = rep > 0 && Math.random() > 0.5 ? pick(scale) : pitch;
+            const duration = beat * (Math.random() > 0.3 ? 0.9 : 0.45);
+            const t = startTime + beatPos * beat;
+            scheduleNote(melodyInstrument, variedPitch, t, duration, 0.55);
+            melodyNotes.push({ pitch: variedPitch, beat: beatPos, duration });
+        });
+    }
+
+    // ── Player beats ──────────────────────────────────────────────────────────
+    // Every quarter note beat is a player beat. Occasionally add an eighth-note
+    // offbeat for variety (more likely at higher BPM).
+    const offbeatChance = bpm > 110 ? 0.4 : 0.2;
+    const beats: Beat[] = [];
+
+    for (let b = 0; b < patternBeats; b++) {
+        const dir: Direction = Math.random() > 0.5 ? "left" : "right";
+        beats.push({
+            index: b,
+            time: startTime + b * beat,
+            direction: dir,
+            subdivision: 0,
+        });
+        if (Math.random() < offbeatChance) {
+            beats.push({
+                index: b,
+                time: startTime + b * beat + beat * 0.5,
+                direction: Math.random() > 0.5 ? "left" : "right",
+                subdivision: 1,
+            });
         }
     }
-    scheduledBeats.push({ time: beatTime });
+
+    // Sort by time (offbeats may have been inserted out of order)
+    beats.sort((a, b) => a.time - b.time);
+
+    return { bpm, beats, patternBeats, scale, melodyNotes };
 }
 
-function startRhythm(): void {
-    rhythmStartTime = ctx.currentTime + 0.1;
-    nextBeatIndex = 0;
-    rhythmCombo = 0;
-    scheduledBeats.length = 0;
+// ── Rhythm game state ─────────────────────────────────────────────────────────
 
-    rhythmIntervalId = setInterval(() => {
-        const lookAheadUntil = ctx.currentTime + LOOKAHEAD;
-        while (rhythmStartTime + nextBeatIndex * BEAT < lookAheadUntil) {
-            scheduleBeat(nextBeatIndex, rhythmStartTime);
-            nextBeatIndex++;
-        }
-        // Prune beats that have passed
-        const now = ctx.currentTime;
-        while (scheduledBeats.length && scheduledBeats[0].time < now - HIT_WINDOW) {
-            scheduledBeats.shift();
-        }
-    }, SCHEDULE_INTERVAL);
+const HIT_WINDOW    = 0.18;  // ±seconds for a "good" hit
+const PERFECT_RATIO = 0.4;   // fraction of HIT_WINDOW for "perfect"
+
+type HitResult = "perfect" | "good" | "miss";
+
+interface RoundResult {
+    beatIndex: number;
+    result: HitResult;
 }
 
-function stopRhythm(): void {
-    if (rhythmIntervalId !== null) {
-        clearInterval(rhythmIntervalId);
-        rhythmIntervalId = null;
-    }
-    scheduledBeats.length = 0;
-}
+let song: Song | null = null;
+let songLoopId: ReturnType<typeof setTimeout> | null = null;
+let pendingBeats: Beat[] = [];   // beats not yet hit or passed
+let results: RoundResult[] = [];
+let score = 0;
+let combo = 0;
+let gameRunning = false;
 
-/**
- * Call this whenever the player does a crank input during reeling.
- * Returns "perfect" | "good" | "miss".
- */
-function onCrankBeat(): "perfect" | "good" | "miss" {
-    const now = ctx.currentTime;
-    let closest = Infinity;
-    for (const beat of scheduledBeats) {
-        const diff = Math.abs(beat.time - now);
-        if (diff < closest) closest = diff;
-    }
-    if (closest < HIT_WINDOW * 0.4) {
-        rhythmCombo++;
-        log(`perfect! combo: ${rhythmCombo}`);
-        return "perfect";
-    }
-    if (closest < HIT_WINDOW) {
-        rhythmCombo++;
-        log(`good! combo: ${rhythmCombo}`);
-        return "good";
-    }
-    rhythmCombo = 0;
-    log("miss");
-    return "miss";
-}
-
-const debug= !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
-const synth = new SynthManager();
-const input = new InputHandler(debug);
-const state = createInitialState();
-const scoreEl = document.getElementById("score")!;
-const phaseEl = document.getElementById("phase")!;
+// ── UI elements ───────────────────────────────────────────────────────────────
+const debug    = !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
+const input    = new InputHandler(debug);
+const scoreEl  = document.getElementById("score")!;
+const phaseEl  = document.getElementById("phase")!;
 const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
-const logEl = document.getElementById("log")!;
-let crankAngle =0;
-let prevJoyAngle: number | null = null
-let crankVelocity = 0;        // degrees/frame, decays over time
-const VELOCITY_DECAY = 0.85;  // multiplied each frame — tune this (0.9 = slower decay, 0.7 = faster)
-const VELOCITY_MIN = 0.3;     // below this we consider it stopped — tune this too
-let isSoundPlaying = false;
-function getJoystickAngle(): number | null {
-    const { x, y, active } = input.getJoystick();
-    if (!active) return null;
-    // Only register as crank input if the stick is pushed far enough
-    if (Math.hypot(x, y) < 0.2) return null;
-    return Math.atan2(y, x) * (180 / Math.PI); // -180 to 180
+const logEl    = document.getElementById("log")!;
+
+function log(msg: string): void { logEl.textContent = msg; }
+function updateUI(): void {
+    scoreEl.textContent = `Score: ${score}`;
 }
 
-function shortestAngleDelta(from: number, to: number): number {
-    // Wraps the delta into -180..180 so crossing the ±180 boundary doesn't
-    // produce a huge jump
-    let delta = to - from;
-    if (delta > 180)  delta -= 360;
-    if (delta < -180) delta += 360;
-    return delta;
+// ── Song loop ─────────────────────────────────────────────────────────────────
+
+function startSong(): void {
+    player.loader.waitLoad(() => {
+        const startTime = ctx.currentTime + 0.2;
+        song = generateSong(startTime);
+        pendingBeats = [...song.beats];
+        results = [];
+
+        phaseEl.textContent = `♩ ${song.bpm} BPM — go!`;
+        log("left or right — hit the beat!");
+
+        // Loop: reschedule a new pattern when this one ends
+        const patternDuration = (song.patternBeats * 60) / song.bpm * 1000;
+        songLoopId = setTimeout(() => {
+            if (gameRunning) startSong();
+        }, patternDuration);
+    });
 }
 
-function log(message: string): void {
-    logEl.textContent = message;
+function stopSong(): void {
+    if (songLoopId !== null) {
+        clearTimeout(songLoopId);
+        songLoopId = null;
+    }
+    song = null;
+    pendingBeats = [];
 }
-// audio.load("footstep", { src: ["sounds/footstep.webm", "sounds/footstep.mp3"] });
-// audio.load("bgm",      { src: ["sounds/bgm.webm", "sounds/bgm.mp3"], loop: true, volume: 0.4 });
-// var soundLeft = new Howl({src: ["sounds/left.webm",    "sounds/left.mp3"]})
-// audio.load("left",    { src: ["sounds/left.webm",    "sounds/left.mp3"]    });
-// var soundRight = new Howl({src: ["sounds/right.webm",   "sounds/right.mp3"]});
-// audio.load("right",   { src: ["sounds/right.webm",   "sounds/right.mp3"]   });
-var soundSuccess = new Howl({src: ["sounds/success.webm", "sounds/success.mp3"]});
-// audio.load("success", { src: ["sounds/success.webm", "sounds/success.mp3"] });
-// audio.load("failure", { src: ["sounds/failure.webm", "sounds/failure.mp3"] });
-var soundFailure = new Howl({src: ["sounds/failure.webm", "sounds/failure.mp3"]})
-// audio.load("walking", { src: ["sounds/walking.webm", "sounds/walking.mp3"] });
-// var soundWalking = new Howl({src: ["sounds/walking.webm", "sounds/walking.mp3"] });
-// var soundFrog = new Howl({
-//     src: ["sounds/frogCroak.webm", "sounds/frogCroak.wav", "sounds/frogCroak.mp3"],
-//     loop: true
-// })
-var soundDobber = new Howl({
-    src: ["sounds/dobber-real.mp3", "sounds/dobber-real.webm", "sounds/dobber-real.wav"],
-    sprite: {
-        land: [500,1500],
-        caught: [3900,5000]
+
+// ── Hit detection ─────────────────────────────────────────────────────────────
+
+function onPlayerInput(dir: Direction): void {
+    if (!song || pendingBeats.length === 0) return;
+
+    const now = ctx.currentTime;
+
+    // Find the nearest pending beat to now, within the hit window
+    let bestIdx = -1;
+    let bestDiff = Infinity;
+    for (let i = 0; i < pendingBeats.length; i++) {
+        const diff = Math.abs(pendingBeats[i].time - now);
+        if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
     }
-})
-var soundCaught = new Howl({
-    src: ["sounds/fishCaught.webm", "sounds/fishCaught.wav", "sounds/fishCaught.mp3"],
-})
-// var soundFishingBackground = new Howl({src: ["sounds/fishing-background.webm", "sounds/fishing-background.mp3","sounds/fishing-background.wav"]})
-var soundThrow = new Howl({src: ["sounds/throw-woosh.webm", "sounds/throw-woosh.wav", "sounds/throw-woosh.mp3"]})
-var soundFishingReel = new Howl({src: ["sounds/fishingreel.webm", "sounds/fishingreel.mp3","sounds/fishingreel.wav"]})
-var soundFishingReelThrow = new Howl({
-    src: ["sounds/fishing-reel-throw.webm", "sounds/fishing-reel-throw.wav", "sounds/fishing-reel-throw.mp3"],
-    sprite: {
-        throw: [0,3000],
-        reel: [5200,1000]
+
+    if (bestIdx === -1 || bestDiff > HIT_WINDOW) {
+        // No beat close enough — miss
+        combo = 0;
+        log("miss!");
+        return;
     }
-})
-// var soundBow = new Howl({
-//     src: [ "sounds/bow.wav", "sounds/bow.mp3", "sounds/bow.webm"],
-//     sprite: {
-//         drawShort:    [966,   819],   // 1785 - 966
-//         shootShort:   [1905, 3705],   // 5610 - 1905
-//         hitShort:     [2801,  472],   // 3273 - 2801
-//         drawMedium:   [4423,  889],   // 5312 - 4423
-//         shootMedium:  [5340,  840],   // 6180 - 5340
-//         hitMedium:    [6349, 1094],   // 7443 - 6349
-//         drawLong:     [7492, 1827],   // 9319 - 7492
-//         shootLong:    [9474,  784],   // 10258 - 9474
-//         hitLong:      [10413, 740],   // 11153 - 10413
-//     },
-//     onload: () => console.log("bow loaded OK"),
-//     onloaderror: (id, err) => console.error("bow LOAD ERROR", id, err),
-//     onplayerror: (id, err) => console.error("bow PLAY ERROR", id, err),
-//     });
-// var soundArm = new Howl({src: ["sounds/arm.webm", "sounds/arm.mp3"]});
-// audio.load("bow", {
-//     src: ["sounds/bow.webm", "sounds/bow.mp3", "sounds/bow.wav"],
-//     sprite: {
-//         drawShort: [966, 1785],
-//         shootShort: [1905,5610],
-//         hitShort: [2801,3273],
-//         drawMedium: [4423,5312],
-//         shootMedium: [5340,6180],
-//         hitMedium: [6349,7443],
-//         drawLong: [7492, 9319],
-//         shootLong: [9474,10258],
-//         hitLong: [10413,11153]
-//     }
-// })
-// How long to wait between playing audiocue
-const STEP_INTERVAL = 2.0; // seconds
-let stepTimer = 0;
-// let volume = 1;
-// let rate: number;
-// let distance = -1;
-var armBeta: number|null = null;
-var armBetaBaseline: number|null = null;
-// var alpha: number|null = null;
-// var armAngleBaseline: number|null = null;
-// @ts-ignore
-var nextSound: boolean = true;
-var nextSoundTimeout: ReturnType<typeof setTimeout> | null = null; // add this
-// var armTime: number = 0;
-function startRound(): void {
-    updateUI()
-    console.log("Starting Round");
-    const length = state.score + 3; // sequence grows each round
-    state.sequence = generateSequence(length);
-    state.playerInput = [];
-    state.currentStep = 0;
-    state.phase = "idle";
-    stepTimer = 0;
-    state.randomAngles = generateNumberSequence(3, -45,45)
-    state.randomDistances = generateNumberSequence(3, 1,5)
-    // armTime = 0;
-    armBeta = null;
-    state.drawnStage = 0
-    state.drawn = false;
-    state.armed = false;
-    if (nextSoundTimeout !== null) {
-        clearTimeout(nextSoundTimeout);
-        nextSoundTimeout = null;
+
+    const beat = pendingBeats[bestIdx];
+
+    // Wrong direction counts as a miss
+    if (beat.direction !== dir) {
+        combo = 0;
+        pendingBeats.splice(bestIdx, 1);
+        log(`wrong direction! (wanted ${beat.direction})`);
+        return;
     }
-    nextSound = true;
-    // soundFishingBackground.play()
-    // soundFishingBackground.volume(0.3)
-    // soundFishingBackground.loop(true)
+
+    // Correct direction — rate by timing
+    let result: HitResult;
+    if (bestDiff < HIT_WINDOW * PERFECT_RATIO) {
+        result = "perfect";
+        score += 2;
+        combo++;
+    } else {
+        result = "good";
+        score += 1;
+        combo++;
+    }
+
+    // Combo bonus every 8 hits
+    if (combo > 0 && combo % 8 === 0) score += 3;
+
+    pendingBeats.splice(bestIdx, 1);
+    results.push({ beatIndex: beat.index, result });
+    log(`${result}! ${beat.direction} — combo ${combo}`);
+    updateUI();
 }
-// function generateSoundLocation(angle:number, distance:number): number[]{
-//     const x = Math.sin(angle)*distance*5;
-//     const y = Math.cos(angle)*distance*5;
-//     log("x: "+x +" y: "+y + " distance: "+ distance);
-//     return [x, y];
-// }
-// function handleInput(dir: Direction): void {
-//     console.log(dir);
-//     if (state.phase !== "playing") return;
-//     // we always walk first, then we make the sound faster or slower
-//     // audio.play("walking")
-//     // soundWalking.play()
-//     // console.log(dir)
-//     // let xAfter = state.player.x
-//     // if (dir=="left"){
-//     //     xAfter--;
-//     // }
-//     // else{
-//     //     xAfter ++;
-//     // }
-//     // const newDistance = Math.abs(state.randomNumbers[state.currentStep] - xAfter);
-//     // if (newDistance<distance){
-//     //     rate+=0.2;
-//     // }
-//     // else{
-//     //     rate-=0.2;
-//     // }
-//     // distance = newDistance;
-// }
+
+// ── Game loop (prunes missed beats) ──────────────────────────────────────────
+
+const loop = new GameLoop((_dt: number) => {
+    if (!gameRunning || !song) return;
+
+    const now = ctx.currentTime;
+
+    // Any beat more than HIT_WINDOW in the past without a hit is a miss
+    while (pendingBeats.length > 0 && pendingBeats[0].time < now - HIT_WINDOW) {
+        combo = 0;
+        log(`miss! (${pendingBeats[0].direction})`);
+        pendingBeats.shift();
+        updateUI();
+    }
+});
+
+// ── Input ─────────────────────────────────────────────────────────────────────
 
 input.onAction((action) => {
-    // audio.resume();
-//     Howler.ctx?.resume();
-    if (action === "moveLeft")  {
-        log("left")
-        player.loader.waitLoad(() => {
-            playNote("snare", 38, 1.0);
-        });
-    }
-    if (action === "moveRight"){
-        log("right")
-        player.loader.waitLoad(() => {
-            playNote("kick", 36, 1.0);
-        });
-    }
-//     if (action === "interact") {
-//         state.phase = "waiting"
-//     }
-//     if (action === "shoot") {
-//         state.armed = false
-//         soundArm.stop()
-//         armBeta = null
-//         armTime =0
-//         // log("shot")
-//         if (nextSoundTimeout !== null) {
-//             clearTimeout(nextSoundTimeout);
-//             nextSoundTimeout = null;
-//         }
-//         nextSound = true;
-//         if (state.drawn){
-//             //stop the sound of the drawn bow
-//             synth.stopAll()
-//             soundBow.play("shootShort")
-//             console.log("shooting bow")
-//             state.drawn = false;
-//             if (alpha!==null && armAngleBaseline!==null&& state.drawnStage==state.randomDistances[state.currentStep]&& (Math.abs(state.randomAngles[state.currentStep]-(armAngleBaseline-alpha))<20)){
-//                 state.phase = "success"
-//                 state.score++
-//                 setTimeout(() =>soundBow.play("hitShort"), 500);
-//             }
-//             else{
-//                 // shot misses! failure sound is played, but based on which side you need to move to, its either on the left or right. the volume indicates if you need to aim further or closer
-//                 console.log("miss!")
-//                 log("aimed at: "+alpha + "with baseline at: " + armAngleBaseline + " distance: " + state.drawnStage)
-//                 const volume = 1-(state.drawnStage-state.randomDistances[state.currentStep])/3
-//                 setTimeout(() => {
-//                     if (alpha !== null && armAngleBaseline !== null) {
-//                         soundFailure.volume(volume)
-//                         if (state.randomAngles[state.currentStep]-(armAngleBaseline-alpha) < 0) {
-//                             soundFailure.pos(1, 0)
-//                         } else {
-//                             soundFailure.pos(-1, 0)
-//                         }
-//                         soundFailure.play()
-//                     }
-//                 }, 500);
-//             }
-//             state.drawnStage = 0
-//         }
-//
-//
-//         // ensure sound stops when arming is stopped
-//     }
+    if (!gameRunning) return;
+    if (action === "moveLeft")  onPlayerInput("left");
+    if (action === "moveRight") onPlayerInput("right");
 });
 
-const loop = new GameLoop((dt) => {
-    if (!state.running) return;
-
-    const orientation = input.getOrientation();
-    //if beta is smaller than zero, we have crossed the z plane, to prevent errors, we will update the beta to a number that is always positive
-    const beta = orientation.beta !== null
-        ? 180 + orientation.beta
-        : orientation.beta;
-    // console.log(beta, gamma)
-    stepTimer += dt;
-    if (state.phase =="idle" && beta!==null){
-        //only do this if beta is not null:
-        if (armBetaBaseline== null){
-            //set both to be at least something if it is null right now.
-            armBetaBaseline = beta
-            armBeta = beta
-        }
-        //idle so we wait for them to throw the line out.
-        //each two seconds we record the orientation.
-        if (stepTimer >= STEP_INTERVAL) {
-            stepTimer = 0;
-            // we compare to STEP_INTERVAL-2*STEP_INTERVAL seconds ago. when it hits 2*STEP_INTERVAL seconds, we reset it to the one of STEP_INTERVAL seconds ago
-            armBetaBaseline = armBeta
-            armBeta = beta
-        }
-        if (armBetaBaseline!==null && beta-armBetaBaseline>10){
-            //if this is the case, the line is being thrown back, we do the following:
-            // we play the sound of throwing the line back
-            // we change the state to throwing, as we change the state, the baseline remains the same for the rest of the round
-            soundThrow.play()
-            state.phase = "throwing"
-            updateUI()
-        }
-    }
-    //wait a tick between phases
-    else if(state.phase == "throwing"&&armBetaBaseline!==null && beta!==null){
-        // all parameters are set, so we only check if the beta difference gets lower than 2?
-        if (beta-armBetaBaseline<2){
-            //in case the sound still plays, we stop and play the sound again for the actual throw
-            soundThrow.stop()
-            soundThrow.play()
-            soundFishingReelThrow.play("throw")
-            armBetaBaseline = null
-            // set beta to null to ensure that we stay in this state for a little longer without triggering the next state
-            setTimeout(() => {
-                soundDobber.play("land")
-                stepTimer=0
-                state.phase = "waiting"
-                updateUI()
-            },1000)
-        }
-    }
-    else if (state.phase =="waiting"){
-        //waiting for a randomly defined moment, between 2 and 10 seconds when you hear the float go under
-        stepTimer+=dt
-        if (stepTimer>=STEP_INTERVAL*state.randomDistances[state.currentStep]){
-            //start playing the sound for being caught
-            soundCaught.play()
-            state.phase = "reeling"
-            stepTimer = 0
-            player.loader.waitLoad(() => startRhythm());
-            updateUI()
-        }
-        // armAngleBaseline = orientation.alpha
-        // state.phase = "reeling"
-        // let coords = generateSoundLocation(state.randomAngles[state.currentStep],state.randomDistances[state.currentStep])
-        // soundFrog.play()
-        // soundFrog.pos(coords[0],coords[1])
-        // soundFrog.volume(1)
-        // console.log("frog at:")
-        // console.log(coords[0], coords[1])
-        // log("angle: "+ state.randomAngles[state.currentStep] + "distance: " + state.randomDistances[state.currentStep])
-
-    }
-    else if (state.phase =="reeling"){
-        stepTimer+=dt
-        const joyAngle = getJoystickAngle();
-
-        if (joyAngle !== null && prevJoyAngle !== null) {
-            const delta = shortestAngleDelta(prevJoyAngle, joyAngle);
-            // Detect a new crank stroke (direction commit) as a rhythm hit
-            if (Math.sign(delta) !== Math.sign(crankVelocity)) {
-                onCrankBeat();
-            }
-            crankVelocity = delta;          // new input overrides decay
-            crankAngle += delta;
-        } else {
-            crankVelocity *= VELOCITY_DECAY; // no input — let it coast
-        }
-
-        prevJoyAngle = joyAngle;
-
-        const isMoving = Math.abs(crankVelocity) > VELOCITY_MIN;
-
-        if (isMoving && !isSoundPlaying) {
-            soundFishingReel.play();
-            isSoundPlaying = true;
-        } else if (!isMoving && isSoundPlaying) {
-            soundFishingReel.stop();
-            isSoundPlaying = false;
-        }
-
-        // success if crank is rotated n times withing m seconds?
-        if (Math.abs(crankAngle) >= 2*360){
-            state.phase = "success"
-            crankAngle = 0
-            crankVelocity = 0
-            stopRhythm()
-            // Bonus score for rhythm combo
-            if (rhythmCombo >= 4) state.score++;
-            soundSuccess.play()
-            soundFishingReel.stop();
-            isSoundPlaying = false;
-            state.score++
-            updateUI()
-        }
-        if (stepTimer>10*STEP_INTERVAL){
-            crankAngle = 0
-            crankVelocity = 0
-            state.phase = "failure"
-            stopRhythm()
-            soundFishingReel.stop();
-            isSoundPlaying = false;
-            soundFailure.play()
-            updateUI()
-        }
-        // Use crankAngle however you need — e.g. drive a gear, a drum, a wheel
-        log("crank: " + crankAngle.toFixed(1) + " °");
-        //TODO: add yank or move feature for more interesting reeling?
-        //TODO: capture devicemovement to calculate score?
-    }
-    // alpha = orientation.alpha
-    // if (state.armed && armBeta == null) {
-    //     armBeta = beta;
-    //     armTime = 0;
-    //     nextSound = true;  // reset on fresh arm
-    //     if (nextSoundTimeout !== null) {
-    //         clearTimeout(nextSoundTimeout);  // cancel any leftover timeout
-    //         nextSoundTimeout = null;
-    //     }
-    // }
-    // armTime += dt;
-    // if (beta!== null && armBeta!== null && armTime > 0.3 && (beta-armBeta) > 10 && !state.drawn &&state.armed) {
-    //     log(beta+" "+ armBeta + armTime + state.drawn +state.armed)
-    //     const id = soundBow.play("drawShort");
-    //     console.log("play() returned:", id);
-    //     // audio.play("bow", 1,"drawShort")
-    //     console.log("drawing bow")
-    //     console.log("bow drawn to first state")
-    //     state.drawn = true;
-    //     if (nextSoundTimeout !== null) clearTimeout(nextSoundTimeout); // cancel any pending reset
-    //     nextSound = false;
-    //     nextSoundTimeout = setTimeout(() => { nextSound = true; }, 819);
-    //     //wait with setting the drawn state unitl the sound is done
-    // }
-
-    // if (beta!== null && armBeta!== null && armTime > 0.3 && state.drawn &&nextSound &&state.armed) {
-    //     //check if the bow is drawn to the next state
-    //     if ((beta-armBeta) >=10 &&(beta-armBeta) <20){
-    //         //bow drawn to first state
-    //         if (state.drawnStage!=1) {
-    //             synth.stopAll()
-    //             synth.playNote(NOTE.C4)
-    //             state.drawnStage = 1
-    //         }
-    //     }
-    //     else if ((beta-armBeta) >=20 &&(beta-armBeta) <30){
-    //         //bow drawn to second state
-    //         console.log("drawing bow to second state")
-    //         if(state.drawnStage!=2) {
-    //             synth.stopAll()
-    //             synth.playNote(NOTE.D4)
-    //             state.drawnStage = 2
-    //         }
-    //     }
-    //     else if ((beta-armBeta) >=30 &&(beta-armBeta) <40){
-    //         //bow drawn to third state
-    //         console.log("drawing bow to third state")
-    //         if (state.drawnStage!=3){
-    //             synth.stopAll()
-    //             synth.playNote(NOTE.E4)
-    //             state.drawnStage = 3
-    //
-    //         }
-    //     }
-    // }
-    if (state.phase === "success" || state.phase =="failure") {
-        state.currentStep = state.currentStep + 1;
-        // create new target locations
-        if (state.currentStep>2) {
-            state.currentStep = 0
-            state.randomAngles = generateNumberSequence(3,-45,45)
-            state.randomDistances= generateNumberSequence(3,1,3)
-        }
-
-        state.phase = "idle"
-        updateUI()
-    }
-});
-
-function updateUI(): void {
-    scoreEl.textContent = `Score: ${state.score}`;
-    phaseEl.textContent = {
-        waiting:  "Luister goed...",
-        reeling: "reeling!",
-        success:   "gevangen!",
-        failure:   "ontsnapt!",
-        idle:   "idle",
-        throwing: "throwing!"
-    }[state.phase];
-}
-let gameRunning = false;
+// ── Start / stop ──────────────────────────────────────────────────────────────
 
 startBtn.addEventListener("click", async () => {
     if (!gameRunning) {
+        ctx.resume();
         Howler.ctx?.resume();
-        synth.resume();
 
         const granted = await input.requestOrientationPermission();
         if (!granted) {
@@ -584,22 +304,20 @@ startBtn.addEventListener("click", async () => {
         }
 
         input.start();
-        state.running = true;
-        startRound();
-        loop.start();
-        startBtn.textContent = "Stop";
+        score = 0;
+        combo = 0;
         gameRunning = true;
         updateUI();
+        startSong();
+        loop.start();
+        startBtn.textContent = "Stop";
     } else {
-        state.running = false;
-        input.stop();
-        loop.stop();
-        stopRhythm();
-        Howler.stop()
-        // soundFrog.stop();
-        // synth.stopAll();
-        // soundFishingBackground.stop();
-        startBtn.textContent = "Start";
         gameRunning = false;
+        stopSong();
+        loop.stop();
+        input.stop();
+        phaseEl.textContent = `Final score: ${score}`;
+        log("game over");
+        startBtn.textContent = "Start";
     }
 });
