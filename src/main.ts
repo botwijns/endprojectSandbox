@@ -37,7 +37,7 @@ function scheduleNote(
 // ── Constants ─────────────────────────────────────────────────────────────────
 const BPM         = 90;
 const BEAT        = 60 / BPM;
-const HIT_WINDOW  = 0.25;   // ±seconds for a valid hit
+const HIT_WINDOW  = 0.5;   // ±seconds for a valid hit
 const PERFECT_W   = HIT_WINDOW * 0.4;
 
 // Pitches used as direction cues during listen phase
