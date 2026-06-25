@@ -4,7 +4,6 @@ import { Howler } from "howler";
 import "webaudiofont";
 declare const WebAudioFontPlayer: any;
 declare const _tone_0000_GeneralUserGS_sf2_file: any; // piano
-declare const _tone_0040_GeneralUserGS_sf2_file: any; // violin
 declare const _drum_36_1_Chaos_sf2_file: any;         // kick
 declare const _drum_38_1_Chaos_sf2_file: any;         // snare
 declare const _drum_42_1_Chaos_sf2_file: any;         // hi-hat
@@ -14,14 +13,12 @@ const ctx = new AudioContext();
 const player = new WebAudioFontPlayer();
 
 player.loader.decodeAfterLoading(ctx, "_tone_0000_GeneralUserGS_sf2_file");
-player.loader.decodeAfterLoading(ctx, "_tone_0040_GeneralUserGS_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_drum_36_1_Chaos_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_drum_38_1_Chaos_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_drum_42_1_Chaos_sf2_file");
 
 const instruments = {
     piano:   _tone_0000_GeneralUserGS_sf2_file,
-    violin:  _tone_0040_GeneralUserGS_sf2_file,
     kick:    _drum_36_1_Chaos_sf2_file,
     snare:   _drum_38_1_Chaos_sf2_file,
     highHat: _drum_42_1_Chaos_sf2_file,
@@ -37,207 +34,178 @@ function scheduleNote(
     player.queueWaveTable(ctx, ctx.destination, instruments[id], when, pitch, duration, volume);
 }
 
-// ── Song generation ───────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
+const BPM         = 90;
+const BEAT        = 60 / BPM;
+const HIT_WINDOW  = 0.25;   // ±seconds for a valid hit
+const PERFECT_W   = HIT_WINDOW * 0.4;
 
+// Pitches used as direction cues during listen phase
+const PITCH_LEFT  = 48;  // low C — left
+const PITCH_RIGHT = 60;  // middle C — right
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 type Direction = "left" | "right";
+type Phase = "idle" | "listen" | "play" | "result";
 
 interface Beat {
-    index: number;       // beat index within the pattern (0-based)
-    time: number;        // absolute AudioContext time
+    time: number;       // absolute ctx time during current phase
     direction: Direction;
-    subdivision: number; // 0 = quarter, 1 = eighth-note offbeat
 }
 
-interface Song {
-    bpm: number;
-    beats: Beat[];           // player-action beats (quarter + occasional eighth notes)
-    patternBeats: number;    // total length of pattern in quarter-note beats
-    scale: number[];         // MIDI pitches to draw melody from
-    melodyNotes: Array<{ pitch: number; beat: number; duration: number }>;
-}
-
-const SCALES = {
-    minor:      [0, 2, 3, 5, 7, 8, 10],
-    major:      [0, 2, 4, 5, 7, 9, 11],
-    dorian:     [0, 2, 3, 5, 7, 9, 10],
-    pentatonic: [0, 3, 5, 7, 10],
-};
-
-function rand(min: number, max: number): number {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function pick<T>(arr: T[]): T {
-    return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function generateSong(startTime: number): Song {
-    const bpm = rand(85, 130);
-    const beat = 60 / bpm;
-    const patternBeats = 8; // 2 bars of 4/4
-
-    // Pick a random scale and root note
-    const scaleType = pick(Object.keys(SCALES)) as keyof typeof SCALES;
-    const root = rand(48, 60); // C3–C4 range
-    const scale = SCALES[scaleType].map(i => root + i);
-
-    // ── Drum groove ───────────────────────────────────────────────────────────
-    // Kick: always on beat 1, randomise beat 3 vs 3-and
-    // Snare: always on 2 & 4
-    // Hi-hat: every eighth note, occasional 16th flourish
-
-    for (let b = 0; b < patternBeats; b++) {
-        const t = startTime + b * beat;
-        const beatInBar = b % 4;
-
-        // Kick
-        if (beatInBar === 0) scheduleNote("kick", 36, t, beat * 0.4, 0.9);
-        if (beatInBar === 2 && Math.random() > 0.4) scheduleNote("kick", 36, t, beat * 0.3, 0.8);
-        if (beatInBar === 2 && Math.random() > 0.7) scheduleNote("kick", 36, t + beat * 0.5, beat * 0.2, 0.7); // off-beat kick
-
-        // Snare
-        if (beatInBar === 1 || beatInBar === 3) scheduleNote("snare", 38, t, beat * 0.3, 0.85);
-
-        // Hi-hat eighth notes
-        scheduleNote("highHat", 42, t,               beat * 0.1, 0.5);
-        scheduleNote("highHat", 42, t + beat * 0.5,  beat * 0.1, Math.random() > 0.3 ? 0.35 : 0.55);
-    }
-
-    // ── Melody ────────────────────────────────────────────────────────────────
-    // Generate a short motif (4 notes) and repeat/vary it across the 8 beats
-    const motif: number[] = Array.from({ length: 4 }, () => pick(scale));
-    const melodyNotes: Song["melodyNotes"] = [];
-    const melodyInstrument: keyof typeof instruments = Math.random() > 0.5 ? "piano" : "violin";
-
-    // Place motif on beats 0,2,4,6 with slight variation on repeat
-    for (let rep = 0; rep < 2; rep++) {
-        motif.forEach((pitch, i) => {
-            const beatPos = rep * 4 + i;
-            const variedPitch = rep > 0 && Math.random() > 0.5 ? pick(scale) : pitch;
-            const duration = beat * (Math.random() > 0.3 ? 0.9 : 0.45);
-            const t = startTime + beatPos * beat;
-            scheduleNote(melodyInstrument, variedPitch, t, duration, 0.55);
-            melodyNotes.push({ pitch: variedPitch, beat: beatPos, duration });
-        });
-    }
-
-    // ── Player beats ──────────────────────────────────────────────────────────
-    // Every quarter note beat is a player beat. Occasionally add an eighth-note
-    // offbeat for variety (more likely at higher BPM).
-    const offbeatChance = bpm > 110 ? 0.4 : 0.2;
-    const beats: Beat[] = [];
-
-    for (let b = 0; b < patternBeats; b++) {
-        const dir: Direction = Math.random() > 0.5 ? "left" : "right";
-        beats.push({
-            index: b,
-            time: startTime + b * beat,
-            direction: dir,
-            subdivision: 0,
-        });
-        if (Math.random() < offbeatChance) {
-            beats.push({
-                index: b,
-                time: startTime + b * beat + beat * 0.5,
-                direction: Math.random() > 0.5 ? "left" : "right",
-                subdivision: 1,
-            });
-        }
-    }
-
-    // Sort by time (offbeats may have been inserted out of order)
-    beats.sort((a, b) => a.time - b.time);
-
-    return { bpm, beats, patternBeats, scale, melodyNotes };
-}
-
-// ── Rhythm game state ─────────────────────────────────────────────────────────
-
-const HIT_WINDOW    = 0.18;  // ±seconds for a "good" hit
-const PERFECT_RATIO = 0.4;   // fraction of HIT_WINDOW for "perfect"
-
-type HitResult = "perfect" | "good" | "miss";
-
-interface RoundResult {
-    beatIndex: number;
-    result: HitResult;
-}
-
-let song: Song | null = null;
+// ── Game state ────────────────────────────────────────────────────────────────
+let phase: Phase         = "idle";
+let patternLength        = 4;           // grows each round
+let pattern: Direction[] = [];          // the sequence to remember
+let pendingBeats: Beat[] = [];          // beats awaiting player input
+let score                = 0;
+let combo                = 0;
+let gameRunning          = false;
+// let phaseEndTime         = 0;           // ctx time when current phase ends
 let songLoopId: ReturnType<typeof setTimeout> | null = null;
-let pendingBeats: Beat[] = [];   // beats not yet hit or passed
-let results: RoundResult[] = [];
-let score = 0;
-let combo = 0;
-let gameRunning = false;
 
-// ── UI elements ───────────────────────────────────────────────────────────────
+// ── UI ────────────────────────────────────────────────────────────────────────
 const debug    = !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
-const input    = new InputHandler(debug);
+const inp      = new InputHandler(debug);
 const scoreEl  = document.getElementById("score")!;
 const phaseEl  = document.getElementById("phase")!;
 const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
 const logEl    = document.getElementById("log")!;
 
-function log(msg: string): void { logEl.textContent = msg; }
-function updateUI(): void {
-    scoreEl.textContent = `Score: ${score}`;
-}
+function log(msg: string)   { logEl.textContent  = msg; }
+function updateUI()         { scoreEl.textContent = `Score: ${score}`; }
 
-// ── Song loop ─────────────────────────────────────────────────────────────────
+// ── Drum groove ───────────────────────────────────────────────────────────────
+// Schedules one bar of 4/4 drums starting at `startTime`.
+// Called for both listen and play phases.
+function scheduleDrums(startTime: number, bars: number): void {
+    const totalBeats = bars * 4;
+    for (let b = 0; b < totalBeats; b++) {
+        const t          = startTime + b * BEAT;
+        const beatInBar  = b % 4;
 
-function startSong(): void {
-    player.loader.waitLoad(() => {
-        const startTime = ctx.currentTime + 0.2;
-        song = generateSong(startTime);
-        pendingBeats = [...song.beats];
-        results = [];
+        // Kick: beat 1, beat 3 (with variation)
+        if (beatInBar === 0) scheduleNote("kick",    36, t,              BEAT * 0.4, 0.9);
+        if (beatInBar === 2) scheduleNote("kick",    36, t,              BEAT * 0.3, 0.8);
 
-        phaseEl.textContent = `♩ ${song.bpm} BPM — go!`;
-        log("left or right — hit the beat!");
+        // Snare: beats 2 & 4
+        if (beatInBar === 1 || beatInBar === 3)
+            scheduleNote("snare",   38, t, BEAT * 0.3, 0.85);
 
-        // Loop: reschedule a new pattern when this one ends
-        const patternDuration = (song.patternBeats * 60) / song.bpm * 1000;
-        songLoopId = setTimeout(() => {
-            if (gameRunning) startSong();
-        }, patternDuration);
-    });
-}
-
-function stopSong(): void {
-    if (songLoopId !== null) {
-        clearTimeout(songLoopId);
-        songLoopId = null;
+        // Hi-hat: every eighth note
+        scheduleNote("highHat", 42, t,              BEAT * 0.1, 0.5);
+        scheduleNote("highHat", 42, t + BEAT * 0.5, BEAT * 0.1, 0.35);
     }
-    song = null;
-    pendingBeats = [];
+}
+
+// ── Pattern generation ────────────────────────────────────────────────────────
+function generatePattern(length: number): Direction[] {
+    return Array.from({ length }, () => Math.random() > 0.5 ? "left" : "right");
+}
+
+// ── Listen phase ──────────────────────────────────────────────────────────────
+// Plays drums + a piano cue note for each beat in the pattern.
+// Low note = left, high note = right.
+function startListenPhase(): void {
+    phase = "listen";
+    phaseEl.textContent = "👂 Listen…";
+    log("remember the sequence!");
+
+    const bars      = Math.ceil(patternLength / 4);
+    const startTime = ctx.currentTime + 0.3;
+
+    scheduleDrums(startTime, bars);
+
+    // Schedule one cue note per pattern beat, on quarter-note slots
+    pattern.forEach((dir, i) => {
+        const pitch = dir === "left" ? PITCH_LEFT : PITCH_RIGHT;
+        scheduleNote("piano", pitch, startTime + i * BEAT, BEAT * 0.7, 0.7);
+    });
+
+    // After pattern plays out, move to play phase (with a 1-beat gap)
+    const listenDuration = (patternLength + 1) * BEAT * 1000;
+    // phaseEndTime = startTime + patternLength * BEAT;
+    songLoopId = setTimeout(() => {
+        if (gameRunning) startPlayPhase();
+    }, listenDuration);
+}
+
+// ── Play phase ────────────────────────────────────────────────────────────────
+// Drums only. Player must reproduce the pattern from memory.
+function startPlayPhase(): void {
+    phase = "play";
+    phaseEl.textContent = "🎮 Your turn!";
+    log("reproduce the sequence");
+
+    const bars      = Math.ceil(patternLength / 4);
+    const startTime = ctx.currentTime + 0.3;
+
+    scheduleDrums(startTime, bars);
+
+    // Build pending beats — same quarter-note grid as listen phase
+    pendingBeats = pattern.map((direction, i) => ({
+        time: startTime + i * BEAT,
+        direction,
+    }));
+
+    // phaseEndTime = startTime + patternLength * BEAT;
+
+    // After the pattern window closes, evaluate any remaining missed beats
+    const playDuration = (patternLength + 1) * BEAT * 1000;
+    songLoopId = setTimeout(() => {
+        if (gameRunning) endPlayPhase();
+    }, playDuration);
+}
+
+// ── End of play phase ─────────────────────────────────────────────────────────
+function endPlayPhase(): void {
+    // Any remaining pending beats are misses
+    if (pendingBeats.length > 0) {
+        combo = 0;
+        log(`missed ${pendingBeats.length} beat(s)!`);
+        pendingBeats = [];
+    }
+
+    phase = "result";
+    phaseEl.textContent = `Round done — score: ${score}`;
+
+    // Grow pattern every round, cap at 16
+    patternLength = Math.min(patternLength + 1, 16);
+
+    // Short pause then next round
+    songLoopId = setTimeout(() => {
+        if (gameRunning) startRound();
+    }, 1500);
+}
+
+// ── Round entry point ─────────────────────────────────────────────────────────
+function startRound(): void {
+    pattern = generatePattern(patternLength);
+    player.loader.waitLoad(() => startListenPhase());
 }
 
 // ── Hit detection ─────────────────────────────────────────────────────────────
-
 function onPlayerInput(dir: Direction): void {
-    if (!song || pendingBeats.length === 0) return;
+    if (phase !== "play" || pendingBeats.length === 0) return;
 
     const now = ctx.currentTime;
 
-    // Find the nearest pending beat to now, within the hit window
-    let bestIdx = -1;
+    // Find nearest pending beat within the hit window
+    let bestIdx  = -1;
     let bestDiff = Infinity;
-    for (let i = 0; i < pendingBeats.length; i++) {
-        const diff = Math.abs(pendingBeats[i].time - now);
+    pendingBeats.forEach((b, i) => {
+        const diff = Math.abs(b.time - now);
         if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
-    }
+    });
 
     if (bestIdx === -1 || bestDiff > HIT_WINDOW) {
-        // No beat close enough — miss
         combo = 0;
-        log("miss!");
+        log("miss! (too early or too late)");
         return;
     }
 
     const beat = pendingBeats[bestIdx];
 
-    // Wrong direction counts as a miss
     if (beat.direction !== dir) {
         combo = 0;
         pendingBeats.splice(bestIdx, 1);
@@ -245,77 +213,64 @@ function onPlayerInput(dir: Direction): void {
         return;
     }
 
-    // Correct direction — rate by timing
-    let result: HitResult;
-    if (bestDiff < HIT_WINDOW * PERFECT_RATIO) {
-        result = "perfect";
-        score += 2;
-        combo++;
-    } else {
-        result = "good";
-        score += 1;
-        combo++;
-    }
-
-    // Combo bonus every 8 hits
-    if (combo > 0 && combo % 8 === 0) score += 3;
+    // Correct hit
+    const perfect = bestDiff < PERFECT_W;
+    score += perfect ? 2 : 1;
+    combo++;
+    if (combo > 0 && combo % 4 === 0) score += 2; // combo bonus
 
     pendingBeats.splice(bestIdx, 1);
-    results.push({ beatIndex: beat.index, result });
-    log(`${result}! ${beat.direction} — combo ${combo}`);
+    log(`${perfect ? "perfect" : "good"}! combo ${combo}`);
     updateUI();
 }
 
-// ── Game loop (prunes missed beats) ──────────────────────────────────────────
-
+// ── Game loop — prunes overdue beats ──────────────────────────────────────────
 const loop = new GameLoop((_dt: number) => {
-    if (!gameRunning || !song) return;
-
+    if (!gameRunning || phase !== "play") return;
     const now = ctx.currentTime;
-
-    // Any beat more than HIT_WINDOW in the past without a hit is a miss
     while (pendingBeats.length > 0 && pendingBeats[0].time < now - HIT_WINDOW) {
         combo = 0;
-        log(`miss! (${pendingBeats[0].direction})`);
+        log(`missed ${pendingBeats[0].direction}!`);
         pendingBeats.shift();
         updateUI();
     }
 });
 
 // ── Input ─────────────────────────────────────────────────────────────────────
-
-input.onAction((action) => {
+inp.onAction((action) => {
     if (!gameRunning) return;
     if (action === "moveLeft")  onPlayerInput("left");
     if (action === "moveRight") onPlayerInput("right");
 });
 
 // ── Start / stop ──────────────────────────────────────────────────────────────
-
 startBtn.addEventListener("click", async () => {
     if (!gameRunning) {
         ctx.resume();
         Howler.ctx?.resume();
 
-        const granted = await input.requestOrientationPermission();
+        const granted = await inp.requestOrientationPermission();
         if (!granted) {
             startBtn.textContent = "Permission denied — tap to retry";
             return;
         }
 
-        input.start();
-        score = 0;
-        combo = 0;
-        gameRunning = true;
+        inp.start();
+        score         = 0;
+        combo         = 0;
+        patternLength = 4;
+        gameRunning   = true;
         updateUI();
-        startSong();
+        startRound();
         loop.start();
         startBtn.textContent = "Stop";
     } else {
         gameRunning = false;
-        stopSong();
+        if (songLoopId) { clearTimeout(songLoopId); songLoopId = null; }
+        pendingBeats = [];
+        phase        = "idle";
         loop.stop();
-        input.stop();
+        inp.stop();
         phaseEl.textContent = `Final score: ${score}`;
         log("game over");
         startBtn.textContent = "Start";
