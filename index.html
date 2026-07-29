@@ -1,32 +1,68 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Melody game prototype 6</title>
+  <style>
+    html, body {
+      margin: 0; height: 100%; background: #ffffff; color: #111;
+      font-family: system-ui, sans-serif; overflow: hidden;
+      touch-action: none; user-select: none;
+    }
+    #hud {
+      position: fixed; top: 0; left: 0; width: 100%; z-index: 10;
+      display: flex; gap: 16px; padding: 8px 12px; box-sizing: border-box;
+      background: rgba(0,0,0,0.45); font-size: 14px;
+    }
+    .zone {
+      position: fixed; z-index: 5;
+      border: 2px dashed rgb(0 0 0 / 0.25); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      text-align: center; font-size: 13px; line-height: 1.3;
+      padding: 8px; box-sizing: border-box; color: rgb(0 0 0 / 0.5);
+    }
+    #zone-topright { top: 0; right: 0; width: 30%; height: 25%; }
+    #zone-bottomright { bottom: 0; right: 0; width: 30%; height: 25%; }
+    #grid {
+      position: fixed; left: 0; top: 0; width: 50%; height: 100%; z-index: 4;
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(8, 1fr);
+      gap: 2px; padding: 2px; box-sizing: border-box;
+    }
+    .cell {
+      background: rgb(0 0 0 / 0.06);
+      border-radius: 4px;
+    }
+    .cell.current { outline: 2px solid rgb(0 0 0 / 0.7); outline-offset: -2px; }
+    #log {
+      position: fixed; bottom: 8px; left: 8px; z-index: 10;
+      font-size: 13px; opacity: 0.85;
+    }
+  </style>
+</head>
+<body>
+<div id="hud">
+  <span id="hud-phase"></span>
+  <span id="hud-bpm"></span>
+  <span id="hud-instrument"></span>
+  <span id="hud-timer"></span>
+</div>
 
-    <link rel="stylesheet" href="src/style.css">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>endproject-sandbox</title>
-  </head>
-  <body>
-  <h1>End project sandbox: prototype 6</h1>
-  <p>
-    Klik op de startknop om het spel te starten.<br>
-    trek als een hengel je telefoon naar achter <br>
-    trek je telefoon naar voren om de hengel uit te gooien <br>
-    draai met je duim over het scherm om de hengel binnen te halen. <br>
+<div id="zone-topright" class="zone">tap x3<br>set tempo &amp; start</div>
+<div id="zone-bottomright" class="zone">tap<br>switch instrument</div>
+<div id="grid"></div>
+<div id="log"></div>
+<script src="/fonts/0000_GeneralUserGS_sf2_file.js"></script>
+<script src="/fonts/0040_GeneralUserGS_sf2_file.js"></script>
+<script src="/fonts/12836_1_Chaos_sf2_file.js"></script>
+<script src="/fonts/12838_1_Chaos_sf2_file.js"></script>
+<script src="/fonts/12842_1_Chaos_sf2_file.js"></script>
+<script src="/fonts/0241_GeneralUserGS_sf2_file.js"></script>
+<script src="/fonts/0321_GeneralUserGS_sf2_file.js"></script>
 
-  </p>
-  <button id="start-btn" >Start Game</button>
-  <div id="score">Score: 0</div>
-  <div id="log"></div>
-  <div id="phase">Klaar voor?</div>
-  <script src="/fonts/0000_GeneralUserGS_sf2_file.js"></script>
-  <script src="/fonts/0040_GeneralUserGS_sf2_file.js"></script>
-  <script src="/fonts/12836_1_Chaos_sf2_file.js"></script>
-  <script src="/fonts/12838_1_Chaos_sf2_file.js"></script>
-  <script src="/fonts/12842_1_Chaos_sf2_file.js"></script>
 
-  <script type="module" src="src/main.ts"></script>
-  </body>
+<script type="module" src="src/main.ts"></script>
+</body>
 </html>
