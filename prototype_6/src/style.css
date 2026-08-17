@@ -1,0 +1,42 @@
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  margin: 0;
+  touch-action: none;
+  box-sizing: border-box;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+#score, #phase, #log {
+  width: 100%;
+  text-align: center;
+  word-break: break-word;
+  font-size: clamp(0.8rem, 4vw, 1.5rem);
+}
+
+h1 {
+  font-size: clamp(1.2rem, 6vw, 2.5rem);
+  word-break: break-word;
+}
+
+h2 {
+  font-size: clamp(1rem, 5vw, 2rem);
+  word-break: break-word;
+}
+
+h3 {
+  font-size: clamp(0.9rem, 4.5vw, 1.75rem);
+  word-break: break-word;
+}
+* {
+  user-select: none;
+}
+#info {
+  line-height: 1.8;
+  text-align: center;
+  font-size: clamp(0.8rem, 4vw, 1.5rem);
+}
