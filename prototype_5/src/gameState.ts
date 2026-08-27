@@ -11,7 +11,7 @@ export interface State {
     sequence: Direction[];
     playerInput: Direction[];
     entities: Entity[];
-    phase: "idle"|"throwing"|"waiting"| "reeling" | "success"|"failure";
+    phase: "idle"|"throwing"|"listening"| "reeling" | "success"|"failure";
     currentStep: number;
     score: number;
     running: boolean;
@@ -20,6 +20,10 @@ export interface State {
     randomDistances: number[];
     drawnStage: number;
     armed: boolean;
+    // catch-by-ear mechanic
+    collectedInstruments: string[];   // ids of instruments already caught this round
+    activeInstrument: string | null;  // instrument whose melody is currently audible (the catch window)
+    strikes: number;                  // wrong taps (silence or drums)
 }
 export function createEntity(id: string, x: number, y:number, soundId:string) : Entity {
     return { id, x, y , soundId}
@@ -39,6 +43,9 @@ export function createInitialState(): State {
         randomDistances: [],
         drawnStage: 0,
         armed: false,
+        collectedInstruments: [],
+        activeInstrument: null,
+        strikes: 0,
     };
 }
 export function generateNumberSequence(length:number, start: number, end:number): number[] {

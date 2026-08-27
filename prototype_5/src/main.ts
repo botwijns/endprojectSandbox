@@ -2,16 +2,28 @@ import {GameLoop} from "./gameLoop.ts";
 import {InputHandler} from "./inputHandler.ts";
 import {createInitialState,  generateNumberSequence, generateSequence} from "./gameState.ts";
 import {SynthManager} from "./audio/SynthManager.ts";
+import {InstrumentManager, INSTRUMENTS, type InstrumentDef} from "./audio/InstrumentManager.ts";
 import {Howl, Howler} from "howler";
 
 const debug= !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
 const synth = new SynthManager();
+const instruments = new InstrumentManager();
 const input = new InputHandler(debug);
 const state = createInitialState();
 const scoreEl = document.getElementById("score")!;
 const phaseEl = document.getElementById("phase")!;
+const collectionEl = document.getElementById("collection")!;
 const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
 const logEl = document.getElementById("log")!;
+
+// total instruments the player must collect (everything except the drums)
+const CATCHABLE = INSTRUMENTS.filter(i => !i.isDrum);
+const MAX_STRIKES = 3;
+
+// catch-by-ear timing (seconds unless noted)
+let biteTimer = 0;             // time since last melody
+let nextBiteDelay = 2;         // wait before the next melody
+let catchWindowUntil = 0;      // performance.now() timestamp the current window closes
 let crankAngle =0;
 let prevJoyAngle: number | null = null
 let crankVelocity = 0;        // degrees/frame, decays over time
@@ -120,9 +132,20 @@ var armBetaBaseline: number|null = null;
 var nextSound: boolean = true;
 var nextSoundTimeout: ReturnType<typeof setTimeout> | null = null; // add this
 // var armTime: number = 0;
+function resetRoundState(): void {
+    state.collectedInstruments = [];
+    state.activeInstrument = null;
+    state.strikes = 0;
+    biteTimer = 0;
+    nextBiteDelay = 2;
+    catchWindowUntil = 0;
+    instruments.stopAll();
+}
+
 function startRound(): void {
     updateUI()
     console.log("Starting Round");
+    resetRoundState();
     const length = state.score + 3; // sequence grows each round
     state.sequence = generateSequence(length);
     state.playerInput = [];
@@ -285,31 +308,31 @@ const loop = new GameLoop((dt) => {
             setTimeout(() => {
                 soundDobber.play("land")
                 stepTimer=0
-                state.phase = "waiting"
+                biteTimer=0
+                nextBiteDelay = 1.5 + Math.random()*2
+                state.phase = "listening"
+                log("luister goed...")
                 updateUI()
             },1000)
         }
     }
-    else if (state.phase =="waiting"){
-        //waiting for a randomly defined moment, between 2 and 10 seconds when you hear the float go under
-        stepTimer+=dt
-        if (stepTimer>=STEP_INTERVAL*state.randomDistances[state.currentStep]){
-            //start playing the sound for being caught
-            soundCaught.play()
-            state.phase = "reeling"
-            stepTimer = 0
-            updateUI()
-        }
-        // armAngleBaseline = orientation.alpha
-        // state.phase = "reeling"
-        // let coords = generateSoundLocation(state.randomAngles[state.currentStep],state.randomDistances[state.currentStep])
-        // soundFrog.play()
-        // soundFrog.pos(coords[0],coords[1])
-        // soundFrog.volume(1)
-        // console.log("frog at:")
-        // console.log(coords[0], coords[1])
-        // log("angle: "+ state.randomAngles[state.currentStep] + "distance: " + state.randomDistances[state.currentStep])
+    else if (state.phase == "listening"){
+        // A fish = an instrument. Every so often one "bites" by playing its
+        // melody. The player must tap while they hear a non-drum instrument to
+        // catch it. Drums are a trap. Collect every catchable instrument to win.
+        biteTimer += dt;
 
+        // close the catch window once the melody (+ grace) is over
+        if (state.activeInstrument !== null && performance.now() > catchWindowUntil) {
+            state.activeInstrument = null;
+            log("...weg. luister opnieuw");
+        }
+
+        if (state.activeInstrument === null && biteTimer >= nextBiteDelay) {
+            biteTimer = 0;
+            nextBiteDelay = 1.8 + Math.random() * 2.6;
+            spawnBite();
+        }
     }
     else if (state.phase =="reeling"){
         stepTimer+=dt
@@ -424,21 +447,122 @@ const loop = new GameLoop((dt) => {
             state.randomDistances= generateNumberSequence(3,1,3)
         }
 
+        resetRoundState()
         state.phase = "idle"
         updateUI()
     }
 });
 
+/** Pick an instrument to "bite" and play its melody, opening the catch window. */
+function spawnBite(): void {
+    const remaining = CATCHABLE.filter(i => !state.collectedInstruments.includes(i.id));
+    if (remaining.length === 0) return;
+
+    const drum = INSTRUMENTS.find(i => i.isDrum)!;
+    // ~30% of bites are the drum trap, otherwise a still-needed instrument
+    const def: InstrumentDef = Math.random() < 0.3
+        ? drum
+        : remaining[Math.floor(Math.random() * remaining.length)];
+
+    const melodyDur = instruments.playMelody(def);
+    state.activeInstrument = def.id;
+    // window stays open for the melody plus a short grace period to react
+    catchWindowUntil = performance.now() + melodyDur * 1000 + 600;
+    log("🎵 er bijt iets...");
+}
+
+function registerStrike(reason: string): void {
+    state.strikes++;
+    soundFailure.play();
+    log(`fout ${state.strikes}/${MAX_STRIKES} — ${reason}`);
+    updateUI();
+    if (state.strikes >= MAX_STRIKES) {
+        instruments.stopAll();
+        state.phase = "failure";
+        updateUI();
+    }
+}
+
+function handleTap(): void {
+    if (!state.running || state.phase !== "listening") return;
+
+    const active = state.activeInstrument
+        ? INSTRUMENTS.find(i => i.id === state.activeInstrument) ?? null
+        : null;
+
+    if (!active) {
+        // tapped at silence — no catch, but no hard penalty either
+        soundFailure.volume(0.4);
+        soundFailure.play();
+        soundFailure.volume(1);
+        log("...er beet niets");
+        return;
+    }
+    if (active.isDrum) {
+        state.activeInstrument = null;
+        registerStrike("dat waren de drums!");
+        return;
+    }
+
+    // valid catch
+    state.activeInstrument = null;
+    if (!state.collectedInstruments.includes(active.id)) {
+        state.collectedInstruments.push(active.id);
+        soundCaught.play();
+        log(`${active.label} gevangen!`);
+    }
+    updateUI();
+
+    if (state.collectedInstruments.length >= CATCHABLE.length) {
+        // all instruments collected — reel the whole catch in
+        instruments.stopAll();
+        crankAngle = 0;
+        crankVelocity = 0;
+        stepTimer = 0;
+        state.phase = "reeling";
+        log("alles gevangen! haal binnen!");
+        updateUI();
+    }
+}
+
+input.onTap(handleTap);
+
+if (debug) {
+    (window as any).__game = { state, INSTRUMENTS };
+    // keyboard shortcuts so the ear mechanic can be tested on desktop
+    window.addEventListener("keydown", (e) => {
+        if (!state.running) return;
+        if (e.key === "t" && state.phase === "idle") {
+            soundThrow.play();
+            state.phase = "throwing";
+        } else if (e.key === "l") {
+            biteTimer = 0;
+            nextBiteDelay = 1;
+            state.phase = "listening";
+            updateUI();
+        } else if (e.key === " ") {
+            e.preventDefault();
+            handleTap();
+        }
+    });
+}
+
 function updateUI(): void {
     scoreEl.textContent = `Score: ${state.score}`;
     phaseEl.textContent = {
-        waiting:  "Luister goed...",
-        reeling: "reeling!",
+        listening: "Luister goed...",
+        reeling:   "binnenhalen!",
         success:   "gevangen!",
         failure:   "ontsnapt!",
-        idle:   "idle",
-        throwing: "throwing!"
+        idle:      "idle",
+        throwing:  "uitgooien!"
     }[state.phase];
+
+    const caught = CATCHABLE
+        .map(i => `${state.collectedInstruments.includes(i.id) ? "✅" : "⬜"} ${i.label}`)
+        .join("   ");
+    collectionEl.textContent =
+        `${caught}   |   mis: ${state.strikes}/${MAX_STRIKES}`;
 }
 let gameRunning = false;
 
@@ -446,11 +570,19 @@ startBtn.addEventListener("click", async () => {
     if (!gameRunning) {
         Howler.ctx?.resume();
         synth.resume();
+        instruments.resume();
 
         const granted = await input.requestOrientationPermission();
         if (!granted) {
             startBtn.textContent = "Permission denied — tap to retry";
             return;
+        }
+
+        if (!instruments.isReady()) {
+            startBtn.disabled = true;
+            startBtn.textContent = "Instrumenten laden…";
+            await instruments.preload();
+            startBtn.disabled = false;
         }
 
         input.start();
@@ -467,6 +599,7 @@ startBtn.addEventListener("click", async () => {
         Howler.stop()
         // soundFrog.stop();
         // synth.stopAll();
+        instruments.stopAll();
         soundFishingBackground.stop();
         startBtn.textContent = "Start";
         gameRunning = false;

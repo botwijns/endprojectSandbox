@@ -45,6 +45,8 @@ export class InputHandler {
     private joystick: JoystickState = { x: 0, y: 0, active: false };
     private joystickStartPos: { x: number; y: number } | null = null;
     private joystickPointerId: number | null = null;
+    private pointerDownTime = 0;
+    private tapCallbacks: (() => void)[] = [];
 
     constructor(debug = false) {
         this.debug = debug;
@@ -84,6 +86,11 @@ export class InputHandler {
 
     onAction(cb: ActionCallback): void {
         this.callbacks.push(cb);
+    }
+
+    /** Fires on a quick screen tap (short press, little movement). */
+    onTap(cb: () => void): void {
+        this.tapCallbacks.push(cb);
     }
 
 
@@ -154,6 +161,7 @@ export class InputHandler {
         if (this.joystickPointerId !== null) return;
         this.joystickPointerId = e.pointerId;
         this.joystickStartPos = { x: e.clientX, y: e.clientY };
+        this.pointerDownTime = performance.now();
         this.joystick = { x: 0, y: 0, active: true };
         // Capture so pointermove/pointerup fire even if pointer leaves the element
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -174,6 +182,15 @@ export class InputHandler {
 
     private handleJoystickEnd = (e: PointerEvent): void => {
         if (e.pointerId !== this.joystickPointerId) return;
+
+        const heldMs = performance.now() - this.pointerDownTime;
+        const moved = this.joystickStartPos
+            ? Math.hypot(e.clientX - this.joystickStartPos.x, e.clientY - this.joystickStartPos.y)
+            : Infinity;
+        if (heldMs < 250 && moved < 20) {
+            this.tapCallbacks.forEach(cb => cb());
+        }
+
         this.joystick = { x: 0, y: 0, active: false };
         this.joystickStartPos = null;
         this.joystickPointerId = null;
