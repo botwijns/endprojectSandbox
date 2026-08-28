@@ -47,6 +47,8 @@ export class InputHandler {
     private joystickPointerId: number | null = null;
     private pointerDownTime = 0;
     private tapCallbacks: (() => void)[] = [];
+    // raw screen position of the active pointer (null when nothing is touching)
+    private pointerPos: { x: number; y: number } | null = null;
 
     constructor(debug = false) {
         this.debug = debug;
@@ -100,6 +102,61 @@ export class InputHandler {
 
     getJoystick(): JoystickState {
         return { ...this.joystick };
+    }
+
+    /** Raw screen coordinates of the finger/mouse currently pressed, or null. */
+    getPointer(): { x: number; y: number } | null {
+        return this.pointerPos ? { ...this.pointerPos } : null;
+    }
+
+    // --- crank tracking (for the reeling minigame) ---------------------------
+    // Updated on every pointermove (not the game loop), so fast circular motion
+    // is tracked accurately. The centre of the circle is estimated by a
+    // least-squares fit over recent points, so it may drift across the screen.
+    private crankSamples: { x: number; y: number }[] = [];
+    private crankCenter: { x: number; y: number } | null = null;
+    private crankPrevAngle: number | null = null;
+    private crankTotal = 0;
+    private static CRANK_WINDOW = 40;
+
+    /** Start a fresh crank measurement. */
+    beginCrank(): void {
+        this.crankSamples = [];
+        this.crankCenter = null;
+        this.crankPrevAngle = null;
+        this.crankTotal = 0;
+    }
+
+    /** Signed total degrees turned since beginCrank(). */
+    getCrankDegrees(): number {
+        return this.crankTotal;
+    }
+
+    /** Current estimated centre of the crank circle (screen coords), or null. */
+    getCrankCenter(): { x: number; y: number } | null {
+        return this.crankCenter ? { ...this.crankCenter } : null;
+    }
+
+    private updateCrank(x: number, y: number): void {
+        const s = this.crankSamples;
+        s.push({ x, y });
+        if (s.length > InputHandler.CRANK_WINDOW) s.shift();
+
+        const c = fitCircleCenter(s);
+        if (c) this.crankCenter = c;
+        if (!this.crankCenter) return;
+
+        const radius = Math.hypot(x - this.crankCenter.x, y - this.crankCenter.y);
+        if (radius < 12) return; // too close to the centre to have a stable angle
+
+        const angle = Math.atan2(y - this.crankCenter.y, x - this.crankCenter.x) * (180 / Math.PI);
+        if (this.crankPrevAngle !== null) {
+            let d = angle - this.crankPrevAngle;
+            if (d > 180) d -= 360;
+            if (d < -180) d += 360;
+            if (Math.abs(d) < 90) this.crankTotal += d; // ignore centre-estimate jitter
+        }
+        this.crankPrevAngle = angle;
     }
 
     private handleKey = (e: KeyboardEvent): void => {
@@ -161,16 +218,24 @@ export class InputHandler {
         if (this.joystickPointerId !== null) return;
         this.joystickPointerId = e.pointerId;
         this.joystickStartPos = { x: e.clientX, y: e.clientY };
+        this.pointerPos = { x: e.clientX, y: e.clientY };
         this.pointerDownTime = performance.now();
         this.joystick = { x: 0, y: 0, active: true };
+        this.updateCrank(e.clientX, e.clientY);
         // Capture so pointermove/pointerup fire even if pointer leaves the element
-        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        try {
+            (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        } catch {
+            // pointer already released / synthetic event — safe to ignore
+        }
     };
 
     private handleJoystickMove = (e: PointerEvent): void => {
         if (e.pointerId !== this.joystickPointerId || !this.joystickStartPos) return;
         const dx = e.clientX - this.joystickStartPos.x;
         const dy = e.clientY - this.joystickStartPos.y;
+        this.pointerPos = { x: e.clientX, y: e.clientY };
+        this.updateCrank(e.clientX, e.clientY);
 
         // Normalize to -1..1 range, clamp to circle
         this.joystick = {
@@ -194,6 +259,8 @@ export class InputHandler {
         this.joystick = { x: 0, y: 0, active: false };
         this.joystickStartPos = null;
         this.joystickPointerId = null;
+        this.pointerPos = null;
+        this.crankPrevAngle = null; // finger lifted — don't bridge the gap on re-touch
     };
 
 
@@ -267,4 +334,37 @@ export class InputHandler {
         if (a === null || b === null) return null;
         return a - b;
     }
+}
+
+/**
+ * Least-squares circle fit (Kåsa method) over a set of points. Returns the
+ * estimated centre, or the centroid when the points are too few or near-collinear.
+ */
+function fitCircleCenter(pts: { x: number; y: number }[]): { x: number; y: number } | null {
+    const n = pts.length;
+    if (n < 3) return null;
+
+    let sx = 0, sy = 0;
+    for (const p of pts) { sx += p.x; sy += p.y; }
+    const mx = sx / n, my = sy / n; // centre the data for numerical stability
+
+    let Suu = 0, Suv = 0, Svv = 0, Suuu = 0, Svvv = 0, Suvv = 0, Svuu = 0;
+    for (const p of pts) {
+        const u = p.x - mx, v = p.y - my;
+        Suu += u * u; Suv += u * v; Svv += v * v;
+        Suuu += u * u * u; Svvv += v * v * v;
+        Suvv += u * v * v; Svuu += v * u * u;
+    }
+
+    const det = Suu * Svv - Suv * Suv;
+    if (Math.abs(det) < 1e-6) return { x: mx, y: my };
+
+    const c1 = 0.5 * (Suuu + Suvv);
+    const c2 = 0.5 * (Svvv + Svuu);
+    const uc = (c1 * Svv - c2 * Suv) / det;
+    const vc = (c2 * Suu - c1 * Suv) / det;
+
+    // reject a wild fit from a shallow arc
+    if (Math.hypot(uc, vc) > 800) return { x: mx, y: my };
+    return { x: uc + mx, y: vc + my };
 }

@@ -24,27 +24,17 @@ const MAX_STRIKES = 3;
 let biteTimer = 0;             // time since last melody
 let nextBiteDelay = 2;         // wait before the next melody
 let catchWindowUntil = 0;      // performance.now() timestamp the current window closes
-let crankAngle =0;
-let prevJoyAngle: number | null = null
-let crankVelocity = 0;        // degrees/frame, decays over time
-const VELOCITY_DECAY = 0.85;  // multiplied each frame — tune this (0.9 = slower decay, 0.7 = faster)
-const VELOCITY_MIN = 0.3;     // below this we consider it stopped — tune this too
+// Reeling is tracked inside InputHandler (on every pointermove, with a circle
+// fit for the drifting centre). Here we just mirror the running total.
+let crankAngle = 0;           // signed degrees turned this reel-in
+let crankVelocity = 0;        // change in crankAngle on the last tick
 let isSoundPlaying = false;
-function getJoystickAngle(): number | null {
-    const { x, y, active } = input.getJoystick();
-    if (!active) return null;
-    // Only register as crank input if the stick is pushed far enough
-    if (Math.hypot(x, y) < 0.2) return null;
-    return Math.atan2(y, x) * (180 / Math.PI); // -180 to 180
-}
+const REEL_TARGET = 2 * 360;  // full turns needed to land the fish
 
-function shortestAngleDelta(from: number, to: number): number {
-    // Wraps the delta into -180..180 so crossing the ±180 boundary doesn't
-    // produce a huge jump
-    let delta = to - from;
-    if (delta > 180)  delta -= 360;
-    if (delta < -180) delta += 360;
-    return delta;
+function resetCrank(): void {
+    crankAngle = 0;
+    crankVelocity = 0;
+    input.beginCrank();
 }
 
 function log(message: string): void {
@@ -135,10 +125,12 @@ var nextSoundTimeout: ReturnType<typeof setTimeout> | null = null; // add this
 function resetRoundState(): void {
     state.collectedInstruments = [];
     state.activeInstrument = null;
+    state.pendingInstrument = null;
     state.strikes = 0;
     biteTimer = 0;
     nextBiteDelay = 2;
     catchWindowUntil = 0;
+    resetCrank();
     instruments.stopAll();
 }
 
@@ -334,54 +326,72 @@ const loop = new GameLoop((dt) => {
             spawnBite();
         }
     }
-    else if (state.phase =="reeling"){
-        stepTimer+=dt
-        const joyAngle = getJoystickAngle();
+    else if (state.phase == "reeling"){
+        stepTimer += dt;
+        const touching = input.getPointer() !== null;
 
-        if (joyAngle !== null && prevJoyAngle !== null) {
-            const delta = shortestAngleDelta(prevJoyAngle, joyAngle);
-            crankVelocity = delta;          // new input overrides decay
-            crankAngle += delta;
-        } else {
-            crankVelocity *= VELOCITY_DECAY; // no input — let it coast
-        }
-
-        prevJoyAngle = joyAngle;
-
-        const isMoving = Math.abs(crankVelocity) > VELOCITY_MIN;
-
-        if (isMoving && !isSoundPlaying) {
+        // reeling engages the instant the screen is touched
+        if (touching && !isSoundPlaying) {
+            soundFishingReel.loop(true);
             soundFishingReel.play();
             isSoundPlaying = true;
-        } else if (!isMoving && isSoundPlaying) {
+        } else if (!touching && isSoundPlaying) {
+            soundFishingReel.loop(false);
             soundFishingReel.stop();
             isSoundPlaying = false;
         }
 
-        // success if crank is rotated n times withing m seconds?
-        if (Math.abs(crankAngle) >= 2*360){
-            state.phase = "success"
-            crankAngle = 0
-            crankVelocity = 0
-            soundSuccess.play()
+        // crank total is accumulated in InputHandler on every pointermove
+        const total = input.getCrankDegrees();
+        crankVelocity = total - crankAngle;
+        crankAngle = total;
+
+        // faster cranking -> faster reel sound
+        if (isSoundPlaying) {
+            soundFishingReel.rate(Math.min(2, Math.max(0.7, 0.7 + Math.abs(crankVelocity) / 8)));
+        }
+
+        // reeled in — two full turns
+        if (Math.abs(crankAngle) >= REEL_TARGET) {
+            soundFishingReel.loop(false);
             soundFishingReel.stop();
             isSoundPlaying = false;
-            state.score++
-            updateUI()
-        }
-        if (stepTimer>10*STEP_INTERVAL){
-            crankAngle = 0
-            crankVelocity = 0
-            state.phase = "failure"
+
+            const id = state.pendingInstrument;
+            const firstTime = id !== null && !state.collectedInstruments.includes(id);
+            if (firstTime && id !== null) {
+                state.collectedInstruments.push(id);
+                state.score++;
+            }
+            state.pendingInstrument = null;
+            soundSuccess.play();
+            resetCrank();
+
+            if (state.collectedInstruments.length >= CATCHABLE.length) {
+                state.phase = "success"; // round won
+            } else {
+                state.phase = "listening";
+                biteTimer = 0;
+                nextBiteDelay = 1.5 + Math.random() * 2;
+                log(firstTime ? "binnen! volgende vis..." : "binnen! (geen punt) volgende vis...");
+            }
+            updateUI();
+        } else if (stepTimer > 10 * STEP_INTERVAL) {
+            // took too long — the fish shakes loose, keep fishing
+            soundFishingReel.loop(false);
             soundFishingReel.stop();
             isSoundPlaying = false;
-            soundFailure.play()
-            updateUI()
+            soundFailure.play();
+            state.pendingInstrument = null;
+            resetCrank();
+            state.phase = "listening";
+            biteTimer = 0;
+            nextBiteDelay = 2;
+            log("de vis is los! luister opnieuw");
+            updateUI();
+        } else {
+            log("binnenhalen: " + Math.round(Math.abs(crankAngle)) + "°");
         }
-        // Use crankAngle however you need — e.g. drive a gear, a drum, a wheel
-        log("crank: " + crankAngle.toFixed(1) + " °");
-        //TODO: add yank or move feature for more interesting reeling?
-        //TODO: capture devicemovement to calculate score?
     }
     // alpha = orientation.alpha
     // if (state.armed && armBeta == null) {
@@ -453,22 +463,36 @@ const loop = new GameLoop((dt) => {
     }
 });
 
+function pick<T>(arr: T[]): T {
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
 /** Pick an instrument to "bite" and play its melody, opening the catch window. */
 function spawnBite(): void {
-    const remaining = CATCHABLE.filter(i => !state.collectedInstruments.includes(i.id));
-    if (remaining.length === 0) return;
-
     const drum = INSTRUMENTS.find(i => i.isDrum)!;
-    // ~30% of bites are the drum trap, otherwise a still-needed instrument
-    const def: InstrumentDef = Math.random() < 0.3
-        ? drum
-        : remaining[Math.floor(Math.random() * remaining.length)];
+    const needed = CATCHABLE.filter(i => !state.collectedInstruments.includes(i.id));
+
+    // ~25% drum trap; otherwise prefer a not-yet-unlocked instrument, but an
+    // already-unlocked one can still bite (it just won't award a point).
+    const roll = Math.random();
+    let def: InstrumentDef;
+    if (roll < 0.25 || needed.length === 0) {
+        def = roll < 0.25 ? drum : pick(CATCHABLE);
+    } else if (roll < 0.85) {
+        def = pick(needed);
+    } else {
+        def = pick(CATCHABLE);
+    }
+
+    // the bobber dips — an audible "something's there" cue alongside the melody
+    const dobberId = soundDobber.play("caught");
+    soundDobber.volume(0.5, dobberId);
 
     const melodyDur = instruments.playMelody(def);
     state.activeInstrument = def.id;
     // window stays open for the melody plus a short grace period to react
     catchWindowUntil = performance.now() + melodyDur * 1000 + 600;
-    log("🎵 er bijt iets...");
+    log("🎣 er bijt iets...");
 }
 
 function registerStrike(reason: string): void {
@@ -504,31 +528,27 @@ function handleTap(): void {
         return;
     }
 
-    // valid catch
+    // valid catch — hook this one fish and reel it in right away
     state.activeInstrument = null;
-    if (!state.collectedInstruments.includes(active.id)) {
-        state.collectedInstruments.push(active.id);
-        soundCaught.play();
-        log(`${active.label} gevangen!`);
-    }
-    updateUI();
+    state.pendingInstrument = active.id;
+    instruments.stopAll();
+    soundCaught.play();
 
-    if (state.collectedInstruments.length >= CATCHABLE.length) {
-        // all instruments collected — reel the whole catch in
-        instruments.stopAll();
-        crankAngle = 0;
-        crankVelocity = 0;
-        stepTimer = 0;
-        state.phase = "reeling";
-        log("alles gevangen! haal binnen!");
-        updateUI();
-    }
+    const isNew = !state.collectedInstruments.includes(active.id);
+    log(isNew
+        ? `${active.label} aan de haak! haal binnen!`
+        : `${active.label} (al vrij) — haal binnen!`);
+
+    resetCrank();
+    stepTimer = 0;
+    state.phase = "reeling";
+    updateUI();
 }
 
 input.onTap(handleTap);
 
 if (debug) {
-    (window as any).__game = { state, INSTRUMENTS };
+    (window as any).__game = { state, INSTRUMENTS, crank: () => ({ crankAngle, crankVelocity, center: input.getCrankCenter() }) };
     // keyboard shortcuts so the ear mechanic can be tested on desktop
     window.addEventListener("keydown", (e) => {
         if (!state.running) return;
@@ -559,10 +579,14 @@ function updateUI(): void {
     }[state.phase];
 
     const caught = CATCHABLE
-        .map(i => `${state.collectedInstruments.includes(i.id) ? "✅" : "⬜"} ${i.label}`)
+        .map(i => {
+            const done = state.collectedInstruments.includes(i.id);
+            const reeling = state.pendingInstrument === i.id;
+            return `${done ? "✅" : reeling ? "🎣" : "⬜"} ${i.label}`;
+        })
         .join("   ");
     collectionEl.textContent =
-        `${caught}   |   mis: ${state.strikes}/${MAX_STRIKES}`;
+        `${caught}   |   drums: ${state.strikes}/${MAX_STRIKES}`;
 }
 let gameRunning = false;
 

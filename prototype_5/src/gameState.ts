@@ -21,9 +21,10 @@ export interface State {
     drawnStage: number;
     armed: boolean;
     // catch-by-ear mechanic
-    collectedInstruments: string[];   // ids of instruments already caught this round
+    collectedInstruments: string[];   // ids of instruments unlocked this round (award a point once)
     activeInstrument: string | null;  // instrument whose melody is currently audible (the catch window)
-    strikes: number;                  // wrong taps (silence or drums)
+    pendingInstrument: string | null; // instrument hooked and currently being reeled in
+    strikes: number;                  // wrong taps on the drums
 }
 export function createEntity(id: string, x: number, y:number, soundId:string) : Entity {
     return { id, x, y , soundId}
@@ -45,6 +46,7 @@ export function createInitialState(): State {
         armed: false,
         collectedInstruments: [],
         activeInstrument: null,
+        pendingInstrument: null,
         strikes: 0,
     };
 }
