@@ -56,6 +56,14 @@ const INSTRUMENT_COLOR: Record<Instrument, string> = {
     guitar: "#99afff",
     bass: "#e699ff",
 };
+const INSTRUMENT_VOLUME: Record<Instrument, number> = {
+    piano :0.6,
+    kick: 0.8,
+    snare: 0.8,
+    highHat: 0.8,
+    guitar: 0.8,
+    bass: 0.8
+}
 // Percussive instruments always ring at their natural drum pitch; only the
 // melodic voices are shifted by the melody the player builds.
 const DRUM_PITCH: Record<Exclude<Instrument, "piano" | "guitar" | "bass">, number> = {
@@ -242,7 +250,7 @@ function playStep(step: number): void {
             pitchForSlot(slot),
             ctx.currentTime + 0.02,
             (stepDurationMs / 1000) * 0.9,
-            0.8
+            INSTRUMENT_VOLUME[slot.instrument]
         );
     }
 
