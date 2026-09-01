@@ -325,6 +325,11 @@ const loop = new GameLoop((dt) => {
             nextBiteDelay = 1.8 + Math.random() * 2.6;
             spawnBite();
         }
+
+        if (armBetaBaseline!==null && beta!==null && beta-armBetaBaseline>10){
+            //instead of tapping, we reel it in by moving the phone
+            handleTap()
+        }
     }
     else if (state.phase == "reeling"){
         stepTimer += dt;
@@ -486,7 +491,7 @@ function spawnBite(): void {
 
     // the bobber dips — an audible "something's there" cue alongside the melody
     const dobberId = soundDobber.play("caught");
-    soundDobber.volume(0.5, dobberId);
+    soundDobber.volume(0.8, dobberId);
 
     const melodyDur = instruments.playMelody(def);
     state.activeInstrument = def.id;
@@ -545,7 +550,7 @@ function handleTap(): void {
     updateUI();
 }
 
-input.onTap(handleTap);
+// input.onTap(handleTap);
 
 if (debug) {
     (window as any).__game = { state, INSTRUMENTS, crank: () => ({ crankAngle, crankVelocity, center: input.getCrankCenter() }) };
