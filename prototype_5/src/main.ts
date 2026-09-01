@@ -325,23 +325,7 @@ const loop = new GameLoop((dt) => {
             nextBiteDelay = 1.8 + Math.random() * 2.6;
             spawnBite();
         }
-        if (armBetaBaseline== null){
-            //set both to be at least something if it is null right now.
-            armBetaBaseline = beta
-            armBeta = beta
-        }
-        //idle so we wait for them to throw the line out.
-        //each two seconds we record the orientation.
-        if (stepTimer >= STEP_INTERVAL) {
-            stepTimer = 0;
-            // we compare to STEP_INTERVAL-2*STEP_INTERVAL seconds ago. when it hits 2*STEP_INTERVAL seconds, we reset it to the one of STEP_INTERVAL seconds ago
-            armBetaBaseline = armBeta
-            armBeta = beta
-        }
-        if (armBetaBaseline!==null && beta!==null && beta-armBetaBaseline>10){
-            //instead of tapping, we reel it in by moving the phone
-            handleTap()
-        }
+
     }
     else if (state.phase == "reeling"){
         stepTimer += dt;
@@ -379,7 +363,7 @@ const loop = new GameLoop((dt) => {
             soundFailure.play();
             state.pendingInstrument = null;
             resetCrank();
-            state.phase = "listening";
+            state.phase = "idle";
             biteTimer = 0;
             nextBiteDelay = 2;
             log("de vis is los! luister opnieuw");
@@ -519,7 +503,7 @@ function resolveReel(): void {
     state.pendingInstrument = null;
     resetCrank();
 
-    state.phase = "listening";
+    state.phase = "idle";
     biteTimer = 0;
     nextBiteDelay = 1.5 + Math.random() * 2;
 
