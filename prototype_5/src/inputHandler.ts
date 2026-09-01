@@ -45,8 +45,7 @@ export class InputHandler {
     private joystick: JoystickState = { x: 0, y: 0, active: false };
     private joystickStartPos: { x: number; y: number } | null = null;
     private joystickPointerId: number | null = null;
-    private pointerDownTime = 0;
-    private tapCallbacks: (() => void)[] = [];
+    private pressCallbacks: (() => void)[] = [];
     // raw screen position of the active pointer (null when nothing is touching)
     private pointerPos: { x: number; y: number } | null = null;
 
@@ -90,9 +89,9 @@ export class InputHandler {
         this.callbacks.push(cb);
     }
 
-    /** Fires on a quick screen tap (short press, little movement). */
-    onTap(cb: () => void): void {
-        this.tapCallbacks.push(cb);
+    /** Fires the moment a fresh press starts on the screen. */
+    onPress(cb: () => void): void {
+        this.pressCallbacks.push(cb);
     }
 
 
@@ -219,7 +218,6 @@ export class InputHandler {
         this.joystickPointerId = e.pointerId;
         this.joystickStartPos = { x: e.clientX, y: e.clientY };
         this.pointerPos = { x: e.clientX, y: e.clientY };
-        this.pointerDownTime = performance.now();
         this.joystick = { x: 0, y: 0, active: true };
         this.updateCrank(e.clientX, e.clientY);
         // Capture so pointermove/pointerup fire even if pointer leaves the element
@@ -228,6 +226,7 @@ export class InputHandler {
         } catch {
             // pointer already released / synthetic event — safe to ignore
         }
+        this.pressCallbacks.forEach(cb => cb());
     };
 
     private handleJoystickMove = (e: PointerEvent): void => {
@@ -247,14 +246,6 @@ export class InputHandler {
 
     private handleJoystickEnd = (e: PointerEvent): void => {
         if (e.pointerId !== this.joystickPointerId) return;
-
-        const heldMs = performance.now() - this.pointerDownTime;
-        const moved = this.joystickStartPos
-            ? Math.hypot(e.clientX - this.joystickStartPos.x, e.clientY - this.joystickStartPos.y)
-            : Infinity;
-        if (heldMs < 250 && moved < 20) {
-            this.tapCallbacks.forEach(cb => cb());
-        }
 
         this.joystick = { x: 0, y: 0, active: false };
         this.joystickStartPos = null;
