@@ -368,31 +368,9 @@ const loop = new GameLoop((dt) => {
             soundFishingReel.rate(Math.min(2, Math.max(0.7, 0.7 + Math.abs(crankVelocity) / 8)));
         }
 
-        // reeled in — two full turns
+        // reeled in — two full turns — the outcome is revealed now
         if (Math.abs(crankAngle) >= REEL_TARGET) {
-            soundFishingReel.loop(false);
-            soundFishingReel.stop();
-            isSoundPlaying = false;
-
-            const id = state.pendingInstrument;
-            const firstTime = id !== null && !state.collectedInstruments.includes(id);
-            if (firstTime && id !== null) {
-                state.collectedInstruments.push(id);
-                state.score++;
-            }
-            state.pendingInstrument = null;
-            soundSuccess.play();
-            resetCrank();
-
-            if (state.collectedInstruments.length >= CATCHABLE.length) {
-                state.phase = "success"; // round won
-            } else {
-                state.phase = "listening";
-                biteTimer = 0;
-                nextBiteDelay = 1.5 + Math.random() * 2;
-                log(firstTime ? "binnen! volgende vis..." : "binnen! (geen punt) volgende vis...");
-            }
-            updateUI();
+            resolveReel();
         } else if (stepTimer > 10 * STEP_INTERVAL) {
             // took too long — the fish shakes loose, keep fishing
             soundFishingReel.loop(false);
@@ -512,57 +490,66 @@ function spawnBite(): void {
     log("🎣 er bijt iets...");
 }
 
-function registerStrike(reason: string): void {
-    state.strikes++;
-    soundFailure.play();
-    log(`fout ${state.strikes}/${MAX_STRIKES} — ${reason}`);
-    updateUI();
-    if (state.strikes >= MAX_STRIKES) {
-        instruments.stopAll();
-        state.phase = "failure";
-        updateUI();
-    }
-}
-
-function handleTap(): void {
+/**
+ * The player commits by touching the screen: whatever is on the hook right now
+ * (a melody they heard, the drums, or nothing) gets reeled in. Whether it was
+ * the right call is only revealed once the reel-in finishes.
+ */
+function startReeling(): void {
     if (!state.running || state.phase !== "listening") return;
 
-    const active = state.activeInstrument
-        ? INSTRUMENTS.find(i => i.id === state.activeInstrument) ?? null
-        : null;
-
-    if (!active) {
-        // tapped at silence — no catch, but no hard penalty either
-        soundFailure.volume(0.4);
-        soundFailure.play();
-        soundFailure.volume(1);
-        log("...er beet niets");
-        return;
-    }
-    if (active.isDrum) {
-        state.activeInstrument = null;
-        registerStrike("dat waren de drums!");
-        return;
-    }
-
-    // valid catch — hook this one fish and reel it in right away
+    state.pendingInstrument = state.activeInstrument; // may be null (touched during silence)
     state.activeInstrument = null;
-    state.pendingInstrument = active.id;
     instruments.stopAll();
-    soundCaught.play();
-
-    const isNew = !state.collectedInstruments.includes(active.id);
-    log(isNew
-        ? `${active.label} aan de haak! haal binnen!`
-        : `${active.label} (al vrij) — haal binnen!`);
-
     resetCrank();
     stepTimer = 0;
     state.phase = "reeling";
+    log("binnenhalen!");
     updateUI();
 }
 
-// input.onTap(handleTap);
+/** Land whatever was on the hook — the outcome (and any mistake sound) happens here. */
+function resolveReel(): void {
+    soundFishingReel.loop(false);
+    soundFishingReel.stop();
+    isSoundPlaying = false;
+
+    const id = state.pendingInstrument;
+    const def = id ? INSTRUMENTS.find(i => i.id === id) ?? null : null;
+    state.pendingInstrument = null;
+    resetCrank();
+
+    state.phase = "listening";
+    biteTimer = 0;
+    nextBiteDelay = 1.5 + Math.random() * 2;
+
+    if (!def) {
+        // reeled in an empty hook — the miss lands now, not when you touched
+        soundFailure.volume(0.5);
+        soundFailure.play();
+        soundFailure.volume(1);
+        log("niks aan de haak...");
+    } else if (def.isDrum) {
+        // the drums were the wrong call — the strike lands now
+        state.strikes++;
+        soundFailure.play();
+        log(`fout ${state.strikes}/${MAX_STRIKES} — dat waren de drums!`);
+        if (state.strikes >= MAX_STRIKES) state.phase = "failure";
+    } else {
+        const firstTime = !state.collectedInstruments.includes(def.id);
+        if (firstTime) {
+            state.collectedInstruments.push(def.id);
+            state.score++;
+        }
+        soundCaught.play();
+        soundSuccess.play();
+        log(firstTime ? `${def.label} gevangen!` : `${def.label} — al vrij, geen punt`);
+        if (state.collectedInstruments.length >= CATCHABLE.length) state.phase = "success";
+    }
+    updateUI();
+}
+
+input.onPress(startReeling);
 
 if (debug) {
     (window as any).__game = { state, INSTRUMENTS, crank: () => ({ crankAngle, crankVelocity, center: input.getCrankCenter() }) };
@@ -579,7 +566,7 @@ if (debug) {
             updateUI();
         } else if (e.key === " ") {
             e.preventDefault();
-            handleTap();
+            startReeling();
         }
     });
 }
@@ -595,12 +582,9 @@ function updateUI(): void {
         throwing:  "uitgooien!"
     }[state.phase];
 
+    // the instrument on the hook stays hidden until the reel-in resolves
     const caught = CATCHABLE
-        .map(i => {
-            const done = state.collectedInstruments.includes(i.id);
-            const reeling = state.pendingInstrument === i.id;
-            return `${done ? "✅" : reeling ? "🎣" : "⬜"} ${i.label}`;
-        })
+        .map(i => `${state.collectedInstruments.includes(i.id) ? "✅" : "⬜"} ${i.label}`)
         .join("   ");
     collectionEl.textContent =
         `${caught}   |   drums: ${state.strikes}/${MAX_STRIKES}`;
