@@ -1,19 +1,12 @@
 import { GameLoop } from "./gameLoop.ts";
 import { InputHandler, SCALE_DEGREES } from "./inputHandler.ts";
 import { Howler } from "howler";
-import {
-    generateDrumPattern,
-    generateChordProgression,
-    type DrumPattern,
-    type ChordProgression,
-} from "./music.ts";
+import { generateDrumPattern, type DrumPattern } from "./music.ts";
 import "webaudiofont";
 declare const WebAudioFontPlayer: any;
 declare const _tone_0000_GeneralUserGS_sf2_file: any; // acoustic grand piano
-declare const _tone_0040_GeneralUserGS_sf2_file: any; // electric piano (Rhodes) — backing chords
 declare const _tone_0241_GeneralUserGS_sf2_file: any; // nylon guitar
 declare const _tone_0321_GeneralUserGS_sf2_file: any; // acoustic bass
-declare const _tone_1140_Chaos_sf2_file: any;         // steel drums — chord sparkle
 declare const _drum_36_1_Chaos_sf2_file: any;         // kick
 declare const _drum_38_1_Chaos_sf2_file: any;         // snare
 declare const _drum_42_1_Chaos_sf2_file: any;         // hi-hat
@@ -22,10 +15,8 @@ const ctx = new AudioContext();
 const player = new WebAudioFontPlayer();
 
 player.loader.decodeAfterLoading(ctx, "_tone_0000_GeneralUserGS_sf2_file");
-player.loader.decodeAfterLoading(ctx, "_tone_0040_GeneralUserGS_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_tone_0241_GeneralUserGS_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_tone_0321_GeneralUserGS_sf2_file");
-player.loader.decodeAfterLoading(ctx, "_tone_1140_Chaos_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_drum_36_1_Chaos_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_drum_38_1_Chaos_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_drum_42_1_Chaos_sf2_file");
@@ -38,10 +29,6 @@ const instruments = {
     guitar:  _tone_0241_GeneralUserGS_sf2_file,
     bass:    _tone_0321_GeneralUserGS_sf2_file,
 };
-
-// Backing-track voices, kept separate from the playable `instruments` above.
-const CHORD_FONT   = _tone_0040_GeneralUserGS_sf2_file; // warm electric piano — the harmony bed
-const SPARKLE_FONT = _tone_1140_Chaos_sf2_file;         // steel drums — a bar-end shimmer
 
 type Instrument = keyof typeof instruments;
 const INSTRUMENTS: Instrument[] = ["piano", "kick", "snare", "highHat", "guitar", "bass"];
@@ -91,7 +78,6 @@ window.addEventListener("pointerdown", () => {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const STEPS = 8;                          // one 8-step bar (eighth notes)
-const STEPS_PER_CHORD = 2;                // one chord per quarter-note beat
 const GAME_DURATION_MS = 3 * 60 * 1000;   // session length: a few minutes
 const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11, 12]; // scale degree -> semitones from root
 const ROOT_MIDI = 60; // middle C
@@ -135,9 +121,8 @@ let stepIntervalId: number | null = null;
 let endTimeoutId: number | null = null;
 let startedAt = 0;
 
-// Auto-generated backing track.
+// Auto-generated drum groove the player composes over.
 let drumPattern: DrumPattern | null = null;
-let progression: ChordProgression = { events: [], label: "—" };
 
 // ── UI ────────────────────────────────────────────────────────────────────────
 const inp          = new InputHandler();
@@ -190,9 +175,7 @@ function updateHud(): void {
             phaseEl.textContent = "Compose your melody over the beat";
             bpmEl.textContent = `${bpm} BPM`;
             instrumentEl.textContent = `instrument: ${currentInstrument}`;
-            backingEl.textContent = drumPattern
-                ? `beat: ${drumPattern.name}  |  chords: ${progression.label}`
-                : "";
+            backingEl.textContent = drumPattern ? `beat: ${drumPattern.name}` : "";
             break;
         case "ended":
             phaseEl.textContent = "Time's up! Nice loop.";
@@ -208,35 +191,13 @@ function updateTimer(remainingMs: number): void {
     timerEl.textContent = `${mm}:${ss}`;
 }
 
-// ── Backing track ─────────────────────────────────────────────────────────────
+// ── Auto drum groove ─────────────────────────────────────────────────────────
 function applyDrumPattern(dp: DrumPattern): void {
     for (let s = 0; s < STEPS; s++) {
         pattern.kick[s]    = dp.kick[s]  ? { note: 0, instrument: "kick" }    : null;
         pattern.snare[s]   = dp.snare[s] ? { note: 0, instrument: "snare" }   : null;
         pattern.highHat[s] = dp.hihat[s] ? { note: 0, instrument: "highHat" } : null;
     }
-}
-
-// Collect every melodic note the player has placed, indexed by step, so the
-// chord generator can "hear" the melody.
-function melodyByStep(): number[][] {
-    const out: number[][] = [];
-    for (let s = 0; s < STEPS; s++) {
-        const notes: number[] = [];
-        for (const id of MELODIC_INSTRUMENTS) {
-            const slot = pattern[id][s];
-            if (slot) notes.push(slot.note);
-        }
-        out.push(notes);
-    }
-    return out;
-}
-
-// Re-derive the backing chords from the current melody. Called after every edit
-// so the harmony follows along as the player builds their loop.
-function regenerateChords(): void {
-    progression = generateChordProgression(melodyByStep(), STEPS, STEPS_PER_CHORD);
-    updateHud();
 }
 
 // ── Sequencer ─────────────────────────────────────────────────────────────────
@@ -251,33 +212,6 @@ function playStep(step: number): void {
             ctx.currentTime + 0.02,
             (stepDurationMs / 1000) * 0.9,
             INSTRUMENT_VOLUME[slot.instrument]
-        );
-    }
-
-    // Backing chord — struck on its beat boundary, held across the beat with a
-    // short lazy strum so it sits behind the melody rather than on top of it.
-    const chord = progression.events.find(e => e.step === step);
-    if (chord) {
-        const beatSec = (stepDurationMs / 1000) * STEPS_PER_CHORD;
-        chord.voicing.forEach((midi, i) => {
-            player.queueWaveTable(
-                ctx, ctx.destination, CHORD_FONT,
-                ctx.currentTime + 0.02 + i * 0.018,
-                midi,
-                beatSec * 1.9,
-                0.18
-            );
-        });
-    }
-
-    // A single steel-drum shimmer on the top chord tone at the end of the bar,
-    // as a turnaround flourish.
-    if (step === STEPS - 1 && progression.events.length > 0) {
-        const lastVoicing = progression.events[progression.events.length - 1].voicing;
-        const top = lastVoicing[lastVoicing.length - 1];
-        player.queueWaveTable(
-            ctx, ctx.destination, SPARKLE_FONT,
-            ctx.currentTime + 0.02, top + 12, (stepDurationMs / 1000) * 1.4, 0.09
         );
     }
 }
@@ -298,7 +232,6 @@ function setNote(note: number): void {
     const slot: StepSlot = { note, instrument: currentInstrument };
     pattern[currentInstrument][currentStep] = slot;
     previewNote(slot);
-    regenerateChords();
     log(`step ${currentStep + 1}: note ${note + 1} (${currentInstrument})`);
     renderGrid();
 }
@@ -310,7 +243,6 @@ function nudgeNote(direction: 1 | -1): void {
     const slot: StepSlot = { note, instrument: existing.instrument };
     pattern[currentInstrument][currentStep] = slot;
     previewNote(slot);
-    regenerateChords();
     log(`step ${currentStep + 1}: nudged to note ${note + 1}`);
     renderGrid();
 }
@@ -333,11 +265,9 @@ function startGame(tappedBpm: number): void {
     currentStep = -1;
     pattern = emptyPattern();
 
-    // Generate a drum groove to play the melody on, and start with a clean
-    // (empty) chord bed until the player actually plays something.
+    // Generate a drum groove for the player to compose their melody on.
     drumPattern = generateDrumPattern(STEPS);
     applyDrumPattern(drumPattern);
-    progression = { events: [], label: "—" };
 
     instrumentIndex = 0;
     currentInstrument = MELODIC_INSTRUMENTS[0];
