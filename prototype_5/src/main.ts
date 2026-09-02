@@ -46,16 +46,24 @@ function log(message: string): void {
 // audio.load("left",    { src: ["sounds/left.webm",    "sounds/left.mp3"]    });
 // var soundRight = new Howl({src: ["sounds/right.webm",   "sounds/right.mp3"]});
 // audio.load("right",   { src: ["sounds/right.webm",   "sounds/right.mp3"]   });
-var soundSuccess = new Howl({src: ["sounds/success.webm", "sounds/success.mp3"]});
+// var soundSuccess = new Howl({src: ["sounds/success.webm", "sounds/success.mp3"]});
 // audio.load("success", { src: ["sounds/success.webm", "sounds/success.mp3"] });
 // audio.load("failure", { src: ["sounds/failure.webm", "sounds/failure.mp3"] });
-var soundFailure = new Howl({src: ["sounds/failure.webm", "sounds/failure.mp3"]})
+// var soundFailure = new Howl({src: ["sounds/failure.webm", "sounds/failure.mp3"]})
 // audio.load("walking", { src: ["sounds/walking.webm", "sounds/walking.mp3"] });
 // var soundWalking = new Howl({src: ["sounds/walking.webm", "sounds/walking.mp3"] });
 // var soundFrog = new Howl({
 //     src: ["sounds/frogCroak.webm", "sounds/frogCroak.wav", "sounds/frogCroak.mp3"],
 //     loop: true
 // })
+var soundCatching = new Howl({
+    src: ["sounds/vissen vangen_edited.mp3"],
+    sprite: {
+        success: [0,1586],
+        repeat: [1586,1742],
+        failure: [3328,2680],
+        escaped: [6008,1545]
+}})
 var soundDobber = new Howl({
     src: ["sounds/dobber-real.mp3", "sounds/dobber-real.webm", "sounds/dobber-real.wav"],
     sprite: {
@@ -112,7 +120,7 @@ var soundFishingReelThrow = new Howl({
 //     }
 // })
 // How long to wait between playing audiocue
-const STEP_INTERVAL = 2.0; // seconds
+const STEP_INTERVAL = 4.0; // seconds
 let stepTimer = 0;
 // let volume = 1;
 // let rate: number;
@@ -302,7 +310,8 @@ const loop = new GameLoop((dt) => {
             soundFishingReel.loop(false);
             soundFishingReel.stop();
             isSoundPlaying = false;
-            soundFailure.play();
+            // soundFailure.play();
+            soundCatching.play("escaped")
             state.pendingInstrument = null;
             resetCrank();
             state.phase = "idle";
@@ -397,14 +406,15 @@ function resolveReel(): void {
 
     if (!def) {
         // reeled in an empty hook — the miss lands now, not when you touched
-        soundFailure.volume(0.5);
-        soundFailure.play();
-        soundFailure.volume(1);
+        // soundFailure.volume(0.5);
+        // soundFailure.play();
+        // soundFailure.volume(1);
+        soundCatching.play("escaped")
         log("niks aan de haak...");
     } else if (def.isDrum) {
         // the drums were the wrong call — the strike lands now
         state.strikes++;
-        soundFailure.play();
+        soundCatching.play("failure");
         log(`fout ${state.strikes}/${MAX_STRIKES} — dat waren de drums!`);
         if (state.strikes >= MAX_STRIKES) state.phase = "failure";
     } else {
@@ -414,7 +424,7 @@ function resolveReel(): void {
             state.score++;
         }
         soundCaught.stop()
-        soundSuccess.play();
+        soundCatching.play("success")
         log(firstTime ? `${def.label} gevangen!` : `${def.label} — al vrij, geen punt`);
         if (state.collectedInstruments.length >= CATCHABLE.length) state.phase = "success";
     }
