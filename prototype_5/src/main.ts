@@ -65,6 +65,9 @@ var soundDobber = new Howl({
 })
 var soundCaught = new Howl({
     src: ["sounds/fishCaught.webm", "sounds/fishCaught.wav", "sounds/fishCaught.mp3"],
+    sprite: {
+        caught: [2000, 5000]
+    }
 })
 var soundFishingBackground = new Howl({src: ["sounds/fishing-background.webm", "sounds/fishing-background.mp3","sounds/fishing-background.wav"]})
 var soundThrow = new Howl({src: ["sounds/throw-woosh.webm", "sounds/throw-woosh.wav", "sounds/throw-woosh.mp3"]})
@@ -190,68 +193,6 @@ function startRound(): void {
 //     // distance = newDistance;
 // }
 
-// input.onAction((action) => {
-//     // audio.resume();
-//     Howler.ctx?.resume();
-//     if (action === "moveLeft")  {
-//         log("arm")
-//         state.armed = true
-//         soundArm.play()
-//     }
-//     if (action === "moveRight"){
-//         log("arm")
-//         state.armed = true
-//         soundArm.play()
-//     }
-//     if (action === "interact") {
-//         state.phase = "waiting"
-//     }
-//     if (action === "shoot") {
-//         state.armed = false
-//         soundArm.stop()
-//         armBeta = null
-//         armTime =0
-//         // log("shot")
-//         if (nextSoundTimeout !== null) {
-//             clearTimeout(nextSoundTimeout);
-//             nextSoundTimeout = null;
-//         }
-//         nextSound = true;
-//         if (state.drawn){
-//             //stop the sound of the drawn bow
-//             synth.stopAll()
-//             soundBow.play("shootShort")
-//             console.log("shooting bow")
-//             state.drawn = false;
-//             if (alpha!==null && armAngleBaseline!==null&& state.drawnStage==state.randomDistances[state.currentStep]&& (Math.abs(state.randomAngles[state.currentStep]-(armAngleBaseline-alpha))<20)){
-//                 state.phase = "success"
-//                 state.score++
-//                 setTimeout(() =>soundBow.play("hitShort"), 500);
-//             }
-//             else{
-//                 // shot misses! failure sound is played, but based on which side you need to move to, its either on the left or right. the volume indicates if you need to aim further or closer
-//                 console.log("miss!")
-//                 log("aimed at: "+alpha + "with baseline at: " + armAngleBaseline + " distance: " + state.drawnStage)
-//                 const volume = 1-(state.drawnStage-state.randomDistances[state.currentStep])/3
-//                 setTimeout(() => {
-//                     if (alpha !== null && armAngleBaseline !== null) {
-//                         soundFailure.volume(volume)
-//                         if (state.randomAngles[state.currentStep]-(armAngleBaseline-alpha) < 0) {
-//                             soundFailure.pos(1, 0)
-//                         } else {
-//                             soundFailure.pos(-1, 0)
-//                         }
-//                         soundFailure.play()
-//                     }
-//                 }, 500);
-//             }
-//             state.drawnStage = 0
-//         }
-//
-//
-//         // ensure sound stops when arming is stopped
-//     }
-// });
 
 const loop = new GameLoop((dt) => {
     if (!state.running) return;
@@ -298,6 +239,7 @@ const loop = new GameLoop((dt) => {
             armBetaBaseline = null
             // set beta to null to ensure that we stay in this state for a little longer without triggering the next state
             setTimeout(() => {
+                soundFishingReelThrow.stop()
                 soundDobber.play("land")
                 stepTimer=0
                 biteTimer=0
@@ -372,61 +314,6 @@ const loop = new GameLoop((dt) => {
             log("binnenhalen: " + Math.round(Math.abs(crankAngle)) + "°");
         }
     }
-    // alpha = orientation.alpha
-    // if (state.armed && armBeta == null) {
-    //     armBeta = beta;
-    //     armTime = 0;
-    //     nextSound = true;  // reset on fresh arm
-    //     if (nextSoundTimeout !== null) {
-    //         clearTimeout(nextSoundTimeout);  // cancel any leftover timeout
-    //         nextSoundTimeout = null;
-    //     }
-    // }
-    // armTime += dt;
-    // if (beta!== null && armBeta!== null && armTime > 0.3 && (beta-armBeta) > 10 && !state.drawn &&state.armed) {
-    //     log(beta+" "+ armBeta + armTime + state.drawn +state.armed)
-    //     const id = soundBow.play("drawShort");
-    //     console.log("play() returned:", id);
-    //     // audio.play("bow", 1,"drawShort")
-    //     console.log("drawing bow")
-    //     console.log("bow drawn to first state")
-    //     state.drawn = true;
-    //     if (nextSoundTimeout !== null) clearTimeout(nextSoundTimeout); // cancel any pending reset
-    //     nextSound = false;
-    //     nextSoundTimeout = setTimeout(() => { nextSound = true; }, 819);
-    //     //wait with setting the drawn state unitl the sound is done
-    // }
-
-    // if (beta!== null && armBeta!== null && armTime > 0.3 && state.drawn &&nextSound &&state.armed) {
-    //     //check if the bow is drawn to the next state
-    //     if ((beta-armBeta) >=10 &&(beta-armBeta) <20){
-    //         //bow drawn to first state
-    //         if (state.drawnStage!=1) {
-    //             synth.stopAll()
-    //             synth.playNote(NOTE.C4)
-    //             state.drawnStage = 1
-    //         }
-    //     }
-    //     else if ((beta-armBeta) >=20 &&(beta-armBeta) <30){
-    //         //bow drawn to second state
-    //         console.log("drawing bow to second state")
-    //         if(state.drawnStage!=2) {
-    //             synth.stopAll()
-    //             synth.playNote(NOTE.D4)
-    //             state.drawnStage = 2
-    //         }
-    //     }
-    //     else if ((beta-armBeta) >=30 &&(beta-armBeta) <40){
-    //         //bow drawn to third state
-    //         console.log("drawing bow to third state")
-    //         if (state.drawnStage!=3){
-    //             synth.stopAll()
-    //             synth.playNote(NOTE.E4)
-    //             state.drawnStage = 3
-    //
-    //         }
-    //     }
-    // }
     if (state.phase === "success" || state.phase =="failure") {
         state.currentStep = state.currentStep + 1;
         // create new target locations
@@ -457,7 +344,7 @@ function spawnBite(): void {
     let def: InstrumentDef;
     if (roll < 0.25 || needed.length === 0) {
         def = roll < 0.25 ? drum : pick(CATCHABLE);
-    } else if (roll < 0.85) {
+    } else if (roll < 0.75) {
         def = pick(needed);
     } else {
         def = pick(CATCHABLE);
@@ -497,6 +384,7 @@ function resolveReel(): void {
     soundFishingReel.loop(false);
     soundFishingReel.stop();
     isSoundPlaying = false;
+    soundCaught.play("caught");
 
     const id = state.pendingInstrument;
     const def = id ? INSTRUMENTS.find(i => i.id === id) ?? null : null;
@@ -525,7 +413,7 @@ function resolveReel(): void {
             state.collectedInstruments.push(def.id);
             state.score++;
         }
-        soundCaught.play();
+        soundCaught.stop()
         soundSuccess.play();
         log(firstTime ? `${def.label} gevangen!` : `${def.label} — al vrij, geen punt`);
         if (state.collectedInstruments.length >= CATCHABLE.length) state.phase = "success";
