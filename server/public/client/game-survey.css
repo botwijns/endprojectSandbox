@@ -1,0 +1,117 @@
+.game-survey {
+  --gs-fg: #111;
+  --gs-muted: #555;
+  --gs-border: rgba(0, 0, 0, 0.16);
+  --gs-accent: #1a1a1a;
+  --gs-bg: #fff;
+  --gs-card: #fafafa;
+  --gs-error: #b3261e;
+  max-width: 620px;
+  margin: 0 auto;
+  color: var(--gs-fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .game-survey {
+    --gs-fg: #f2f2f2;
+    --gs-muted: #a8a8a8;
+    --gs-border: rgba(255, 255, 255, 0.22);
+    --gs-accent: #fff;
+    --gs-bg: #141414;
+    --gs-card: #1e1e1e;
+    --gs-error: #f2b8b5;
+  }
+}
+
+.game-survey h2 { margin: 0 0 6px; font-size: 1.3rem; }
+.game-survey .gs-intro { margin: 0 0 20px; color: var(--gs-muted); }
+
+.game-survey .gs-q {
+  background: var(--gs-card);
+  border: 1px solid var(--gs-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.game-survey .gs-q > legend,
+.game-survey .gs-q > .gs-label {
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 8px;
+}
+.game-survey .gs-q .gs-required { color: var(--gs-error); margin-left: 2px; }
+
+.game-survey label.gs-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+.game-survey label.gs-option input { margin-top: 3px; }
+
+.game-survey .gs-scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.game-survey .gs-scale .gs-scale-label { font-size: 0.85rem; color: var(--gs-muted); }
+.game-survey .gs-scale label {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 40px;
+  padding: 6px 4px;
+  border: 1px solid var(--gs-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.game-survey .gs-scale label:has(input:checked) {
+  border-color: var(--gs-accent);
+  background: var(--gs-accent);
+  color: var(--gs-bg);
+}
+.game-survey .gs-scale input { position: absolute; opacity: 0; pointer-events: none; }
+
+.game-survey textarea {
+  width: 100%;
+  min-height: 84px;
+  padding: 8px 10px;
+  border: 1px solid var(--gs-border);
+  border-radius: 8px;
+  font: inherit;
+  background: var(--gs-bg);
+  color: var(--gs-fg);
+  resize: vertical;
+}
+
+.game-survey .gs-field-error {
+  color: var(--gs-error);
+  font-size: 0.85rem;
+  margin-top: 6px;
+}
+
+.game-survey button.gs-submit {
+  appearance: none;
+  border: 1px solid var(--gs-accent);
+  background: var(--gs-accent);
+  color: var(--gs-bg);
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 22px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.game-survey button.gs-submit:disabled { opacity: 0.55; cursor: default; }
+
+.game-survey .gs-form-error {
+  color: var(--gs-error);
+  margin-top: 10px;
+}
+.game-survey .gs-loading,
+.game-survey .gs-error { color: var(--gs-muted); }
+.game-survey .gs-done { font-size: 1.05rem; }

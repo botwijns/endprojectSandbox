@@ -1,0 +1,95 @@
+{
+  "version": "2026-09-07",
+  "title": "Een paar vragen na afloop",
+  "intro": "Bedankt voor het spelen! Je antwoorden zijn volledig anoniem en helpen bij het onderzoek. Dit duurt ongeveer een minuut.",
+  "submitLabel": "Versturen",
+  "thankYou": "Bedankt, je antwoorden zijn opgeslagen.",
+  "questions": [
+    {
+      "id": "age_range",
+      "type": "single",
+      "label": "Wat is je leeftijd?",
+      "required": true,
+      "options": ["Jonger dan 18", "18–24", "25–34", "35–44", "45–54", "55 of ouder"]
+    },
+    {
+      "id": "gaming_frequency",
+      "type": "single",
+      "label": "Hoe vaak speel je games (op telefoon, console of pc)?",
+      "required": true,
+      "options": ["(Bijna) nooit", "Een paar keer per maand", "Wekelijks", "Dagelijks"]
+    },
+    {
+      "id": "played_prototypes",
+      "type": "multi",
+      "label": "Welke prototypes heb je gespeeld?",
+      "required": true,
+      "options": [
+        "1 — Melodie naspelen (toetsenbord)",
+        "2 — Melodie naspelen (kantelen)",
+        "3 — Boogschieten & lopen",
+        "4 — Mikken op de kikker",
+        "5 — Hengelen naar instrumenten",
+        "6 — Componeren op een grid"
+      ]
+    },
+    {
+      "id": "favorite_prototype",
+      "type": "single",
+      "label": "Welk prototype vond je het leukst?",
+      "required": false,
+      "options": [
+        "1 — Melodie naspelen (toetsenbord)",
+        "2 — Melodie naspelen (kantelen)",
+        "3 — Boogschieten & lopen",
+        "4 — Mikken op de kikker",
+        "5 — Hengelen naar instrumenten",
+        "6 — Componeren op een grid"
+      ]
+    },
+    {
+      "id": "enjoyment",
+      "type": "scale",
+      "label": "Hoe leuk vond je het geheel?",
+      "required": true,
+      "min": 1,
+      "max": 5,
+      "minLabel": "Niet leuk",
+      "maxLabel": "Heel leuk"
+    },
+    {
+      "id": "controls_clear",
+      "type": "scale",
+      "label": "Hoe duidelijk waren de besturing en uitleg?",
+      "required": true,
+      "min": 1,
+      "max": 5,
+      "minLabel": "Onduidelijk",
+      "maxLabel": "Heel duidelijk"
+    },
+    {
+      "id": "motion_comfortable",
+      "type": "scale",
+      "label": "De bewegingsbesturing (kantelen / telefoon bewegen) voelde prettig.",
+      "required": false,
+      "min": 1,
+      "max": 5,
+      "minLabel": "Oneens",
+      "maxLabel": "Eens"
+    },
+    {
+      "id": "would_recommend",
+      "type": "boolean",
+      "label": "Zou je dit aan iemand anders aanraden om te proberen?",
+      "required": true
+    },
+    {
+      "id": "comments",
+      "type": "text",
+      "label": "Overige opmerkingen (optioneel)",
+      "required": false,
+      "maxLength": 2000,
+      "placeholder": "Wat viel je op? Wat kon beter?"
+    }
+  ]
+}

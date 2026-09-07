@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vragenlijst — End project Sandbox</title>
+  <link rel="stylesheet" href="/client/game-survey.css">
+  <style>
+    body {
+      margin: 0;
+      background: #fff;
+      color: #111;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      padding: 32px 20px 64px;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #141414; color: #f2f2f2; }
+    }
+  </style>
+</head>
+<body>
+  <div id="survey"></div>
+
+  <script src="/client/game-telemetry.js"></script>
+  <script src="/client/game-survey.js"></script>
+  <script>
+    // This page is served by the game server, so same-origin API calls just work.
+    // When you host it elsewhere, add ?api=https://your-server to the URL, or set
+    // a <meta name="game-api-base"> tag.
+    var params = new URLSearchParams(location.search);
+    var api = params.get('api');
+    if (api) GameTelemetry.setApiBase(api);
+
+    GameSurvey.mount('#survey', {
+      onComplete: function () {
+        var next = params.get('next');
+        if (next) setTimeout(function () { location.href = next; }, 1200);
+      }
+    });
+  </script>
+</body>
+</html>
