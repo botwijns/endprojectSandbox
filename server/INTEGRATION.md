@@ -77,21 +77,43 @@ GameTelemetry?.recordProgress({
 
 ## 4. Show the survey at the end of the game
 
-### Option A — redirect to the hosted page (simplest)
+### Option A — the GitHub Pages survey page (recommended)
 
-When the whole session is over, send the player to the server's own survey page.
-Because they carry the same `localStorage` session id, the response links to
-their game data automatically.
+This repo builds a standalone survey page at **`/survey/`** and deploys it to
+Pages alongside the prototypes (`survey/`, `vite.survey.config.ts`). It bundles
+`server/survey-template.json` at build time — the same file the server
+validates against, so the two never drift as long as you redeploy Pages after
+editing the template.
+
+When the whole play session is over, send the player there:
+
+```js
+location.href = 'https://botwijns.github.io/endprojectSandbox/survey/?next=' +
+  encodeURIComponent('https://botwijns.github.io/endprojectSandbox/');
+```
+
+The player carries the same `localStorage` session id, so the response links to
+their game data automatically. `?next=` is where to send them after the
+thank-you message; `?api=` overrides the server URL for a test.
+
+Before it can submit, set the server URL in `survey/index.html`:
+
+```html
+<meta name="game-api-base" content="https://games-api.example.org" />
+```
+
+### Option B — redirect to the server-hosted page
+
+The server also serves its own copy of the page at `GET /survey` (fetches the
+template over HTTP instead of bundling it). Useful if Pages isn't deploying or
+you want the survey on the API origin:
 
 ```js
 location.href = 'http://localhost:3000/survey?next=' +
   encodeURIComponent('https://botwijns.github.io/endprojectSandbox/');
 ```
 
-`?next=` is optional (where to send the player after "Bedankt"). `?api=` lets you
-override the API base if you host `survey.html` somewhere else.
-
-### Option B — embed the survey in your own page
+### Option C — embed the survey in your own page
 
 ```html
 <link rel="stylesheet" href="http://localhost:3000/client/game-survey.css">
@@ -109,7 +131,8 @@ override the API base if you host `survey.html` somewhere else.
 ```
 
 `GameSurvey.mount`:
-- fetches `/api/survey/template`
+- fetches `/api/survey/template` (or renders `options.template` if you pass one,
+  as the Pages page does)
 - renders the questions (radio / checkbox / 1–n scale / yes-no / textarea)
 - checks required fields client-side, then `POST`s to
   `/api/sessions/:id/survey` via the current `GameTelemetry` session
@@ -128,4 +151,7 @@ To change the questions, edit `server/survey-template.json` and bump its
 - Serve the API over HTTPS (mixed-content: an `https://` game page cannot call an
   `http://` API).
 - Set a strong `EXPORT_TOKEN` and keep it out of the frontend.
-- Update the `<meta name="game-api-base">` in each prototype to the production URL.
+- Update the `<meta name="game-api-base">` in each prototype **and in
+  `survey/index.html`** to the production URL.
+- Redeploy Pages after editing `server/survey-template.json` so the bundled copy
+  on the `/survey/` page matches what the server validates against.

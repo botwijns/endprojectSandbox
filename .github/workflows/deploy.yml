@@ -50,6 +50,7 @@ jobs:
           cp -r prototype_4/dist/prototype_4 dist/
           cp -r prototype_5/dist/prototype_5 dist/
           cp -r prototype_6/dist/prototype_6 dist/
+          cp -r survey/dist/survey dist/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5

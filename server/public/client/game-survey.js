@@ -11,6 +11,13 @@
  *       onComplete: function () { location.href = '/thanks.html'; },
  *     });
  *   </script>
+ *
+ * Options for GameSurvey.mount(target, options):
+ *   - onComplete(result, answers) : called after a successful submission
+ *   - template                    : a survey template object to render directly,
+ *                                   instead of fetching GET /api/survey/template
+ *                                   (used by the GitHub Pages survey page, which
+ *                                   bundles survey-template.json at build time)
  */
 (function (global) {
   'use strict';
@@ -153,7 +160,13 @@
     root.innerHTML = '';
     root.appendChild(h('p', { class: 'gs-loading', text: 'Vragenlijst laden…' }));
 
-    return T.loadSurveyTemplate().then(function (template) {
+    // opts.template: use a template supplied by the caller (e.g. a page that
+    // bundled survey-template.json at build time) instead of fetching it.
+    var templateSource = opts.template
+      ? Promise.resolve(opts.template)
+      : T.loadSurveyTemplate();
+
+    return templateSource.then(function (template) {
       root.innerHTML = '';
       if (template.title) root.appendChild(h('h2', { text: template.title }));
       if (template.intro) root.appendChild(h('p', { class: 'gs-intro', text: template.intro }));

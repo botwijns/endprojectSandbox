@@ -164,12 +164,21 @@ is a data-only edit — no code changes, no redeploy of the frontend.
 
 ## Frontend integration
 
-See [`INTEGRATION.md`](./INTEGRATION.md) for copy-paste snippets. In short: the
-server also serves a tiny client library and a ready-made survey page.
+See [`INTEGRATION.md`](./INTEGRATION.md) for copy-paste snippets.
 
+- **GitHub Pages survey page** — `survey/` in the repo root (built by
+  `vite.survey.config.ts`, deployed to `/endprojectSandbox/survey/`). It bundles
+  `survey-template.json` at build time, so it renders the exact same questions
+  the server validates against. This is the recommended place to send players
+  when the game ends.
 - `GET /client/game-telemetry.js` — `GameTelemetry.session()`, `.recordProgress()`, `.submitSurvey()`
-- `GET /client/game-survey.js` + `/client/game-survey.css` — `GameSurvey.mount('#el')`
-- `GET /survey` — a standalone hosted survey page to redirect players to when the game ends
+- `GET /client/game-survey.js` + `/client/game-survey.css` — `GameSurvey.mount('#el', { template? })`
+- `GET /survey` — the server's own copy of the survey page (fetches the template
+  over HTTP); a fallback for the Pages page
+
+The renderer (`public/client/game-survey.js`) and the template
+(`survey-template.json`) each live in exactly one place; both the Pages page and
+this server consume them.
 
 ---
 
