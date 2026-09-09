@@ -13,12 +13,197 @@ const state = createInitialState();
 const scoreEl = document.getElementById("score")!;
 const phaseEl = document.getElementById("phase")!;
 const collectionEl = document.getElementById("collection")!;
-const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
 const logEl = document.getElementById("log")!;
+const instructionEl = document.getElementById("instruction")!;
+const startScreenEl = document.getElementById("start-screen")!;
+const gameScreenEl = document.getElementById("game-screen")!;
+const startNoteEl = document.getElementById("start-note")!;
+const introBtn = document.getElementById("intro-btn") as HTMLButtonElement;
+const gameBtn = document.getElementById("game-btn") as HTMLButtonElement;
+const stopBtn = document.getElementById("stop-btn") as HTMLButtonElement;
 
 // total instruments the player must collect (everything except the drums)
 const CATCHABLE = INSTRUMENTS.filter(i => !i.isDrum);
 const MAX_STRIKES = 3;
+
+// --- introduction level -----------------------------------------------------
+// The intro is a guided tutorial: it first plays a demo of a catchable fish and
+// of the drum trap so the player knows what each sounds like, then the on-screen
+// instruction walks them through every phase. Drums never bite during the intro
+// and landing a single fish completes it, returning to the start screen.
+let gameRunning = false;   // a round (intro or full game) is currently active
+let introMode = false;     // currently playing the guided tutorial
+let introComplete = false; // the tutorial fish has been landed — freeze play
+let introDemoActive = false; // playing the "this is a fish / these are drums" demo
+let runId = 0;             // bumped on every start/stop so async work can bail out
+let demoTimer: ReturnType<typeof setTimeout> | null = null;
+let introEndTimer: ReturnType<typeof setTimeout> | null = null;
+
+const INTRO_DONE_TEXT =
+    "🎉 Goed gedaan! Je hebt je eerste vis gevangen. Terug naar het startscherm...";
+
+// what to do right now, keyed by phase
+const INTRO_STEPS: Record<string, string> = {
+    idle:      "Stap 1 van 4 — Trek je telefoon rustig naar achteren, alsof je een hengel terughaalt.",
+    throwing:  "Stap 2 van 4 — Gooi je telefoon naar voren om de lijn uit te werpen.",
+    listening: "Stap 3 van 4 — Luister. Hoor je een instrument een melodie spelen? Raak dan het scherm aan. Hoor je stilte? Wacht op de volgende.",
+    reeling:   "Stap 4 van 4 — Draai met je duim rondjes op het scherm tot de vis binnen is.",
+    success:   "Gevangen!",
+    failure:   "De vis ontsnapte — geen zorgen, je hoort de volgende zo weer.",
+};
+
+const PHASE_HINTS: Record<string, string> = {
+    idle:      "Trek je telefoon naar achteren om de hengel terug te halen.",
+    throwing:  "Gooi je telefoon naar voren om uit te werpen.",
+    listening: "Luister. Melodie? Raak het scherm aan. Drums of stilte? Doe niks.",
+    reeling:   "Draai met je duim rondjes op het scherm om binnen te halen.",
+    success:   "Gevangen! 🎣",
+    failure:   "Ontsnapt...",
+};
+
+function updateInstruction(text?: string): void {
+    if (text !== undefined) {
+        instructionEl.textContent = text;
+        return;
+    }
+    if (introDemoActive) return;      // the demo owns the instruction text
+    if (introComplete) {
+        instructionEl.textContent = INTRO_DONE_TEXT;
+        return;
+    }
+    const table = introMode ? INTRO_STEPS : PHASE_HINTS;
+    instructionEl.textContent = table[state.phase] ?? "";
+}
+
+/**
+ * Play a short listening demo: a catchable fish's melody, then the drum trap,
+ * each with a caption, so the player learns the difference before fishing.
+ * Resolves when done; bails out immediately if the session is stopped (runId).
+ */
+function runIntroDemo(myRun: number): Promise<void> {
+    return new Promise((resolve) => {
+        const goodFish = INSTRUMENTS.find(i => i.id === "guitar")!;
+        const drums = INSTRUMENTS.find(i => i.isDrum)!;
+        const steps: { text: string; def: InstrumentDef; gap: number }[] = [
+            { text: "Luister eerst. Dít is een vis — een melodie. Zó eentje wil je vangen:", def: goodFish, gap: 1200 },
+            { text: "En dít zijn de drums — een kale dreun, geen melodie. Die laat je zwemmen:", def: drums, gap: 1200 },
+            { text: "Nog een keer de vis (vangen)...", def: goodFish, gap: 900 },
+            { text: "...en de drums (níét vangen).", def: drums, gap: 900 },
+        ];
+
+        introDemoActive = true;
+        let i = 0;
+        const step = (): void => {
+            if (myRun !== runId) { resolve(); return; }   // stopped mid-demo
+            if (i >= steps.length) {
+                introDemoActive = false;
+                instructionEl.textContent = "Klaar? Daar gaan we — volg de aanwijzingen.";
+                demoTimer = setTimeout(resolve, 1300);
+                return;
+            }
+            const s = steps[i++];
+            instructionEl.textContent = s.text;
+            const dur = instruments.playMelody(s.def);
+            demoTimer = setTimeout(step, dur * 1000 + s.gap);
+        };
+        step();
+    });
+}
+
+function finishIntro(): void {
+    // land the tutorial fish, then drop back to the start screen once the catch
+    // sound and the congratulations have had a moment to register.
+    introComplete = true;
+    updateInstruction();
+    soundFishingBackground.fade(soundFishingBackground.volume() as number, 0, 1600);
+    introEndTimer = setTimeout(() => {
+        stopGame();
+        startNoteEl.hidden = false;
+        startNoteEl.textContent = "✅ Oefenlevel voltooid! Druk op ‘Start spel’ voor het hele spel.";
+        introBtn.textContent = "Oefenlevel opnieuw";
+    }, 2200);
+}
+
+function showStartScreen(): void {
+    gameScreenEl.hidden = true;
+    startScreenEl.hidden = false;
+}
+
+function showGameScreen(): void {
+    startScreenEl.hidden = true;
+    gameScreenEl.hidden = false;
+}
+
+/** Full teardown — stop everything and return to the start screen. */
+function stopGame(): void {
+    runId++;                       // invalidate any in-flight demo / timers
+    introDemoActive = false;
+    introComplete = false;
+    if (demoTimer !== null) { clearTimeout(demoTimer); demoTimer = null; }
+    if (introEndTimer !== null) { clearTimeout(introEndTimer); introEndTimer = null; }
+    state.running = false;
+    input.stop();
+    loop.stop();
+    Howler.stop();
+    instruments.stopAll();
+    soundFishingBackground.stop();
+    gameRunning = false;
+    introBtn.disabled = false;
+    gameBtn.disabled = false;
+    instructionEl.textContent = "";
+    log("");
+    showStartScreen();
+}
+
+/** Shared start path for both the intro and the full game. */
+async function startGame(asIntro: boolean): Promise<void> {
+    if (gameRunning) return;
+    const myRun = ++runId;
+
+    Howler.ctx?.resume();
+    synth.resume();
+    instruments.resume();
+
+    const granted = await input.requestOrientationPermission();
+    if (myRun !== runId) return;
+    if (!granted) {
+        startNoteEl.hidden = false;
+        startNoteEl.textContent = "Geen toegang tot de bewegingssensor — tik nogmaals om opnieuw te proberen.";
+        return;
+    }
+
+    if (!instruments.isReady()) {
+        introBtn.disabled = true;
+        gameBtn.disabled = true;
+        startNoteEl.hidden = false;
+        startNoteEl.textContent = "Instrumenten laden…";
+        await instruments.preload();
+        if (myRun !== runId) return;
+        introBtn.disabled = false;
+        gameBtn.disabled = false;
+    }
+    startNoteEl.hidden = true;
+
+    introMode = asIntro;
+    introComplete = false;
+    introDemoActive = asIntro;   // suppress the step text until the demo is done
+    state.score = 0;
+    state.collectedInstruments = [];
+
+    showGameScreen();
+    input.start();
+    startRound();                  // phase -> idle, background music on (loop not running yet)
+    gameRunning = true;
+
+    if (asIntro) {
+        await runIntroDemo(myRun);
+        if (myRun !== runId) return; // stopped during the demo
+    }
+
+    state.running = true;
+    loop.start();
+    updateUI();
+}
 
 // catch-by-ear timing (seconds unless noted)
 let biteTimer = 0;             // time since last melody
@@ -138,6 +323,7 @@ function startRound(): void {
 
 const loop = new GameLoop((dt) => {
     if (!state.running) return;
+    if (introComplete) return; // tutorial fish landed — hold everything still
 
     const orientation = input.getOrientation();
     //if beta is smaller than zero, we have crossed the z plane, to prevent errors, we will update the beta to a number that is always positive
@@ -281,6 +467,18 @@ function spawnBite(): void {
     const drum = INSTRUMENTS.find(i => i.isDrum)!;
     const needed = CATCHABLE.filter(i => !state.collectedInstruments.includes(i.id));
 
+    // the tutorial never uses the drum trap — a catchable fish always bites
+    if (introMode) {
+        const def = pick(needed.length ? needed : CATCHABLE);
+        const dobberId = soundDobber.play("caught");
+        soundDobber.volume(0.8, dobberId);
+        const melodyDur = instruments.playMelody(def);
+        state.activeInstrument = def.id;
+        catchWindowUntil = performance.now() + melodyDur * 1000 + 600;
+        log("🎣 er bijt iets — raak het scherm aan!");
+        return;
+    }
+
     // ~25% drum trap; otherwise prefer a not-yet-unlocked instrument, but an
     // already-unlocked one can still bite (it just won't award a point).
     const roll = Math.random();
@@ -360,7 +558,12 @@ function resolveReel(): void {
         soundCaught.stop()
         soundCatching.play("success")
         log(firstTime ? `${def.label} gevangen!` : `${def.label} — al vrij, geen punt`);
-        if (state.collectedInstruments.length >= CATCHABLE.length) state.phase = "success";
+        if (introMode) {
+            // one fish is all the tutorial asks for
+            finishIntro();
+        } else if (state.collectedInstruments.length >= CATCHABLE.length) {
+            state.phase = "success";
+        }
     }
     updateUI();
 }
@@ -375,6 +578,7 @@ if (debug) {
         if (e.key === "t" && state.phase === "idle") {
             soundThrow.play();
             state.phase = "throwing";
+            updateUI();
         } else if (e.key === "l") {
             biteTimer = 0;
             nextBiteDelay = 1;
@@ -404,45 +608,14 @@ function updateUI(): void {
         .join("   ");
     collectionEl.textContent =
         `${caught}   |   drums: ${state.strikes}/${MAX_STRIKES}`;
+
+    // the tutorial only asks for one fish — the full collection tracker would
+    // just be noise, so hide it and the score until the real game starts
+    collectionEl.hidden = introMode;
+    scoreEl.hidden = introMode;
+
+    updateInstruction();
 }
-let gameRunning = false;
-
-startBtn.addEventListener("click", async () => {
-    if (!gameRunning) {
-        Howler.ctx?.resume();
-        synth.resume();
-        instruments.resume();
-
-        const granted = await input.requestOrientationPermission();
-        if (!granted) {
-            startBtn.textContent = "Permission denied — tap to retry";
-            return;
-        }
-
-        if (!instruments.isReady()) {
-            startBtn.disabled = true;
-            startBtn.textContent = "Instrumenten laden…";
-            await instruments.preload();
-            startBtn.disabled = false;
-        }
-
-        input.start();
-        state.running = true;
-        startRound();
-        loop.start();
-        startBtn.textContent = "Stop";
-        gameRunning = true;
-        updateUI();
-    } else {
-        state.running = false;
-        input.stop();
-        loop.stop();
-        Howler.stop()
-        // soundFrog.stop();
-        // synth.stopAll();
-        instruments.stopAll();
-        soundFishingBackground.stop();
-        startBtn.textContent = "Start";
-        gameRunning = false;
-    }
-});
+introBtn.addEventListener("click", () => { startNoteEl.hidden = true; startGame(true); });
+gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; startGame(false); });
+stopBtn.addEventListener("click", () => stopGame());

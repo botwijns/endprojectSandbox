@@ -9,26 +9,32 @@
     <title>endproject-sandbox</title>
   </head>
   <body>
-  <h1>End project sandbox: prototype 5</h1>
-  <p>
-    Klik op de startknop om het spel te starten.<br>
-    trek als een hengel je telefoon naar achter <br>
-    trek je telefoon naar voren om de hengel uit te gooien <br>
-    <strong>Luister:</strong> elk instrument speelt zijn eigen melodie. Hoor je een
-    instrument? <strong>Raak het scherm aan</strong> om binnen te halen &mdash; draai
-    met je duim rondjes (het midden van je cirkel mag verschuiven).<br>
-    Je hoort pas <em>na</em> het binnenhalen of het raak was. Was het de drums of
-    stilte, dan telt het als fout.<br>
-    Zo vang je &eacute;&eacute;n instrument per keer. Vrijgespeelde instrumenten blijven
-    happen maar leveren geen punt meer op.<br>
-    Vang alle instrumenten &mdash; 3x drums = ontsnapt.<br>
+  <h1>Prototype 5 &mdash; Leer vissen</h1>
 
-  </p>
-  <button id="start-btn" >Start Game</button>
-  <div id="score">Score: 0</div>
-  <div id="collection"></div>
-  <div id="log"></div>
-  <div id="phase">Klaar voor?</div>
+  <div id="start-screen">
+    <p id="intro-blurb">
+      Vang vissen op je gehoor. Elke vis is een instrument met een eigen melodie:
+      hoor je een melodie, dan haal je binnen. Hoor je de <strong>drums</strong>
+      &mdash; een kale dreun &mdash; dan laat je die zwemmen.<br>
+      In het <strong>oefenlevel</strong> hoor je eerst allebei en leer je stap voor stap
+      hoe het werkt. Je bent klaar zodra je &eacute;&eacute;n vis vangt.
+    </p>
+    <p id="start-note" hidden></p>
+    <div id="menu-buttons">
+      <button id="intro-btn">Start oefenlevel</button>
+      <button id="game-btn">Start spel</button>
+    </div>
+  </div>
+
+  <div id="game-screen" hidden>
+    <div id="instruction"></div>
+    <div id="score">Score: 0</div>
+    <div id="collection"></div>
+    <div id="log"></div>
+    <div id="phase">Klaar voor?</div>
+    <button id="stop-btn">Stop &mdash; terug naar startscherm</button>
+  </div>
+
   <script type="module" src="src/main.ts"></script>
   </body>
 </html>

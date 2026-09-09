@@ -213,6 +213,9 @@ export class InputHandler {
     // };
 
     private handleJoystickStart = (e: PointerEvent): void => {
+        // Let taps on real UI controls (buttons, links, inputs) behave normally —
+        // capturing the pointer on <body> here would otherwise swallow their click.
+        if ((e.target as Element | null)?.closest?.("button, a, input, select, textarea, [data-ui]")) return;
         // Only claim this pointer if no joystick is active yet
         if (this.joystickPointerId !== null) return;
         this.joystickPointerId = e.pointerId;
