@@ -29,7 +29,7 @@ let catchWindowUntil = 0;      // performance.now() timestamp the current window
 let crankAngle = 0;           // signed degrees turned this reel-in
 let crankVelocity = 0;        // change in crankAngle on the last tick
 let isSoundPlaying = false;
-const REEL_TARGET = 2 * 360;  // full turns needed to land the fish
+const REEL_TARGET = 3 * 360;  // full turns needed to land the fish
 
 function resetCrank(): void {
     crankAngle = 0;
@@ -87,48 +87,10 @@ var soundFishingReelThrow = new Howl({
         reel: [5200,1000]
     }
 })
-// var soundBow = new Howl({
-//     src: [ "sounds/bow.wav", "sounds/bow.mp3", "sounds/bow.webm"],
-//     sprite: {
-//         drawShort:    [966,   819],   // 1785 - 966
-//         shootShort:   [1905, 3705],   // 5610 - 1905
-//         hitShort:     [2801,  472],   // 3273 - 2801
-//         drawMedium:   [4423,  889],   // 5312 - 4423
-//         shootMedium:  [5340,  840],   // 6180 - 5340
-//         hitMedium:    [6349, 1094],   // 7443 - 6349
-//         drawLong:     [7492, 1827],   // 9319 - 7492
-//         shootLong:    [9474,  784],   // 10258 - 9474
-//         hitLong:      [10413, 740],   // 11153 - 10413
-//     },
-//     onload: () => console.log("bow loaded OK"),
-//     onloaderror: (id, err) => console.error("bow LOAD ERROR", id, err),
-//     onplayerror: (id, err) => console.error("bow PLAY ERROR", id, err),
-//     });
-// var soundArm = new Howl({src: ["sounds/arm.webm", "sounds/arm.mp3"]});
-// audio.load("bow", {
-//     src: ["sounds/bow.webm", "sounds/bow.mp3", "sounds/bow.wav"],
-//     sprite: {
-//         drawShort: [966, 1785],
-//         shootShort: [1905,5610],
-//         hitShort: [2801,3273],
-//         drawMedium: [4423,5312],
-//         shootMedium: [5340,6180],
-//         hitMedium: [6349,7443],
-//         drawLong: [7492, 9319],
-//         shootLong: [9474,10258],
-//         hitLong: [10413,11153]
-//     }
-// })
-// How long to wait between playing audiocue
 const STEP_INTERVAL = 4.0; // seconds
 let stepTimer = 0;
-// let volume = 1;
-// let rate: number;
-// let distance = -1;
 var armBeta: number|null = null;
 var armBetaBaseline: number|null = null;
-// var alpha: number|null = null;
-// var armAngleBaseline: number|null = null;
 // @ts-ignore
 var nextSound: boolean = true;
 var nextSoundTimeout: ReturnType<typeof setTimeout> | null = null; // add this
@@ -171,35 +133,7 @@ function startRound(): void {
     soundFishingBackground.volume(0.3)
     soundFishingBackground.loop(true)
 }
-// function generateSoundLocation(angle:number, distance:number): number[]{
-//     const x = Math.sin(angle)*distance*5;
-//     const y = Math.cos(angle)*distance*5;
-//     log("x: "+x +" y: "+y + " distance: "+ distance);
-//     return [x, y];
-// }
-// function handleInput(dir: Direction): void {
-//     console.log(dir);
-//     if (state.phase !== "playing") return;
-//     // we always walk first, then we make the sound faster or slower
-//     // audio.play("walking")
-//     // soundWalking.play()
-//     // console.log(dir)
-//     // let xAfter = state.player.x
-//     // if (dir=="left"){
-//     //     xAfter--;
-//     // }
-//     // else{
-//     //     xAfter ++;
-//     // }
-//     // const newDistance = Math.abs(state.randomNumbers[state.currentStep] - xAfter);
-//     // if (newDistance<distance){
-//     //     rate+=0.2;
-//     // }
-//     // else{
-//     //     rate-=0.2;
-//     // }
-//     // distance = newDistance;
-// }
+
 
 
 const loop = new GameLoop((dt) => {
@@ -272,7 +206,7 @@ const loop = new GameLoop((dt) => {
 
         if (state.activeInstrument === null && biteTimer >= nextBiteDelay) {
             biteTimer = 0;
-            nextBiteDelay = 1.8 + Math.random() * 2.6;
+            nextBiteDelay = 4 + Math.random() * 2.6;
             spawnBite();
         }
 

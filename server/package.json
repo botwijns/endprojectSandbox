@@ -1,0 +1,19 @@
+{
+  "name": "endproject-game-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Anonymous game-progress + survey backend for endproject-sandbox",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/index.js",
+    "dev": "node --watch --disable-warning=ExperimentalWarning src/index.js",
+    "export": "node --disable-warning=ExperimentalWarning scripts/export.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}

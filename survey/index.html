@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vragenlijst — End project Sandbox</title>
+    <!--
+      Where the game server (the `server/` folder in this repo) is reachable.
+      This page RENDERS from the survey template bundled at build time, so it
+      works without the server — but SUBMITTING answers posts to this URL.
+      Edit it before deploying, or append ?api=https://your-server to the page
+      URL to override it at runtime.
+    -->
+    <meta name="game-api-base" content="http://localhost:3000" />
+  </head>
+  <body>
+    <main class="page">
+      <div id="survey"></div>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
