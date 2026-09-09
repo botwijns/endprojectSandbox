@@ -1,7 +1,7 @@
 {
-  "version": "2026-09-07",
-  "title": "Een paar vragen na afloop",
-  "intro": "Bedankt voor het spelen! Je antwoorden zijn volledig anoniem en helpen bij het onderzoek. Dit duurt ongeveer een minuut.",
+  "version": "2026-09-09",
+  "title": "Vragenlijst",
+  "intro": "Bedankt voor het spelen! Een paar vragen na afloop, dit duurt ongeveer een minuut.",
   "submitLabel": "Versturen",
   "thankYou": "Bedankt, je antwoorden zijn opgeslagen.",
   "questions": [
@@ -10,28 +10,14 @@
       "type": "single",
       "label": "Wat is je leeftijd?",
       "required": true,
-      "options": ["Jonger dan 18", "18–24", "25–34", "35–44", "45–54", "55 of ouder"]
+      "options": ["9-10", "11-12", "13-14", "15-17", "18 of ouder"]
     },
     {
       "id": "gaming_frequency",
       "type": "single",
-      "label": "Hoe vaak speel je games (op telefoon, console of pc)?",
+      "label": "Hoe vaak speel je games?",
       "required": true,
       "options": ["(Bijna) nooit", "Een paar keer per maand", "Wekelijks", "Dagelijks"]
-    },
-    {
-      "id": "played_prototypes",
-      "type": "multi",
-      "label": "Welke prototypes heb je gespeeld?",
-      "required": true,
-      "options": [
-        "1 — Melodie naspelen (toetsenbord)",
-        "2 — Melodie naspelen (kantelen)",
-        "3 — Boogschieten & lopen",
-        "4 — Mikken op de kikker",
-        "5 — Hengelen naar instrumenten",
-        "6 — Componeren op een grid"
-      ]
     },
     {
       "id": "favorite_prototype",
@@ -39,12 +25,9 @@
       "label": "Welk prototype vond je het leukst?",
       "required": false,
       "options": [
-        "1 — Melodie naspelen (toetsenbord)",
-        "2 — Melodie naspelen (kantelen)",
-        "3 — Boogschieten & lopen",
-        "4 — Mikken op de kikker",
-        "5 — Hengelen naar instrumenten",
-        "6 — Componeren op een grid"
+        "1 - Hengelen naar instrumenten",
+        "2 - Muziek maken",
+        "3 - De muziek quiz"
       ]
     },
     {
@@ -58,29 +41,19 @@
       "maxLabel": "Heel leuk"
     },
     {
-      "id": "controls_clear",
+      "id": "communication",
       "type": "scale",
-      "label": "Hoe duidelijk waren de besturing en uitleg?",
+      "label": "Hoe goed kon je communiceren met de tandarts?",
       "required": true,
       "min": 1,
       "max": 5,
-      "minLabel": "Onduidelijk",
-      "maxLabel": "Heel duidelijk"
-    },
-    {
-      "id": "motion_comfortable",
-      "type": "scale",
-      "label": "De bewegingsbesturing (kantelen / telefoon bewegen) voelde prettig.",
-      "required": false,
-      "min": 1,
-      "max": 5,
-      "minLabel": "Oneens",
-      "maxLabel": "Eens"
+      "minLabel": "Niet goed",
+      "maxLabel": "Heel goed"
     },
     {
       "id": "would_recommend",
       "type": "boolean",
-      "label": "Zou je dit aan iemand anders aanraden om te proberen?",
+      "label": "Zou je dit vaker willen spelen bij de tandarts?",
       "required": true
     },
     {
