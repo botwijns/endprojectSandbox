@@ -1,7 +1,7 @@
 // ── Automatic drum-groove generation ─────────────────────────────────────────
 // Builds a one-bar (8 eighth-note) drum pattern for the player to compose their
-// melody on. A groove is picked at random each time the player starts, so the
-// beat feels freshly generated.
+// melody on. Each vibe brief asks for a groove *style*; if none is given (or the
+// name is unknown) a groove is picked at random so the beat still feels fresh.
 
 export interface DrumPattern {
     kick: boolean[];
@@ -10,17 +10,21 @@ export interface DrumPattern {
     name: string;
 }
 
-// A handful of one-bar grooves. One is picked at random per start.
-const GROOVES: Array<{ name: string; kick: number[]; snare: number[]; hihat: number[] }> = [
+// A handful of one-bar grooves. The brief names one of these by `name`.
+const GROOVES = [
     { name: "straight",   kick: [0, 4],       snare: [2, 6], hihat: [0, 1, 2, 3, 4, 5, 6, 7] },
     { name: "backbeat",   kick: [0, 4],       snare: [2, 6], hihat: [0, 2, 4, 6] },
     { name: "syncopated", kick: [0, 3, 4],    snare: [2, 6], hihat: [0, 2, 4, 6] },
     { name: "driving",    kick: [0, 4, 6],    snare: [2, 6], hihat: [1, 3, 5, 7] },
     { name: "half-time",  kick: [0],          snare: [4],    hihat: [0, 2, 4, 6] },
-];
+] as const;
 
-export function generateDrumPattern(steps: number): DrumPattern {
-    const groove = GROOVES[Math.floor(Math.random() * GROOVES.length)];
+export type GrooveStyle = (typeof GROOVES)[number]["name"];
+
+export function generateDrumPattern(steps: number, style?: GrooveStyle): DrumPattern {
+    const groove =
+        GROOVES.find(g => g.name === style) ??
+        GROOVES[Math.floor(Math.random() * GROOVES.length)];
     const blank = () => Array<boolean>(steps).fill(false);
     const kick = blank();
     const snare = blank();

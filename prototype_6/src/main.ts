@@ -1,7 +1,8 @@
-import { GameLoop } from "./gameLoop.ts";
 import { InputHandler, SCALE_DEGREES } from "./inputHandler.ts";
 import { Howler } from "howler";
 import { generateDrumPattern, type DrumPattern } from "./music.ts";
+import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts";
+import { speak, earcon } from "./speech.ts";
 import "webaudiofont";
 declare const WebAudioFontPlayer: any;
 declare const _tone_0000_GeneralUserGS_sf2_file: any; // acoustic grand piano
@@ -32,76 +33,82 @@ const instruments = {
 
 type Instrument = keyof typeof instruments;
 const INSTRUMENTS: Instrument[] = ["piano", "kick", "snare", "highHat", "guitar", "bass"];
-// The drums are generated automatically now, so the player only cycles through
-// the melodic voices.
-const MELODIC_INSTRUMENTS: Instrument[] = ["piano", "guitar", "bass"];
+// The drums are generated automatically, so the player only cycles the melodic voices.
+const MELODIC_INSTRUMENTS: MelodicInstrument[] = ["piano", "guitar", "bass"];
 const INSTRUMENT_COLOR: Record<Instrument, string> = {
     piano:   "#4cafef",
     kick:    "#ff6b6b",
     snare:   "#ffd93d",
     highHat: "#6bcb77",
-    guitar: "#99afff",
-    bass: "#e699ff",
+    guitar:  "#99afff",
+    bass:    "#e699ff",
 };
 const INSTRUMENT_VOLUME: Record<Instrument, number> = {
-    piano :0.6,
-    kick: 0.8,
-    snare: 0.8,
-    highHat: 0.8,
-    guitar: 0.8,
-    bass: 0.8
-}
-// Percussive instruments always ring at their natural drum pitch; only the
-// melodic voices are shifted by the melody the player builds.
+    piano: 0.6, kick: 0.8, snare: 0.8, highHat: 0.8, guitar: 0.8, bass: 0.8,
+};
+const INSTRUMENT_LABEL_NL: Record<MelodicInstrument, string> = {
+    piano: "piano", guitar: "gitaar", bass: "bas",
+};
+// Percussive instruments ring at their natural drum pitch.
 const DRUM_PITCH: Record<Exclude<Instrument, "piano" | "guitar" | "bass">, number> = {
-    kick: 36,
-    snare: 38,
-    highHat: 42,
+    kick: 36, snare: 38, highHat: 42,
 };
 
-function scheduleNote(
-    id: Instrument,
-    pitch: number,
-    when: number,
-    duration: number,
-    volume = 0.7
-): void {
+function isMelodic(id: Instrument): id is MelodicInstrument {
+    return id === "piano" || id === "guitar" || id === "bass";
+}
+
+function scheduleNote(id: Instrument, pitch: number, when: number, duration: number, volume = 0.7): void {
     player.queueWaveTable(ctx, ctx.destination, instruments[id], when, pitch, duration, volume);
 }
 
-// Audio needs a user gesture to unlock — the very first tap anywhere does it,
-// since there's no "start" button in this game.
+// Audio needs a user gesture to unlock — the first tap anywhere does it.
 window.addEventListener("pointerdown", () => {
     ctx.resume();
     Howler.ctx?.resume();
 }, { once: true });
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const STEPS = 8;                          // one 8-step bar (eighth notes)
-const GAME_DURATION_MS = 3 * 60 * 1000;   // session length: a few minutes
-const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11, 12]; // scale degree -> semitones from root
-const ROOT_MIDI = 60; // middle C
+const STEPS = 8;                      // one 8-step bar (eighth notes)
+const ROOT_MIDI = 60;                 // middle C
+const REBRIEF_TAP_GUARD_MS = 1200;    // ignore rapid transport taps for re-speaking
+const EDIT_SLOWDOWN = 2;              // the loop runs this many times slower in edit mode
+const MIXTAPE_KEY = "p6_mixtape";
+const BEST_KEY = "p6_best";
 
 interface StepSlot { note: number; instrument: Instrument }
 
-function pitchForNote(note: number): number {
-    const degree = MAJOR_SCALE[Math.max(0, Math.min(MAJOR_SCALE.length - 1, note))];
-    return ROOT_MIDI + degree;
+// Current scale + loudness come from the active brief.
+let currentScale: number[] = BRIEFS[0].scale;
+let currentVolume = BRIEFS[0].volume;
+
+function pitchForNote(note: number, scale: number[] = currentScale): number {
+    const i = Math.max(0, Math.min(scale.length - 1, note));
+    return ROOT_MIDI + scale[i];
 }
 
 function pitchForSlot(slot: StepSlot): number {
-    return slot.instrument === "piano" || slot.instrument === "guitar" || slot.instrument === "bass"? pitchForNote(slot.note) : DRUM_PITCH[slot.instrument];
+    return isMelodic(slot.instrument) ? pitchForNote(slot.note) : DRUM_PITCH[slot.instrument];
 }
 
 // ── Game state ────────────────────────────────────────────────────────────────
-type Phase = "idle" | "composing" | "ended";
+type Phase = "idle" | "composing" | "done";
+type Mode = "composer" | "edit";
 
 let phase: Phase = "idle";
+let mode: Mode = "composer";
 let bpm = 0;
 let stepDurationMs = 0;
 let currentStep = 0;
-type Track = (StepSlot | null)[];
+let cursorStep = 0;                   // the step being edited in edit mode
+let lastTransportTapAt = 0;
 
+// While the pad is held in composer mode the note "sustains": each step the
+// playhead moves onto gets the same note, so holding longer fills more steps.
+let padHeld = false;
+let heldNote: number | null = null;
+
+type Track = (StepSlot | null)[];
 function emptyPattern(): Record<Instrument, Track> {
     return {
         piano: Array(STEPS).fill(null),
@@ -114,29 +121,33 @@ function emptyPattern(): Record<Instrument, Track> {
 }
 
 let pattern: Record<Instrument, Track> = emptyPattern();
-let instrumentIndex = 0;
-let currentInstrument: Instrument = MELODIC_INSTRUMENTS[0];
-let gameRunning = false;
+let currentInstrument: MelodicInstrument = MELODIC_INSTRUMENTS[0];
 let stepIntervalId: number | null = null;
-let endTimeoutId: number | null = null;
-let startedAt = 0;
 
-// Auto-generated drum groove the player composes over.
+let briefIndex = 0;
+let currentBrief: Brief = BRIEFS[0];
 let drumPattern: DrumPattern | null = null;
 
-// ── UI ────────────────────────────────────────────────────────────────────────
+interface MixtapeTrack {
+    brief: string;
+    notes: [number, number, MelodicInstrument][];
+    groove: DrumPattern;
+    volume: number;
+}
+let mixtape: MixtapeTrack[] = [];
+
+// ── UI (visual aid only — the game is meant to be played by ear) ───────────────
 const inp          = new InputHandler();
 const gridEl        = document.getElementById("grid")!;
 const phaseEl       = document.getElementById("hud-phase")!;
 const bpmEl         = document.getElementById("hud-bpm")!;
 const instrumentEl  = document.getElementById("hud-instrument")!;
 const backingEl     = document.getElementById("hud-backing")!;
-const timerEl       = document.getElementById("hud-timer")!;
+const modeEl        = document.getElementById("hud-mode")!;
 const logEl         = document.getElementById("log")!;
 
 function log(msg: string) { logEl.textContent = msg; }
 
-// Build the STEPS x SCALE_DEGREES cell grid once, up front.
 const cellEls: HTMLDivElement[][] = [];
 for (let s = 0; s < STEPS; s++) {
     cellEls.push([]);
@@ -144,7 +155,7 @@ for (let s = 0; s < STEPS; s++) {
         const cell = document.createElement("div");
         cell.className = "cell";
         cell.style.gridColumn = String(s + 1);
-        cell.style.gridRow = String(SCALE_DEGREES - r); // row 0 = bottom = lowest note
+        cell.style.gridRow = String(SCALE_DEGREES - r);
         gridEl.appendChild(cell);
         cellEls[s].push(cell);
     }
@@ -156,7 +167,10 @@ function renderGrid(): void {
         for (let r = 0; r < SCALE_DEGREES; r++) {
             const cell = cellEls[s][r];
             const filled = !!slot && slot.note === r;
-            cell.classList.toggle("current", s === currentStep && phase === "composing");
+            const onPlayhead = s === currentStep && phase === "composing";
+            const onCursor = s === cursorStep && mode === "edit" && phase === "composing";
+            cell.classList.toggle("current", onPlayhead);
+            cell.classList.toggle("cursor", onCursor);
             cell.style.background = filled ? INSTRUMENT_COLOR[slot!.instrument] : "";
         }
     }
@@ -165,33 +179,25 @@ function renderGrid(): void {
 function updateHud(): void {
     switch (phase) {
         case "idle":
-            phaseEl.textContent = "Tap the top-right corner 3x to set the tempo and start";
-            bpmEl.textContent = "";
-            instrumentEl.textContent = "";
-            backingEl.textContent = "";
-            timerEl.textContent = "";
+            phaseEl.textContent = "Tik 3× rechtsboven om te beginnen";
+            bpmEl.textContent = instrumentEl.textContent = backingEl.textContent = modeEl.textContent = "";
             break;
         case "composing":
-            phaseEl.textContent = "Compose your melody over the beat";
-            bpmEl.textContent = `${bpm} BPM`;
-            instrumentEl.textContent = `instrument: ${currentInstrument}`;
+            phaseEl.textContent = `Opdracht: ${currentBrief.say}`;
+            bpmEl.textContent = mode === "edit"
+                ? `${Math.round(bpm / EDIT_SLOWDOWN)} BPM (langzaam)`
+                : `${bpm} BPM`;
+            instrumentEl.textContent = `instrument: ${INSTRUMENT_LABEL_NL[currentInstrument]}`;
             backingEl.textContent = drumPattern ? `beat: ${drumPattern.name}` : "";
+            modeEl.textContent = mode === "composer" ? "componeren" : "bewerken";
             break;
-        case "ended":
-            phaseEl.textContent = "Time's up! Nice loop.";
-            timerEl.textContent = "";
+        case "done":
+            phaseEl.textContent = "Je mixtape is klaar! Tik 3× rechtsboven voor een nieuwe.";
             break;
     }
 }
 
-function updateTimer(remainingMs: number): void {
-    const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
-    const mm = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
-    const ss = String(totalSeconds % 60).padStart(2, "0");
-    timerEl.textContent = `${mm}:${ss}`;
-}
-
-// ── Auto drum groove ─────────────────────────────────────────────────────────
+// ── Drums ────────────────────────────────────────────────────────────────────
 function applyDrumPattern(dp: DrumPattern): void {
     for (let s = 0; s < STEPS; s++) {
         pattern.kick[s]    = dp.kick[s]  ? { note: 0, instrument: "kick" }    : null;
@@ -201,122 +207,253 @@ function applyDrumPattern(dp: DrumPattern): void {
 }
 
 // ── Sequencer ─────────────────────────────────────────────────────────────────
+// The loop slows down in edit mode so it's easier to catch each beat.
+function currentStepMs(): number {
+    return stepDurationMs * (mode === "edit" ? EDIT_SLOWDOWN : 1);
+}
+
+function startSequencer(): void {
+    if (stepIntervalId !== null) window.clearInterval(stepIntervalId);
+    stepIntervalId = window.setInterval(tick, currentStepMs());
+}
+
 function playStep(step: number): void {
     for (const instrument of INSTRUMENTS) {
         const slot = pattern[instrument][step];
         if (!slot) continue;
-
         scheduleNote(
             slot.instrument,
             pitchForSlot(slot),
             ctx.currentTime + 0.02,
-            (stepDurationMs / 1000) * 0.9,
-            INSTRUMENT_VOLUME[slot.instrument]
+            (currentStepMs() / 1000) * 0.9,
+            INSTRUMENT_VOLUME[slot.instrument] * currentVolume,
         );
     }
 }
 
 function tick(): void {
     currentStep = (currentStep + 1) % STEPS;
+    // A held pad press in composer mode paints the same note onto each new step.
+    if (phase === "composing" && mode === "composer" && padHeld && heldNote !== null) {
+        pattern[currentInstrument][currentStep] = { note: heldNote, instrument: currentInstrument };
+    }
     playStep(currentStep);
     renderGrid();
 }
 
-function previewNote(slot: StepSlot): void {
-    // Instant feedback for whatever was just placed/nudged, independent of the loop.
-    scheduleNote(slot.instrument, pitchForSlot(slot), ctx.currentTime + 0.01, 0.25, 0.6);
+function previewSlot(slot: StepSlot): void {
+    scheduleNote(slot.instrument, pitchForSlot(slot), ctx.currentTime + 0.01, 0.25, 0.6 * currentVolume);
+}
+
+// ── Composing actions ────────────────────────────────────────────────────────
+function targetStep(): number {
+    return mode === "edit" ? cursorStep : currentStep;
 }
 
 function setNote(note: number): void {
     if (phase !== "composing") return;
+    const step = targetStep();
     const slot: StepSlot = { note, instrument: currentInstrument };
-    pattern[currentInstrument][currentStep] = slot;
-    previewNote(slot);
-    log(`step ${currentStep + 1}: note ${note + 1} (${currentInstrument})`);
+    pattern[currentInstrument][step] = slot;
+    heldNote = note;
+    previewSlot(slot);
+    earcon(ctx, "place");
+    log(`stap ${step + 1}: noot ${note + 1} (${INSTRUMENT_LABEL_NL[currentInstrument]})`);
     renderGrid();
 }
 
 function nudgeNote(direction: 1 | -1): void {
     if (phase !== "composing") return;
-    const existing = pattern[currentInstrument][currentStep] ?? { note: Math.floor(SCALE_DEGREES / 2), instrument: currentInstrument };
+    const step = targetStep();
+    const existing = pattern[currentInstrument][step]
+        ?? { note: Math.floor(SCALE_DEGREES / 2), instrument: currentInstrument };
     const note = Math.max(0, Math.min(SCALE_DEGREES - 1, existing.note + direction));
-    const slot: StepSlot = { note, instrument: existing.instrument };
-    pattern[currentInstrument][currentStep] = slot;
-    previewNote(slot);
-    log(`step ${currentStep + 1}: nudged to note ${note + 1}`);
+    const slot: StepSlot = { note, instrument: currentInstrument };
+    pattern[currentInstrument][step] = slot;
+    heldNote = note; // a sustain in progress follows the new pitch
+    previewSlot(slot);
+    earcon(ctx, "place");
+    log(`stap ${step + 1}: naar noot ${note + 1}`);
+    renderGrid();
+}
+
+// Dedicated remove: clears the note on the current step (edit cursor, or the
+// playhead in composer mode) straight away — no separate erase mode.
+function removeNote(): void {
+    if (phase !== "composing") return;
+    const step = targetStep();
+    const had = pattern[currentInstrument][step] !== null;
+    pattern[currentInstrument][step] = null;
+    earcon(ctx, "erase");
+    speak(had ? `stap ${step + 1} gewist` : `stap ${step + 1} was al leeg`);
+    log(had ? `stap ${step + 1} gewist` : `stap ${step + 1} was al leeg`);
+    renderGrid();
+}
+
+function moveCursor(direction: 1 | -1): void {
+    if (phase !== "composing" || mode !== "edit") return;
+    cursorStep = (cursorStep + direction + STEPS) % STEPS;
+    earcon(ctx, "step");
+    const slot = pattern[currentInstrument][cursorStep];
+    speak(slot ? `stap ${cursorStep + 1}, noot ${slot.note + 1}` : `stap ${cursorStep + 1}, leeg`);
+    if (slot) previewSlot(slot);
+    renderGrid();
+}
+
+function toggleMode(): void {
+    if (phase !== "composing") return;
+    mode = mode === "composer" ? "edit" : "composer";
+    if (mode === "edit") cursorStep = currentStep;
+    startSequencer();                 // apply the edit-mode slowdown (or undo it)
+    earcon(ctx, "mode");
+    speak(mode === "composer" ? "componeren" : "bewerken, langzamer");
+    updateHud();
     renderGrid();
 }
 
 function switchInstrument(): void {
     if (phase !== "composing") return;
-    instrumentIndex = (instrumentIndex + 1) % MELODIC_INSTRUMENTS.length;
-    currentInstrument = MELODIC_INSTRUMENTS[instrumentIndex];
-    log(`switched instrument to ${currentInstrument}`);
+    const i = (MELODIC_INSTRUMENTS.indexOf(currentInstrument) + 1) % MELODIC_INSTRUMENTS.length;
+    currentInstrument = MELODIC_INSTRUMENTS[i];
+    earcon(ctx, "instrument");
+    speak(INSTRUMENT_LABEL_NL[currentInstrument]);
     updateHud();
     renderGrid();
 }
 
-// ── Start / end ───────────────────────────────────────────────────────────────
-function startGame(tappedBpm: number): void {
-    bpm = tappedBpm;
-    stepDurationMs = (60000 / bpm) / 2; // 8 steps = eighth notes across one bar
-    phase = "composing";
-    gameRunning = true;
-    currentStep = -1;
-    pattern = emptyPattern();
+// ── Briefs / mixtape ─────────────────────────────────────────────────────────
+function loadBrief(index: number): void {
+    briefIndex = index;
+    currentBrief = briefAt(index);
+    currentScale = currentBrief.scale;
+    currentVolume = currentBrief.volume;
+    currentInstrument = currentBrief.instrument;
+    mode = "composer";
+    cursorStep = 0;
 
-    // Generate a drum groove for the player to compose their melody on.
-    drumPattern = generateDrumPattern(STEPS);
+    // fresh groove for the new vibe; the player's melody is kept
+    drumPattern = generateDrumPattern(STEPS, currentBrief.grooveStyle);
     applyDrumPattern(drumPattern);
 
-    instrumentIndex = 0;
-    currentInstrument = MELODIC_INSTRUMENTS[0];
-    startedAt = performance.now();
+    startSequencer();                 // (re)start at composer speed for the new brief
     updateHud();
     renderGrid();
-    log(`beat generated: ${drumPattern.name} groove — start playing`);
-
-    stepIntervalId = window.setInterval(tick, stepDurationMs);
-    loop.start(100);
-    endTimeoutId = window.setTimeout(endGame, GAME_DURATION_MS);
+    speak(`Nummer ${mixtape.length + 1}. ${currentBrief.say}`);
 }
 
-function endGame(): void {
-    gameRunning = false;
+function finishTrack(): void {
+    if (phase !== "composing" || !drumPattern) return;
+
+    const notes: MixtapeTrack["notes"] = [];
+    for (const id of MELODIC_INSTRUMENTS) {
+        pattern[id].forEach((slot, step) => {
+            if (slot) notes.push([step, slot.note, id]);
+        });
+    }
+    mixtape.push({ brief: currentBrief.id, notes, groove: drumPattern, volume: currentVolume });
+    persistMixtape();
+
+    earcon(ctx, "done");
+    speak(currentBrief.praise);
+    log(`nummer ${mixtape.length} opgeslagen`);
+
+    // clear the melody so the next brief starts on a blank canvas
+    for (const id of MELODIC_INSTRUMENTS) pattern[id] = Array(STEPS).fill(null);
+
+    window.setTimeout(() => {
+        if (mixtape.length >= BRIEFS.length) {
+            endSession();
+        } else {
+            loadBrief(briefIndex + 1);
+        }
+    }, 2200);
+}
+
+function endSession(): void {
+    phase = "done";
     if (stepIntervalId !== null) { window.clearInterval(stepIntervalId); stepIntervalId = null; }
-    if (endTimeoutId !== null) { window.clearTimeout(endTimeoutId); endTimeoutId = null; }
-    loop.stop();
-    phase = "ended";
     updateHud();
     renderGrid();
-    log("game over — tap the top-right corner 3x to play again");
-    phase = "idle"; // ready for a fresh triple-tap to restart
+    speak(`Je mixtape is klaar, met ${mixtape.length} nummers. Luister maar.`);
+    playMedley();
 }
 
-// ── Game loop — drives the countdown display ──────────────────────────────────
-const loop = new GameLoop((_dt: number) => {
-    if (!gameRunning) return;
-    updateTimer(GAME_DURATION_MS - (performance.now() - startedAt));
-});
+// Play every saved track back to back — melody *and* its drum groove, each at
+// the loudness the brief asked for.
+function playMedley(): void {
+    let when = ctx.currentTime + 0.6;
+    const stepDur = stepDurationMs / 1000;
+    for (const track of mixtape) {
+        const scale = BRIEFS.find(b => b.id === track.brief)?.scale ?? currentScale;
+        for (const [step, note, id] of track.notes) {
+            player.queueWaveTable(ctx, ctx.destination, instruments[id],
+                when + step * stepDur, pitchForNote(note, scale), stepDur * 0.9,
+                INSTRUMENT_VOLUME[id] * track.volume);
+        }
+        for (let s = 0; s < STEPS; s++) {
+            const w = when + s * stepDur;
+            if (track.groove.kick[s])
+                player.queueWaveTable(ctx, ctx.destination, instruments.kick, w, DRUM_PITCH.kick, stepDur * 0.9, INSTRUMENT_VOLUME.kick * track.volume);
+            if (track.groove.snare[s])
+                player.queueWaveTable(ctx, ctx.destination, instruments.snare, w, DRUM_PITCH.snare, stepDur * 0.9, INSTRUMENT_VOLUME.snare * track.volume);
+            if (track.groove.hihat[s])
+                player.queueWaveTable(ctx, ctx.destination, instruments.highHat, w, DRUM_PITCH.highHat, stepDur * 0.9, INSTRUMENT_VOLUME.highHat * track.volume);
+        }
+        when += STEPS * stepDur + stepDur; // a beat of space between tracks
+    }
+}
 
-// ── Input ─────────────────────────────────────────────────────────────────────
+function persistMixtape(): void {
+    try {
+        localStorage.setItem(MIXTAPE_KEY, JSON.stringify(mixtape));
+        const best = Math.max(mixtape.length, Number(localStorage.getItem(BEST_KEY) ?? 0));
+        localStorage.setItem(BEST_KEY, String(best));
+    } catch { /* private mode / disabled — non-fatal */ }
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+function startGame(tappedBpm: number): void {
+    // blend the player's tapped tempo with the brief's target so it stays on-vibe
+    bpm = Math.round((tappedBpm + BRIEFS[0].tempo) / 2);
+    stepDurationMs = (60000 / bpm) / 2;
+
+    phase = "composing";
+    currentStep = -1;
+    pattern = emptyPattern();
+    mixtape = [];
+
+    loadBrief(0);   // starts the sequencer
+    earcon(ctx, "start");
+}
+
+function reBrief(): void {
+    const now = performance.now();
+    if (now - lastTransportTapAt < REBRIEF_TAP_GUARD_MS) return;
+    lastTransportTapAt = now;
+    speak(currentBrief.say);
+}
+
+// ── Input wiring ──────────────────────────────────────────────────────────────
 inp.onAction((action) => {
     switch (action.type) {
         case "bpmSet":
-            if (phase === "idle") startGame(action.bpm);
+            if (phase === "idle" || phase === "done") startGame(action.bpm);
+            else if (phase === "composing") finishTrack();
             break;
-        case "noteSet":
-            setNote(action.note);
+        case "transportTap":
+            if (phase === "composing") reBrief();
             break;
-        case "noteNudge":
-            nudgeNote(action.direction);
-            break;
-        case "instrumentSwitch":
-            switchInstrument();
-            break;
+        case "noteSet":          setNote(action.note); break;
+        case "padHold":          padHeld = action.held; if (!action.held) heldNote = null; break;
+        case "noteNudge":        nudgeNote(action.direction); break;
+        case "stepMove":         moveCursor(action.direction); break;
+        case "noteRemove":       removeNote(); break;
+        case "instrumentSwitch": switchInstrument(); break;
+        case "modeToggle":       toggleMode(); break;
     }
 });
 
 inp.start();
 updateHud();
 renderGrid();
+speak("Tik drie keer rechtsboven om te beginnen.");
