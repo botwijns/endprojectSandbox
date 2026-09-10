@@ -26,6 +26,7 @@
     }
     #zone-topright { top: 0; right: 0; width: 40%; height: 22%; }
     #zone-strip {
+      position: fixed; z-index: 5;
       bottom: 0; left: 0; width: 100%; height: 14%;
       border: none; padding: 0;
       display: grid; grid-template-columns: 34fr 33fr 33fr; gap: 3px;
@@ -34,7 +35,7 @@
       border: 2px dashed rgb(0 0 0 / 0.22); border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
       text-align: center; font-size: 12px; color: rgb(0 0 0 / 0.45);
-      padding: 4px;
+      padding: 4px; pointer-events: none;
     }
     #grid {
       position: fixed; left: 0; top: 0; width: 50%; height: 86%; z-index: 4;
