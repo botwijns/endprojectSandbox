@@ -2,7 +2,7 @@ import { InputHandler, SCALE_DEGREES } from "./inputHandler.ts";
 import { Howler } from "howler";
 import { generateDrumPattern, type DrumPattern } from "./music.ts";
 import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts";
-import { speak, earcon } from "./speech.ts";
+import { speak, earcon, setSpeechEnabled } from "./speech.ts";
 import "webaudiofont";
 declare const WebAudioFontPlayer: any;
 declare const _tone_0000_GeneralUserGS_sf2_file: any; // acoustic grand piano
@@ -73,8 +73,10 @@ const STEPS = 8;                      // one 8-step bar (eighth notes)
 const ROOT_MIDI = 60;                 // middle C
 const REBRIEF_TAP_GUARD_MS = 1200;    // ignore rapid transport taps for re-speaking
 const EDIT_SLOWDOWN = 2;              // the loop runs this many times slower in edit mode
+const HOLD_THRESHOLD_MS = 180;        // "threshold" hold-fix: minimum hold before a note sustains
 const MIXTAPE_KEY = "p6_mixtape";
 const BEST_KEY = "p6_best";
+const SPEECH_KEY = "p6_speech";
 
 interface StepSlot { note: number; instrument: Instrument }
 
@@ -94,6 +96,7 @@ function pitchForSlot(slot: StepSlot): number {
 // ── Game state ────────────────────────────────────────────────────────────────
 type Phase = "idle" | "composing" | "done";
 type Mode = "composer" | "edit";
+type HoldFix = "threshold" | "single";
 
 let phase: Phase = "idle";
 let mode: Mode = "composer";
@@ -102,11 +105,39 @@ let stepDurationMs = 0;
 let currentStep = 0;
 let cursorStep = 0;                   // the step being edited in edit mode
 let lastTransportTapAt = 0;
+let pendingIntro = false;             // which start-screen button was pressed
+
+// Two ways of fixing the "quick tap accidentally places two notes" bug,
+// switchable from the start screen so they're easy to compare.
+let holdFixMode: HoldFix = "threshold";
+let holdStartAt = 0;
 
 // While the pad is held in composer mode the note "sustains": each step the
 // playhead moves onto gets the same note, so holding longer fills more steps.
 let padHeld = false;
 let heldNote: number | null = null;
+
+// Edit mode: a drag previews a pitch out loud but writes nothing until the
+// finger lifts, so you always know what you're about to commit.
+let editPreviewNote: number | null = null;
+
+// Guided intro tutorial — one gated step at a time.
+type IntroKind = "place" | "remove" | "instrument" | "mode" | "finish";
+interface IntroStepDef { kind: IntroKind; prompt: string; praise: string }
+const INTRO_STEPS: IntroStepDef[] = [
+    { kind: "place", praise: "", prompt:
+        "Beweeg je vinger omhoog en omlaag over de linkerkant van het scherm. Tik om een noot te plaatsen." },
+    { kind: "remove", praise: "Goed zo! Je hebt een noot geplaatst.", prompt:
+        "Linksonder wis je de noot op de huidige stap. Probeer het." },
+    { kind: "instrument", praise: "Mooi, gewist.", prompt:
+        "In het midden onderin wissel je van instrument. Probeer het." },
+    { kind: "mode", praise: "Zo wissel je van instrument.", prompt:
+        "Rechtsonder wissel je tussen componeren en bewerken. Bewerken is rustiger, zodat je een noot precies kan zetten. Probeer het." },
+    { kind: "finish", praise: "Precies, dat is bewerken.", prompt:
+        "Ben je klaar? Tik weer drie keer rechtsboven om het oefenlevel af te ronden." },
+];
+let introMode = false;
+let introStep = 0;
 
 type Track = (StepSlot | null)[];
 function emptyPattern(): Record<Instrument, Track> {
@@ -136,14 +167,24 @@ interface MixtapeTrack {
 }
 let mixtape: MixtapeTrack[] = [];
 
-// ── UI (visual aid only — the game is meant to be played by ear) ───────────────
-const inp          = new InputHandler();
+// ── UI ────────────────────────────────────────────────────────────────────────
+const inp            = new InputHandler();
+const startScreenEl  = document.getElementById("start-screen")!;
+const gameScreenEl   = document.getElementById("game-screen")!;
+const introBtn       = document.getElementById("intro-btn") as HTMLButtonElement;
+const gameBtn        = document.getElementById("game-btn") as HTMLButtonElement;
+const stopBtn        = document.getElementById("stop-btn") as HTMLButtonElement;
+const speechToggleEl = document.getElementById("speech-toggle") as HTMLInputElement;
+const holdfixSingleEl = document.getElementById("holdfix-single") as HTMLInputElement;
+const startNoteEl    = document.getElementById("start-note")!;
+
 const gridEl        = document.getElementById("grid")!;
 const phaseEl       = document.getElementById("hud-phase")!;
 const bpmEl         = document.getElementById("hud-bpm")!;
 const instrumentEl  = document.getElementById("hud-instrument")!;
 const backingEl     = document.getElementById("hud-backing")!;
 const modeEl        = document.getElementById("hud-mode")!;
+const holdfixEl     = document.getElementById("hud-holdfix")!;
 const logEl         = document.getElementById("log")!;
 
 function log(msg: string) { logEl.textContent = msg; }
@@ -161,7 +202,11 @@ for (let s = 0; s < STEPS; s++) {
     }
 }
 
+// The grid only ever showed where notes *actually* land, but in composer mode
+// that's the playhead, not wherever you tapped — confusing for a sighted
+// tester. Hide it there; it stays visible (and accurate) in edit mode.
 function renderGrid(): void {
+    gridEl.style.display = mode === "composer" ? "none" : "grid";
     for (let s = 0; s < STEPS; s++) {
         const slot = pattern[currentInstrument][s];
         for (let r = 0; r < SCALE_DEGREES; r++) {
@@ -180,16 +225,17 @@ function updateHud(): void {
     switch (phase) {
         case "idle":
             phaseEl.textContent = "Tik 3× rechtsboven om te beginnen";
-            bpmEl.textContent = instrumentEl.textContent = backingEl.textContent = modeEl.textContent = "";
+            bpmEl.textContent = instrumentEl.textContent = backingEl.textContent = modeEl.textContent = holdfixEl.textContent = "";
             break;
         case "composing":
-            phaseEl.textContent = `Opdracht: ${currentBrief.say}`;
+            phaseEl.textContent = introMode ? "Oefenlevel — volg de aanwijzingen" : `Opdracht: ${currentBrief.say}`;
             bpmEl.textContent = mode === "edit"
                 ? `${Math.round(bpm / EDIT_SLOWDOWN)} BPM (langzaam)`
                 : `${bpm} BPM`;
             instrumentEl.textContent = `instrument: ${INSTRUMENT_LABEL_NL[currentInstrument]}`;
             backingEl.textContent = drumPattern ? `beat: ${drumPattern.name}` : "";
             modeEl.textContent = mode === "composer" ? "componeren" : "bewerken";
+            holdfixEl.textContent = holdFixMode === "threshold" ? "aanhouden: vertraagd" : "aanhouden: uit";
             break;
         case "done":
             phaseEl.textContent = "Je mixtape is klaar! Tik 3× rechtsboven voor een nieuwe.";
@@ -217,6 +263,10 @@ function startSequencer(): void {
     stepIntervalId = window.setInterval(tick, currentStepMs());
 }
 
+function stopSequencer(): void {
+    if (stepIntervalId !== null) { window.clearInterval(stepIntervalId); stepIntervalId = null; }
+}
+
 function playStep(step: number): void {
     for (const instrument of INSTRUMENTS) {
         const slot = pattern[instrument][step];
@@ -233,8 +283,13 @@ function playStep(step: number): void {
 
 function tick(): void {
     currentStep = (currentStep + 1) % STEPS;
-    // A held pad press in composer mode paints the same note onto each new step.
-    if (phase === "composing" && mode === "composer" && padHeld && heldNote !== null) {
+    // A held pad press in composer mode paints the same note onto each new
+    // step — but only once the hold has lasted past HOLD_THRESHOLD_MS (the
+    // "threshold" fix), so a quick tap that happens to straddle a tick never
+    // gets an accidental second note. The "single" fix disables this
+    // entirely: a touch always places exactly one note.
+    const longEnough = holdFixMode === "threshold" && (performance.now() - holdStartAt) >= HOLD_THRESHOLD_MS;
+    if (phase === "composing" && mode === "composer" && padHeld && heldNote !== null && longEnough) {
         pattern[currentInstrument][currentStep] = { note: heldNote, instrument: currentInstrument };
     }
     playStep(currentStep);
@@ -253,6 +308,18 @@ function targetStep(): number {
 function setNote(note: number): void {
     if (phase !== "composing") return;
     const step = targetStep();
+
+    if (mode === "edit") {
+        // Scrub-to-preview: play the pitch, but don't write it yet — release
+        // commits it (see the "padHold" handling below).
+        editPreviewNote = note;
+        previewSlot({ note, instrument: currentInstrument });
+        earcon(ctx, "preview");
+        log(`stap ${step + 1}: proef noot ${note + 1}`);
+        renderGrid();
+        return;
+    }
+
     const slot: StepSlot = { note, instrument: currentInstrument };
     pattern[currentInstrument][step] = slot;
     heldNote = note;
@@ -260,11 +327,24 @@ function setNote(note: number): void {
     earcon(ctx, "place");
     log(`stap ${step + 1}: noot ${note + 1} (${INSTRUMENT_LABEL_NL[currentInstrument]})`);
     renderGrid();
+    introAdvance("place");
 }
 
 function nudgeNote(direction: 1 | -1): void {
     if (phase !== "composing") return;
     const step = targetStep();
+
+    if (mode === "edit") {
+        const base = editPreviewNote ?? pattern[currentInstrument][step]?.note ?? Math.floor(SCALE_DEGREES / 2);
+        const note = Math.max(0, Math.min(SCALE_DEGREES - 1, base + direction));
+        editPreviewNote = note;
+        previewSlot({ note, instrument: currentInstrument });
+        earcon(ctx, "preview");
+        log(`stap ${step + 1}: proef noot ${note + 1}`);
+        renderGrid();
+        return;
+    }
+
     const existing = pattern[currentInstrument][step]
         ?? { note: Math.floor(SCALE_DEGREES / 2), instrument: currentInstrument };
     const note = Math.max(0, Math.min(SCALE_DEGREES - 1, existing.note + direction));
@@ -284,15 +364,18 @@ function removeNote(): void {
     const step = targetStep();
     const had = pattern[currentInstrument][step] !== null;
     pattern[currentInstrument][step] = null;
+    editPreviewNote = null;
     earcon(ctx, "erase");
     speak(had ? `stap ${step + 1} gewist` : `stap ${step + 1} was al leeg`);
     log(had ? `stap ${step + 1} gewist` : `stap ${step + 1} was al leeg`);
     renderGrid();
+    introAdvance("remove");
 }
 
 function moveCursor(direction: 1 | -1): void {
     if (phase !== "composing" || mode !== "edit") return;
     cursorStep = (cursorStep + direction + STEPS) % STEPS;
+    editPreviewNote = null; // moving to a different step abandons any pending preview
     earcon(ctx, "step");
     const slot = pattern[currentInstrument][cursorStep];
     speak(slot ? `stap ${cursorStep + 1}, noot ${slot.note + 1}` : `stap ${cursorStep + 1}, leeg`);
@@ -303,10 +386,18 @@ function moveCursor(direction: 1 | -1): void {
 function toggleMode(): void {
     if (phase !== "composing") return;
     mode = mode === "composer" ? "edit" : "composer";
-    if (mode === "edit") cursorStep = currentStep;
     startSequencer();                 // apply the edit-mode slowdown (or undo it)
     earcon(ctx, "mode");
-    speak(mode === "composer" ? "componeren" : "bewerken, langzamer");
+    if (mode === "edit") {
+        cursorStep = currentStep;
+        editPreviewNote = null;
+        // Always say what's on this step the moment you land in edit mode.
+        const slot = pattern[currentInstrument][cursorStep];
+        speak(`bewerken, langzamer. stap ${cursorStep + 1}, ${slot ? `noot ${slot.note + 1}` : "leeg"}`);
+        introAdvance("mode");
+    } else {
+        speak("componeren");
+    }
     updateHud();
     renderGrid();
 }
@@ -319,6 +410,7 @@ function switchInstrument(): void {
     speak(INSTRUMENT_LABEL_NL[currentInstrument]);
     updateHud();
     renderGrid();
+    introAdvance("instrument");
 }
 
 // ── Briefs / mixtape ─────────────────────────────────────────────────────────
@@ -330,6 +422,7 @@ function loadBrief(index: number): void {
     currentInstrument = currentBrief.instrument;
     mode = "composer";
     cursorStep = 0;
+    editPreviewNote = null;
 
     // fresh groove for the new vibe; the player's melody is kept
     drumPattern = generateDrumPattern(STEPS, currentBrief.grooveStyle);
@@ -371,7 +464,7 @@ function finishTrack(): void {
 
 function endSession(): void {
     phase = "done";
-    if (stepIntervalId !== null) { window.clearInterval(stepIntervalId); stepIntervalId = null; }
+    stopSequencer();
     updateHud();
     renderGrid();
     speak(`Je mixtape is klaar, met ${mixtape.length} nummers. Luister maar.`);
@@ -411,8 +504,122 @@ function persistMixtape(): void {
     } catch { /* private mode / disabled — non-fatal */ }
 }
 
+// ── Guided intro (gated tutorial) ───────────────────────────────────────────
+// Reuses the first real brief as a backdrop — nothing from the intro is saved.
+function startIntro(): void {
+    const brief = BRIEFS[0];
+    currentBrief = brief;
+    currentScale = brief.scale;
+    currentVolume = brief.volume;
+    currentInstrument = brief.instrument;
+    mode = "composer";
+    cursorStep = 0;
+    editPreviewNote = null;
+
+    drumPattern = generateDrumPattern(STEPS, brief.grooveStyle);
+    applyDrumPattern(drumPattern);
+
+    introMode = true;
+    introStep = 0;
+
+    startSequencer();
+    updateHud();
+    renderGrid();
+    speak(`Welkom bij het oefenlevel. ${INTRO_STEPS[0].prompt}`);
+    log(INTRO_STEPS[0].prompt);
+}
+
+// Advances the tutorial only if `kind` is exactly the step currently being
+// waited on — self-guarding, so repeating an already-passed action (or doing
+// the wrong thing) is silently ignored rather than skipping steps.
+function introAdvance(kind: IntroKind): void {
+    if (!introMode) return;
+    if (INTRO_STEPS[introStep]?.kind !== kind) return;
+
+    introStep++;
+    if (introStep >= INTRO_STEPS.length) {
+        finishIntro();
+        return;
+    }
+    const next = INTRO_STEPS[introStep];
+    earcon(ctx, "done");
+    speak(`${next.praise} ${next.prompt}`.trim());
+    log(next.prompt);
+}
+
+function finishIntro(): void {
+    stopSequencer();
+    earcon(ctx, "done");
+    speak("Goed gedaan! Je kent nu alle knoppen. Terug naar het startscherm.");
+    window.setTimeout(() => {
+        phase = "idle";
+        introMode = false;
+        showStartScreen();
+        startNoteEl.classList.remove("hidden");
+        startNoteEl.textContent = "Oefenlevel voltooid! Druk op ‘Start spel’ voor het hele spel.";
+    }, 2200);
+}
+
+// ── Start screen ─────────────────────────────────────────────────────────────
+// The gesture zones cover the *entire* viewport, and the pad zone in
+// particular calls setPointerCapture() on every touch — which steals the
+// click from any real HTML control (like the start-screen buttons) that
+// happens to sit inside it. So the InputHandler only listens while the game
+// screen is actually showing; the start screen's buttons/checkbox/radios get
+// completely normal clicks the rest of the time.
+function showStartScreen(): void {
+    inp.stop();
+    gameScreenEl.classList.add("hidden");
+    startScreenEl.classList.remove("hidden");
+}
+
+function showGameScreen(): void {
+    startScreenEl.classList.add("hidden");
+    gameScreenEl.classList.remove("hidden");
+    inp.start();
+}
+
+function stopGame(): void {
+    stopSequencer();
+    phase = "idle";
+    introMode = false;
+    if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    showStartScreen();
+    startNoteEl.classList.add("hidden");
+}
+
+function applyStartOptions(): void {
+    setSpeechEnabled(speechToggleEl.checked);
+    try { localStorage.setItem(SPEECH_KEY, speechToggleEl.checked ? "1" : "0"); } catch { /* ignore */ }
+    holdFixMode = holdfixSingleEl.checked ? "single" : "threshold";
+}
+
+try {
+    const savedSpeech = localStorage.getItem(SPEECH_KEY);
+    if (savedSpeech !== null) speechToggleEl.checked = savedSpeech === "1";
+} catch { /* ignore */ }
+setSpeechEnabled(speechToggleEl.checked);
+
+introBtn.addEventListener("click", () => {
+    applyStartOptions();
+    pendingIntro = true;
+    startNoteEl.classList.add("hidden");
+    showGameScreen();
+    updateHud();
+    speak("Tik drie keer rechtsboven om te beginnen.");
+});
+gameBtn.addEventListener("click", () => {
+    applyStartOptions();
+    pendingIntro = false;
+    startNoteEl.classList.add("hidden");
+    showGameScreen();
+    updateHud();
+    speak("Tik drie keer rechtsboven om te beginnen.");
+});
+stopBtn.addEventListener("click", stopGame);
+
 // ── Start ─────────────────────────────────────────────────────────────────────
-function startGame(tappedBpm: number): void {
+function startGame(tappedBpm: number, asIntro: boolean): void {
     // blend the player's tapped tempo with the brief's target so it stays on-vibe
     bpm = Math.round((tappedBpm + BRIEFS[0].tempo) / 2);
     stepDurationMs = (60000 / bpm) / 2;
@@ -421,8 +628,14 @@ function startGame(tappedBpm: number): void {
     currentStep = -1;
     pattern = emptyPattern();
     mixtape = [];
+    editPreviewNote = null;
 
-    loadBrief(0);   // starts the sequencer
+    if (asIntro) {
+        startIntro();
+    } else {
+        introMode = false;
+        loadBrief(0);   // starts the sequencer
+    }
     earcon(ctx, "start");
 }
 
@@ -437,14 +650,34 @@ function reBrief(): void {
 inp.onAction((action) => {
     switch (action.type) {
         case "bpmSet":
-            if (phase === "idle" || phase === "done") startGame(action.bpm);
-            else if (phase === "composing") finishTrack();
+            if (phase === "idle" || phase === "done") startGame(action.bpm, pendingIntro);
+            else if (phase === "composing") {
+                if (introMode) introAdvance("finish");
+                else finishTrack();
+            }
             break;
         case "transportTap":
-            if (phase === "composing") reBrief();
+            if (phase === "composing" && !introMode) reBrief();
             break;
-        case "noteSet":          setNote(action.note); break;
-        case "padHold":          padHeld = action.held; if (!action.held) heldNote = null; break;
+        case "noteSet":   setNote(action.note); break;
+        case "padHold":
+            if (action.held) {
+                padHeld = true;
+                holdStartAt = performance.now();
+            } else {
+                if (mode === "edit" && editPreviewNote !== null) {
+                    const slot: StepSlot = { note: editPreviewNote, instrument: currentInstrument };
+                    pattern[currentInstrument][cursorStep] = slot;
+                    earcon(ctx, "place");
+                    speak(`stap ${cursorStep + 1}: noot ${editPreviewNote + 1}`);
+                    log(`stap ${cursorStep + 1}: noot ${editPreviewNote + 1} (${INSTRUMENT_LABEL_NL[currentInstrument]})`);
+                    renderGrid();
+                }
+                padHeld = false;
+                heldNote = null;
+                editPreviewNote = null;
+            }
+            break;
         case "noteNudge":        nudgeNote(action.direction); break;
         case "stepMove":         moveCursor(action.direction); break;
         case "noteRemove":       removeNote(); break;
@@ -453,7 +686,5 @@ inp.onAction((action) => {
     }
 });
 
-inp.start();
 updateHud();
 renderGrid();
-speak("Tik drie keer rechtsboven om te beginnen.");
