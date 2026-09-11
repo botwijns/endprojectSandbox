@@ -48,6 +48,10 @@ export class InputHandler {
     private pressCallbacks: (() => void)[] = [];
     // raw screen position of the active pointer (null when nothing is touching)
     private pointerPos: { x: number; y: number } | null = null;
+    // last time we heard *anything* about the claimed pointer — lets a new
+    // touch reclaim control if the previous one's up/cancel was ever dropped
+    // (some browsers lose a terminal pointer event when a gesture is hijacked)
+    private lastPointerActivity = 0;
 
     constructor(debug = false) {
         this.debug = debug;
@@ -61,6 +65,12 @@ export class InputHandler {
         document.body.addEventListener("pointermove", this.handleJoystickMove);
         document.body.addEventListener("pointerup", this.handleJoystickEnd);
         document.body.addEventListener("pointercancel", this.handleJoystickEnd);
+        // a dropped pointerup/pointercancel would otherwise leave the pointer
+        // claimed forever — lostpointercapture is a more reliable backstop
+        document.body.addEventListener("lostpointercapture", this.handleJoystickEnd);
+        // stop the browser from turning a held/long touch into a context menu
+        // or text-selection gesture mid-crank, which can cancel the pointer
+        document.body.addEventListener("contextmenu", this.handleContextMenu);
         if (this.debug){
             window.addEventListener("mousemove", this.handleMouse);
         } else{
@@ -77,6 +87,8 @@ export class InputHandler {
         document.body.removeEventListener("pointermove", this.handleJoystickMove);
         document.body.removeEventListener("pointerup", this.handleJoystickEnd);
         document.body.removeEventListener("pointercancel", this.handleJoystickEnd);
+        document.body.removeEventListener("lostpointercapture", this.handleJoystickEnd);
+        document.body.removeEventListener("contextmenu", this.handleContextMenu);
         if (this.debug){
             window.removeEventListener("mousemove", this.handleMouse);
         } else{
@@ -212,12 +224,26 @@ export class InputHandler {
     //     setTimeout(() => { this.shootCooldown = false; }, 300);
     // };
 
+    // how long a claimed pointer may go quiet before we assume its up/cancel
+    // was dropped and let a fresh touch take over
+    private static STALE_POINTER_MS = 1200;
+
     private handleJoystickStart = (e: PointerEvent): void => {
-        // Only claim this pointer if no joystick is active yet
-        if (this.joystickPointerId !== null) return;
+        // never hijack native controls (the start/stop button etc.) as a crank touch
+        if ((e.target as Element | null)?.closest("button, a, input, select, textarea")) return;
+
+        if (this.joystickPointerId !== null) {
+            const stale = performance.now() - this.lastPointerActivity > InputHandler.STALE_POINTER_MS;
+            if (!stale) return; // a genuinely active pointer already owns the gesture
+            // the previous pointer's terminal event was likely swallowed by the
+            // browser (e.g. a hijacked gesture) — release it so this touch isn't ignored
+            this.releasePointer();
+        }
+
         this.joystickPointerId = e.pointerId;
         this.joystickStartPos = { x: e.clientX, y: e.clientY };
         this.pointerPos = { x: e.clientX, y: e.clientY };
+        this.lastPointerActivity = performance.now();
         this.joystick = { x: 0, y: 0, active: true };
         this.updateCrank(e.clientX, e.clientY);
         // Capture so pointermove/pointerup fire even if pointer leaves the element
@@ -226,6 +252,10 @@ export class InputHandler {
         } catch {
             // pointer already released / synthetic event — safe to ignore
         }
+        // Stop the browser from treating this as a scroll/zoom/selection gesture —
+        // touch-action:none should already cover it, but preventDefault is a
+        // synchronous guarantee that doesn't depend on compositor timing
+        e.preventDefault();
         this.pressCallbacks.forEach(cb => cb());
     };
 
@@ -234,7 +264,9 @@ export class InputHandler {
         const dx = e.clientX - this.joystickStartPos.x;
         const dy = e.clientY - this.joystickStartPos.y;
         this.pointerPos = { x: e.clientX, y: e.clientY };
+        this.lastPointerActivity = performance.now();
         this.updateCrank(e.clientX, e.clientY);
+        e.preventDefault();
 
         // Normalize to -1..1 range, clamp to circle
         this.joystick = {
@@ -246,12 +278,19 @@ export class InputHandler {
 
     private handleJoystickEnd = (e: PointerEvent): void => {
         if (e.pointerId !== this.joystickPointerId) return;
+        this.releasePointer();
+    };
 
+    private releasePointer(): void {
         this.joystick = { x: 0, y: 0, active: false };
         this.joystickStartPos = null;
         this.joystickPointerId = null;
         this.pointerPos = null;
         this.crankPrevAngle = null; // finger lifted — don't bridge the gap on re-touch
+    }
+
+    private handleContextMenu = (e: Event): void => {
+        e.preventDefault();
     };
 
 
