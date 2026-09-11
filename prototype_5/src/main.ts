@@ -85,10 +85,10 @@ function runIntroDemo(myRun: number): Promise<void> {
         const goodFish = INSTRUMENTS.find(i => i.id === "guitar")!;
         const drums = INSTRUMENTS.find(i => i.isDrum)!;
         const steps: { text: string; def: InstrumentDef; gap: number }[] = [
-            { text: "Luister eerst. Dít is een vis — een melodie. Zó eentje wil je vangen:", def: goodFish, gap: 1200 },
-            { text: "En dít zijn de drums — een kale dreun, geen melodie. Die laat je zwemmen:", def: drums, gap: 1200 },
-            { text: "Nog een keer de vis (vangen)...", def: goodFish, gap: 900 },
-            { text: "...en de drums (níét vangen).", def: drums, gap: 900 },
+            { text: "Luister eerst. Dít is een vis — een melodie. Zó eentje wil je vangen:", def: goodFish, gap: 5000 },
+            { text: "En dít zijn de drums — een kale dreun, geen melodie. Die laat je zwemmen:", def: drums, gap: 5000 },
+            { text: "Nog een keer de vis (vangen)...", def: goodFish, gap: 2000 },
+            { text: "...en de drums (níét vangen).", def: drums, gap: 2000 },
         ];
 
         introDemoActive = true;

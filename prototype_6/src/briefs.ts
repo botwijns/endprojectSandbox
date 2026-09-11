@@ -32,7 +32,7 @@ export interface Brief {
 
 const MAJOR            = [0, 2, 4, 5, 7, 9, 11, 12];
 const MAJOR_PENTATONIC = [0, 2, 4, 7, 9, 12, 14, 16];
-const MINOR            = [0, 2, 3, 5, 7, 8, 10, 12];
+// const MINOR            = [0, 2, 3, 5, 7, 8, 10, 12];
 const MINOR_PENTATONIC = [0, 3, 5, 7, 10, 12, 15, 17];
 const PHRYGIAN         = [0, 1, 3, 5, 7, 8, 10, 12]; // dark, tense
 const HARMONIC_MINOR   = [0, 2, 3, 5, 7, 8, 11, 12]; // eerie, "spookachtig"
@@ -44,13 +44,6 @@ export const BRIEFS: Brief[] = [
         praise: "Mooi! Dat klinkt lekker vrolijk.",
         scale: MAJOR_PENTATONIC, tempo: 120, grooveStyle: "backbeat",
         instrument: "piano", volume: 0.8,
-    },
-    {
-        id: "verdrietig",
-        say: "Nu iets verdrietigs. Muziek voor als je moet huilen.",
-        praise: "Zo zacht en verdrietig. Knap gedaan.",
-        scale: MINOR, tempo: 74, grooveStyle: "half-time",
-        instrument: "piano", volume: 0.55,
     },
     {
         id: "stoer",

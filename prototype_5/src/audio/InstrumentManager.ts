@@ -1,3 +1,4 @@
+// @ts-ignore
 import WebAudioFontPlayer from "webaudiofont";
 
 export interface DrumHit {
@@ -51,7 +52,7 @@ export const INSTRUMENTS: InstrumentDef[] = [
     {
         id: "bass", label: "Bas", isDrum: false,
         file: FONTS + "0321_GeneralUserGS_sf2_file.js", variable: "_tone_0321_GeneralUserGS_sf2_file",
-        melody: [40, 43, 45, 47, 43], noteDur: 0.3, volume: 0.85,
+        melody: [40, 43, 45, 47, 43], noteDur: 0.3, volume: 1,
     },
     {
         id: "steelpan", label: "Steeldrum", isDrum: false,
