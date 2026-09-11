@@ -47,20 +47,24 @@
   <span id="hud-phase"></span>
   <span id="hud-bpm"></span>
   <span id="hud-instrument"></span>
+  <span id="hud-backing"></span>
   <span id="hud-timer"></span>
 </div>
 
-<div id="zone-topright" class="zone">tap x3<br>set tempo &amp; start</div>
+<div id="zone-topright" class="zone">tap x3<br>set tempo &amp; start the beat</div>
 <div id="zone-bottomright" class="zone">tap<br>switch instrument</div>
 <div id="grid"></div>
 <div id="log"></div>
-<script src="/fonts/0000_GeneralUserGS_sf2_file.js"></script>
-<script src="/fonts/0040_GeneralUserGS_sf2_file.js"></script>
-<script src="/fonts/12836_1_Chaos_sf2_file.js"></script>
-<script src="/fonts/12838_1_Chaos_sf2_file.js"></script>
-<script src="/fonts/12842_1_Chaos_sf2_file.js"></script>
-<script src="/fonts/0241_GeneralUserGS_sf2_file.js"></script>
-<script src="/fonts/0321_GeneralUserGS_sf2_file.js"></script>
+<!-- WebAudioFont instrument banks live in the shared repo-root /public/fonts
+     folder (wired up via `publicDir` in vite.prototype_6.config.ts). These
+     paths are relative so they resolve under the deployed sub-path
+     (/endprojectSandbox/prototype_6/) for both `npm run dev` and GitHub Pages. -->
+<script src="fonts/0000_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0241_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0321_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/12836_1_Chaos_sf2_file.js"></script>
+<script src="fonts/12838_1_Chaos_sf2_file.js"></script>
+<script src="fonts/12842_1_Chaos_sf2_file.js"></script>
 
 
 <script type="module" src="src/main.ts"></script>

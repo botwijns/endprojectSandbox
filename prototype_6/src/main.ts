@@ -1,36 +1,40 @@
 import { GameLoop } from "./gameLoop.ts";
 import { InputHandler, SCALE_DEGREES } from "./inputHandler.ts";
 import { Howler } from "howler";
+import { generateDrumPattern, type DrumPattern } from "./music.ts";
 import "webaudiofont";
 declare const WebAudioFontPlayer: any;
-declare const _tone_0000_GeneralUserGS_sf2_file: any; // piano
+declare const _tone_0000_GeneralUserGS_sf2_file: any; // acoustic grand piano
+declare const _tone_0241_GeneralUserGS_sf2_file: any; // nylon guitar
+declare const _tone_0321_GeneralUserGS_sf2_file: any; // acoustic bass
 declare const _drum_36_1_Chaos_sf2_file: any;         // kick
 declare const _drum_38_1_Chaos_sf2_file: any;         // snare
 declare const _drum_42_1_Chaos_sf2_file: any;         // hi-hat
-declare const _tone_0241_GeneralUserGS_sf2_file: any; // guitar
-declare  const _tone_0321_GeneralUserGS_sf2_file: any; // bass
 // ── WebAudioFont setup ────────────────────────────────────────────────────────
 const ctx = new AudioContext();
 const player = new WebAudioFontPlayer();
 
 player.loader.decodeAfterLoading(ctx, "_tone_0000_GeneralUserGS_sf2_file");
+player.loader.decodeAfterLoading(ctx, "_tone_0241_GeneralUserGS_sf2_file");
+player.loader.decodeAfterLoading(ctx, "_tone_0321_GeneralUserGS_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_drum_36_1_Chaos_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_drum_38_1_Chaos_sf2_file");
 player.loader.decodeAfterLoading(ctx, "_drum_42_1_Chaos_sf2_file");
-player.loader.decodeAfterLoading(ctx, "_tone_0321_GeneralUserGS_sf2_file");
-player.loader.decodeAfterLoading(ctx, "_tone_0241_GeneralUserGS_sf2_file");
 
 const instruments = {
     piano:   _tone_0000_GeneralUserGS_sf2_file,
     kick:    _drum_36_1_Chaos_sf2_file,
     snare:   _drum_38_1_Chaos_sf2_file,
     highHat: _drum_42_1_Chaos_sf2_file,
-    guitar: _tone_0241_GeneralUserGS_sf2_file,
-    bass: _tone_0321_GeneralUserGS_sf2_file,
+    guitar:  _tone_0241_GeneralUserGS_sf2_file,
+    bass:    _tone_0321_GeneralUserGS_sf2_file,
 };
 
 type Instrument = keyof typeof instruments;
 const INSTRUMENTS: Instrument[] = ["piano", "kick", "snare", "highHat", "guitar", "bass"];
+// The drums are generated automatically now, so the player only cycles through
+// the melodic voices.
+const MELODIC_INSTRUMENTS: Instrument[] = ["piano", "guitar", "bass"];
 const INSTRUMENT_COLOR: Record<Instrument, string> = {
     piano:   "#4cafef",
     kick:    "#ff6b6b",
@@ -39,8 +43,16 @@ const INSTRUMENT_COLOR: Record<Instrument, string> = {
     guitar: "#99afff",
     bass: "#e699ff",
 };
-// Percussive instruments always ring at their natural drum pitch; only piano
-// notes are actually shifted by the melody the player builds.
+const INSTRUMENT_VOLUME: Record<Instrument, number> = {
+    piano :0.6,
+    kick: 0.8,
+    snare: 0.8,
+    highHat: 0.8,
+    guitar: 0.8,
+    bass: 0.8
+}
+// Percussive instruments always ring at their natural drum pitch; only the
+// melodic voices are shifted by the melody the player builds.
 const DRUM_PITCH: Record<Exclude<Instrument, "piano" | "guitar" | "bass">, number> = {
     kick: 36,
     snare: 38,
@@ -90,20 +102,27 @@ let stepDurationMs = 0;
 let currentStep = 0;
 type Track = (StepSlot | null)[];
 
-let pattern: Record<Instrument, Track> = {
-    piano: Array(STEPS).fill(null),
-    kick: Array(STEPS).fill(null),
-    snare: Array(STEPS).fill(null),
-    highHat: Array(STEPS).fill(null),
-    guitar: Array(STEPS).fill(null),
-    bass: Array(STEPS).fill(null),
-};
+function emptyPattern(): Record<Instrument, Track> {
+    return {
+        piano: Array(STEPS).fill(null),
+        kick: Array(STEPS).fill(null),
+        snare: Array(STEPS).fill(null),
+        highHat: Array(STEPS).fill(null),
+        guitar: Array(STEPS).fill(null),
+        bass: Array(STEPS).fill(null),
+    };
+}
+
+let pattern: Record<Instrument, Track> = emptyPattern();
 let instrumentIndex = 0;
-let currentInstrument: Instrument = INSTRUMENTS[0];
+let currentInstrument: Instrument = MELODIC_INSTRUMENTS[0];
 let gameRunning = false;
 let stepIntervalId: number | null = null;
 let endTimeoutId: number | null = null;
 let startedAt = 0;
+
+// Auto-generated drum groove the player composes over.
+let drumPattern: DrumPattern | null = null;
 
 // ── UI ────────────────────────────────────────────────────────────────────────
 const inp          = new InputHandler();
@@ -111,6 +130,7 @@ const gridEl        = document.getElementById("grid")!;
 const phaseEl       = document.getElementById("hud-phase")!;
 const bpmEl         = document.getElementById("hud-bpm")!;
 const instrumentEl  = document.getElementById("hud-instrument")!;
+const backingEl     = document.getElementById("hud-backing")!;
 const timerEl       = document.getElementById("hud-timer")!;
 const logEl         = document.getElementById("log")!;
 
@@ -148,12 +168,14 @@ function updateHud(): void {
             phaseEl.textContent = "Tap the top-right corner 3x to set the tempo and start";
             bpmEl.textContent = "";
             instrumentEl.textContent = "";
+            backingEl.textContent = "";
             timerEl.textContent = "";
             break;
         case "composing":
-            phaseEl.textContent = "Compose your melody";
+            phaseEl.textContent = "Compose your melody over the beat";
             bpmEl.textContent = `${bpm} BPM`;
             instrumentEl.textContent = `instrument: ${currentInstrument}`;
+            backingEl.textContent = drumPattern ? `beat: ${drumPattern.name}` : "";
             break;
         case "ended":
             phaseEl.textContent = "Time's up! Nice loop.";
@@ -169,6 +191,15 @@ function updateTimer(remainingMs: number): void {
     timerEl.textContent = `${mm}:${ss}`;
 }
 
+// ── Auto drum groove ─────────────────────────────────────────────────────────
+function applyDrumPattern(dp: DrumPattern): void {
+    for (let s = 0; s < STEPS; s++) {
+        pattern.kick[s]    = dp.kick[s]  ? { note: 0, instrument: "kick" }    : null;
+        pattern.snare[s]   = dp.snare[s] ? { note: 0, instrument: "snare" }   : null;
+        pattern.highHat[s] = dp.hihat[s] ? { note: 0, instrument: "highHat" } : null;
+    }
+}
+
 // ── Sequencer ─────────────────────────────────────────────────────────────────
 function playStep(step: number): void {
     for (const instrument of INSTRUMENTS) {
@@ -180,7 +211,7 @@ function playStep(step: number): void {
             pitchForSlot(slot),
             ctx.currentTime + 0.02,
             (stepDurationMs / 1000) * 0.9,
-            0.8
+            INSTRUMENT_VOLUME[slot.instrument]
         );
     }
 }
@@ -218,10 +249,11 @@ function nudgeNote(direction: 1 | -1): void {
 
 function switchInstrument(): void {
     if (phase !== "composing") return;
-    instrumentIndex = (instrumentIndex + 1) % INSTRUMENTS.length;
-    currentInstrument = INSTRUMENTS[instrumentIndex];
+    instrumentIndex = (instrumentIndex + 1) % MELODIC_INSTRUMENTS.length;
+    currentInstrument = MELODIC_INSTRUMENTS[instrumentIndex];
     log(`switched instrument to ${currentInstrument}`);
     updateHud();
+    renderGrid();
 }
 
 // ── Start / end ───────────────────────────────────────────────────────────────
@@ -231,19 +263,18 @@ function startGame(tappedBpm: number): void {
     phase = "composing";
     gameRunning = true;
     currentStep = -1;
-    pattern = {
-        piano: Array(STEPS).fill(null),
-        kick: Array(STEPS).fill(null),
-        snare: Array(STEPS).fill(null),
-        highHat: Array(STEPS).fill(null),
-        guitar: Array(STEPS).fill(null),
-        bass: Array(STEPS).fill(null),
-    };
+    pattern = emptyPattern();
+
+    // Generate a drum groove for the player to compose their melody on.
+    drumPattern = generateDrumPattern(STEPS);
+    applyDrumPattern(drumPattern);
+
     instrumentIndex = 0;
-    currentInstrument = INSTRUMENTS[0];
+    currentInstrument = MELODIC_INSTRUMENTS[0];
     startedAt = performance.now();
     updateHud();
     renderGrid();
+    log(`beat generated: ${drumPattern.name} groove — start playing`);
 
     stepIntervalId = window.setInterval(tick, stepDurationMs);
     loop.start(100);

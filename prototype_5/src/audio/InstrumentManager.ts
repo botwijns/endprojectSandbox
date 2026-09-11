@@ -123,7 +123,7 @@ export class InstrumentManager {
                 const hit = def.kit[i];
                 const preset = (window as any)[hit.variable];
                 if (preset) {
-                    this.player.queueWaveTable(this.ctx, this.ctx.destination, preset, when, hit.pitch, def.noteDur, def.volume);
+                    this.player.queueWaveTable(this.ctx, this.ctx.destination, preset, when, hit.pitch, def.noteDur, def.volume*i/steps);
                 }
             } else {
                 const preset = (window as any)[def.variable];
@@ -131,7 +131,7 @@ export class InstrumentManager {
                     console.warn("InstrumentManager: preset not loaded", def.variable);
                     return 0;
                 }
-                this.player.queueWaveTable(this.ctx, this.ctx.destination, preset, when, def.melody[i], def.noteDur * 0.95, def.volume);
+                this.player.queueWaveTable(this.ctx, this.ctx.destination, preset, when, def.melody[i], def.noteDur * 0.95, def.volume*i/steps);
             }
         }
         return steps * def.noteDur;
