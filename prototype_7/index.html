@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Wat hoor je? — muziekquiz (prototype 7)</title>
+  <style>
+    html, body {
+      margin: 0; height: 100%; background: #ffffff; color: #111;
+      font-family: system-ui, sans-serif; overflow: hidden;
+      touch-action: none; user-select: none;
+    }
+    #hud {
+      position: fixed; top: 0; left: 0; width: 100%; z-index: 10;
+      display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 10px; box-sizing: border-box;
+      background: rgba(0,0,0,0.55); color: #fff; font-size: 13px;
+      pointer-events: none;
+    }
+    /* Dashed guides mirror the hit zones in src/inputHandler.ts. Sighted aid only. */
+    .zone {
+      position: fixed; z-index: 5;
+      border: 2px dashed rgb(0 0 0 / 0.20); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      text-align: center; font-size: 13px; line-height: 1.3;
+      padding: 8px; box-sizing: border-box; color: rgb(0 0 0 / 0.45);
+      pointer-events: none;
+    }
+    /* corners: split at x 50%, above 38% and below 62% */
+    #zone-a { left: 0;   top: 0;    width: 50%; height: 38%; }
+    #zone-b { right: 0;  top: 0;    width: 50%; height: 38%; }
+    #zone-c { left: 0;   bottom: 0; width: 50%; height: 38%; }
+    #zone-d { right: 0;  bottom: 0; width: 50%; height: 38%; }
+    /* middle band: y 38%–62%, left cell x<34%, right cell x>66% */
+    #zone-prompt { left: 0;  top: 38%; width: 34%; height: 24%; }
+    #zone-music  { right: 0; top: 38%; width: 34%; height: 24%; }
+    #zone-mid    {
+      left: 34%; top: 38%; width: 32%; height: 24%;
+      border-style: dotted; color: rgb(0 0 0 / 0.28); font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+<div id="hud">
+  <span id="hud-phase"></span>
+  <span id="hud-progress"></span>
+  <span id="hud-score"></span>
+  <span id="hud-armed"></span>
+</div>
+
+<div id="zone-a" class="zone">A &mdash; linksboven</div>
+<div id="zone-b" class="zone">B &mdash; rechtsboven</div>
+<div id="zone-c" class="zone">C &mdash; linksonder</div>
+<div id="zone-d" class="zone">D &mdash; rechtsonder</div>
+<div id="zone-prompt" class="zone">vraag<br>herhalen</div>
+<div id="zone-music" class="zone">muziek<br>opnieuw</div>
+<div id="zone-mid" class="zone">tik 3&times; om te starten</div>
+
+<!-- WebAudioFont instrument + drum banks live in the shared repo-root /public/fonts
+     folder (wired up via `publicDir` in vite.prototype_7.config.ts). Paths are
+     relative so they resolve under the deployed sub-path for both dev and Pages.
+     The player library itself comes from the `webaudiofont` npm package (see
+     src/audioPlayback.ts), not a <script> tag. -->
+<script src="fonts/0000_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0241_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0271_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0282_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0321_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0331_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0340_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0382_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0401_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0421_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0430_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0560_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0650_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0851_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/0882_GeneralUserGS_sf2_file.js"></script>
+<script src="fonts/12836_1_Chaos_sf2_file.js"></script>
+<script src="fonts/12838_1_Chaos_sf2_file.js"></script>
+<script src="fonts/12842_1_Chaos_sf2_file.js"></script>
+<script src="fonts/12864_0_Chaos_sf2_file.js"></script>
+<script src="fonts/12868_0_Chaos_sf2_file.js"></script>
+<script src="fonts/12869_0_Chaos_sf2_file.js"></script>
+
+<script type="module" src="src/main.ts"></script>
+</body>
+</html>
