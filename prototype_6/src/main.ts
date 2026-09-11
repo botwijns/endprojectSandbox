@@ -561,7 +561,14 @@ function finishIntro(): void {
 }
 
 // ── Start screen ─────────────────────────────────────────────────────────────
+// The gesture zones cover the *entire* viewport, and the pad zone in
+// particular calls setPointerCapture() on every touch — which steals the
+// click from any real HTML control (like the start-screen buttons) that
+// happens to sit inside it. So the InputHandler only listens while the game
+// screen is actually showing; the start screen's buttons/checkbox/radios get
+// completely normal clicks the rest of the time.
 function showStartScreen(): void {
+    inp.stop();
     gameScreenEl.classList.add("hidden");
     startScreenEl.classList.remove("hidden");
 }
@@ -569,6 +576,7 @@ function showStartScreen(): void {
 function showGameScreen(): void {
     startScreenEl.classList.add("hidden");
     gameScreenEl.classList.remove("hidden");
+    inp.start();
 }
 
 function stopGame(): void {
@@ -678,6 +686,5 @@ inp.onAction((action) => {
     }
 });
 
-inp.start();
 updateHud();
 renderGrid();
