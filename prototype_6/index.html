@@ -10,6 +10,32 @@
       font-family: system-ui, sans-serif; overflow: hidden;
       touch-action: none; user-select: none;
     }
+    .hidden { display: none !important; }
+
+    /* ── Start screen ──────────────────────────────────────────────────── */
+    #start-screen {
+      position: fixed; inset: 0; z-index: 20;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 0.9rem; padding: 1.5rem; box-sizing: border-box; text-align: center;
+      max-width: 32rem; margin: 0 auto;
+    }
+    #start-screen h1 { font-size: clamp(1.2rem, 6vw, 1.8rem); margin: 0; }
+    #start-screen p { font-size: clamp(0.85rem, 4vw, 1.05rem); line-height: 1.5; margin: 0; }
+    #start-options {
+      display: flex; flex-direction: column; gap: 0.6rem; align-items: flex-start;
+      font-size: 0.9rem; text-align: left;
+    }
+    #start-options fieldset { border: 1px solid rgb(0 0 0 / 0.2); border-radius: 8px; padding: 0.5rem 0.75rem; }
+    #start-options label { display: block; margin: 0.15rem 0; }
+    #start-note { font-weight: 700; }
+    #menu-buttons { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+    #start-screen button {
+      font-size: 1rem; padding: 0.6rem 1.1rem; cursor: pointer;
+      border-radius: 8px; border: 1px solid rgb(0 0 0 / 0.3); background: #f4f4f4;
+    }
+
+    /* ── Game screen ───────────────────────────────────────────────────── */
+    #game-screen { position: fixed; inset: 0; }
     #hud {
       position: fixed; top: 0; left: 0; width: 100%; z-index: 10;
       display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 10px; box-sizing: border-box;
@@ -51,25 +77,58 @@
       position: fixed; bottom: 15%; left: 8px; z-index: 10;
       font-size: 13px; opacity: 0.85;
     }
+    /* The only spot on screen not already claimed by a gesture zone. */
+    #stop-btn {
+      position: fixed; z-index: 11; top: 24%; right: 4%;
+      font-size: 12px; padding: 4px 10px; cursor: pointer;
+      border-radius: 6px; border: 1px solid rgb(0 0 0 / 0.3); background: rgba(255,255,255,0.85);
+    }
   </style>
 </head>
 <body>
-<div id="hud">
-  <span id="hud-phase"></span>
-  <span id="hud-bpm"></span>
-  <span id="hud-instrument"></span>
-  <span id="hud-backing"></span>
-  <span id="hud-mode"></span>
+
+<div id="start-screen">
+  <h1>Prototype 6 &mdash; Maak een sfeer</h1>
+  <p id="intro-blurb">
+    Maak op je gehoor een muziekje bij een opdracht (bijvoorbeeld &ldquo;iets vrolijks&rdquo;).
+    In het <strong>oefenlevel</strong> leer je stap voor stap de bediening kennen.
+  </p>
+  <div id="start-options">
+    <label><input type="checkbox" id="speech-toggle" checked> Spraak (voice-over)</label>
+    <fieldset>
+      <legend>Aanhouden van een noot</legend>
+      <label><input type="radio" name="holdfix" value="threshold" id="holdfix-threshold" checked> Met vertraging (aanbevolen)</label>
+      <label><input type="radio" name="holdfix" value="single" id="holdfix-single"> E&eacute;n noot per tik (geen aanhouden)</label>
+    </fieldset>
+  </div>
+  <p id="start-note" class="hidden"></p>
+  <div id="menu-buttons">
+    <button id="intro-btn">Start oefenlevel</button>
+    <button id="game-btn">Start spel</button>
+  </div>
 </div>
 
-<div id="zone-topright" class="zone">3× tikken = start<br>tijdens spel: 1× = opdracht herhalen · 3× = klaar</div>
-<div id="grid"></div>
-<div id="zone-strip">
-  <div>wis noot<br>op deze stap</div>
-  <div>instrument<br>wisselen</div>
-  <div>modus<br>componeren / bewerken</div>
+<div id="game-screen" class="hidden">
+  <div id="hud">
+    <span id="hud-phase"></span>
+    <span id="hud-bpm"></span>
+    <span id="hud-instrument"></span>
+    <span id="hud-backing"></span>
+    <span id="hud-mode"></span>
+    <span id="hud-holdfix"></span>
+  </div>
+
+  <div id="zone-topright" class="zone">3&times; tikken = start<br>tijdens spel: 1&times; = opdracht herhalen &middot; 3&times; = klaar</div>
+  <div id="grid"></div>
+  <div id="zone-strip">
+    <div>wis noot<br>op deze stap</div>
+    <div>instrument<br>wisselen</div>
+    <div>modus<br>componeren / bewerken</div>
+  </div>
+  <div id="log"></div>
+  <button id="stop-btn">Stop</button>
 </div>
-<div id="log"></div>
+
 <!-- WebAudioFont instrument banks live in the shared repo-root /public/fonts
      folder (wired up via `publicDir` in vite.prototype_6.config.ts). Paths are
      relative so they resolve under the deployed sub-path for both dev and Pages. -->

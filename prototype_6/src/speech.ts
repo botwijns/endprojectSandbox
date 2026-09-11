@@ -6,6 +6,19 @@
 //   • earcon() — short non-verbal tones for fast, frequent events (placing a
 //                note, moving the step cursor) where speech would be too slow.
 
+// Speech can be switched off from the start screen so the same build is easy
+// to playtest both with and without the spoken cues. Earcons are unaffected.
+let enabled = true;
+
+export function setSpeechEnabled(v: boolean): void {
+    enabled = v;
+    if (!v && typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+}
+
+export function isSpeechEnabled(): boolean {
+    return enabled;
+}
+
 let voice: SpeechSynthesisVoice | null = null;
 
 function pickVoice(): void {
@@ -28,7 +41,7 @@ if (typeof speechSynthesis !== "undefined") {
  * latest state always wins (announcements are status, not a queue).
  */
 export function speak(text: string): void {
-    if (typeof speechSynthesis === "undefined") return;
+    if (!enabled || typeof speechSynthesis === "undefined") return;
     try {
         speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
@@ -42,12 +55,15 @@ export function speak(text: string): void {
     }
 }
 
-export type Earcon = "place" | "erase" | "step" | "mode" | "instrument" | "done" | "start";
+export type Earcon = "place" | "preview" | "erase" | "step" | "mode" | "instrument" | "done" | "start";
 
 // Each earcon is one or more quick sine blips. Kept deliberately distinct in
 // contour so they're tellable apart by ear: placing rises, erasing falls, etc.
 const PATTERNS: Record<Earcon, { freq: number; at: number; dur: number }[]> = {
     place:      [{ freq: 660, at: 0,    dur: 0.09 }],
+    // a softer, shorter blip for "this is what's under your finger right now,
+    // nothing is written yet" — distinguishable from the firmer "place" cue.
+    preview:    [{ freq: 660, at: 0,    dur: 0.045 }],
     erase:      [{ freq: 400, at: 0,    dur: 0.08 }, { freq: 260, at: 0.08, dur: 0.12 }],
     step:       [{ freq: 520, at: 0,    dur: 0.05 }],
     mode:       [{ freq: 480, at: 0,    dur: 0.08 }, { freq: 720, at: 0.09, dur: 0.10 }],
