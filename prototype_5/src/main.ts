@@ -340,7 +340,7 @@ const loop = new GameLoop((dt) => {
         }
         if (armBetaBaseline!==null && beta!==null && beta-armBetaBaseline>10){
             //instead of tapping, we reel it in by moving the phone
-            handleTap()
+            startReeling()
         }
     }
     else if (state.phase == "reeling"){
