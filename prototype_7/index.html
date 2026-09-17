@@ -12,9 +12,12 @@
     }
     #hud {
       position: fixed; top: 0; left: 0; width: 100%; z-index: 10;
-      display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 10px; box-sizing: border-box;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 6px 10px; box-sizing: border-box;
       background: rgba(0,0,0,0.55); color: #fff; font-size: 13px;
       pointer-events: none;
+    }
+    #hud select {
+      pointer-events: auto; font-size: 13px;
     }
     /* Dashed guides mirror the hit zones in src/inputHandler.ts. Sighted aid only. */
     .zone {
@@ -45,6 +48,7 @@
   <span id="hud-progress"></span>
   <span id="hud-score"></span>
   <span id="hud-armed"></span>
+  <select id="hud-song-picker" title="dwing een specifiek lied af (dev preview)"></select>
 </div>
 
 <div id="zone-a" class="zone">A &mdash; linksboven</div>
