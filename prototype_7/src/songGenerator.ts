@@ -299,8 +299,8 @@ function generateMelody(cfg: SongConfig, chords: ChordPitches[]): MelodyNote[] {
 
 // ---- Chords & voice leading --------------------------------------------------
 
-function generateChords(cfg: SongConfig): { bars: ChordNote[][]; prog: string[] } {
-  const base = pickProgression(cfg.scale);
+function generateChords(cfg: SongConfig, progressionOverride?: string[]): { bars: ChordNote[][]; prog: string[] } {
+  const base = progressionOverride && progressionOverride.length > 0 ? progressionOverride : pickProgression(cfg.scale);
   const prog = Array.from({ length: cfg.bars }, (_, i) => base[i % base.length]);
 
   const bars: ChordNote[][] = [];
@@ -460,8 +460,8 @@ function applySwing<T extends MelodyNote>(notes: T[], amount: number, subdivisio
 
 // ---- Song assembly --------------------------------------------------------------
 
-export function generateSong(cfg: SongConfig): GeneratedSong {
-  const { bars, prog } = generateChords(cfg);
+export function generateSong(cfg: SongConfig, fixedMelody?: MelodyNote[], progressionOverride?: string[]): GeneratedSong {
+  const { bars, prog } = generateChords(cfg, progressionOverride);
   const genre = GENRES.find((g) => g.id === cfg.genre)!;
 
   const chordPitchesPerBar: ChordPitches[] = bars.map((bar) => ({
@@ -472,7 +472,7 @@ export function generateSong(cfg: SongConfig): GeneratedSong {
   const song: GeneratedSong = {
     id: `song-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
     config: cfg,
-    melody: generateMelody(cfg, chordPitchesPerBar),
+    melody: fixedMelody ?? generateMelody(cfg, chordPitchesPerBar),
     chords: bars,
     progressions: prog,
   };

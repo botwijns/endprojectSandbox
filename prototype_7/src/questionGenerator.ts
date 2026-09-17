@@ -1,5 +1,20 @@
 import { GeneratedSong, Question, Difficulty } from "./types.ts";
 import { GENRES, generateRandomSong, pitchClassName, chordQuality, INSTRUMENT_FAMILY, BASS_STYLE } from "./songGenerator.ts";
+import { KNOWN_SONGS, buildKnownSong } from "./knownSongs.ts";
+
+// Chance that a question is built around a real, hand-transcribed song
+// instead of a freshly generated one, when nothing is forced (see below).
+const KNOWN_SONG_CHANCE = 0.25;
+
+function pickSong(forcedSongId?: string): GeneratedSong {
+  if (forcedSongId) {
+    const forced = KNOWN_SONGS.find((s) => s.id === forcedSongId);
+    if (forced) return buildKnownSong(forced);
+  } else if (Math.random() < KNOWN_SONG_CHANCE && KNOWN_SONGS.length > 0) {
+    return buildKnownSong(KNOWN_SONGS[Math.floor(Math.random() * KNOWN_SONGS.length)]);
+  }
+  return generateRandomSong();
+}
 
 // ---------------------------------------------------------------------------
 // Same trait-definition pattern as before, but every trait now reads a value
@@ -190,16 +205,18 @@ export interface GeneratorOptions {
   difficulty?: Difficulty | "mixed";
   numOptions?: number;
   recentTraitIds?: string[];
+  /** When set, always use this KNOWN_SONGS entry instead of a random/generated song - for auditioning a specific song against the quiz. */
+  forcedSongId?: string;
 }
 
 /**
- * Generates a fresh, randomly-composed song and a procedural question about
- * one of its perceivable traits. A new song is generated per question, so
- * the supply is unlimited and no two questions ever repeat.
+ * Generates a song - usually a fresh, randomly-composed one, occasionally a
+ * real known song, or a forced known song when auditioning one - and a
+ * procedural question about one of its perceivable traits.
  */
 export function generateQuestion(options: GeneratorOptions = {}): Question {
-  const { difficulty = "mixed", numOptions = 4, recentTraitIds = [] } = options;
-  const song = generateRandomSong();
+  const { difficulty = "mixed", numOptions = 4, recentTraitIds = [], forcedSongId } = options;
+  const song = pickSong(forcedSongId);
 
   let candidateTraits = TRAITS.filter(
     (t) => (difficulty === "mixed" || t.difficulty === difficulty) && (!t.isApplicable || t.isApplicable(song))
@@ -227,12 +244,12 @@ export function generateQuestion(options: GeneratorOptions = {}): Question {
   };
 }
 
-export function generateQuiz(count: number, difficulty: Difficulty | "mixed" = "mixed"): Question[] {
+export function generateQuiz(count: number, difficulty: Difficulty | "mixed" = "mixed", forcedSongId?: string): Question[] {
   const questions: Question[] = [];
   const recentTraitIds: string[] = [];
 
   for (let i = 0; i < count; i++) {
-    const q = generateQuestion({ difficulty, recentTraitIds });
+    const q = generateQuestion({ difficulty, recentTraitIds, forcedSongId });
     questions.push(q);
     recentTraitIds.push(q.traitId);
     if (recentTraitIds.length > 3) recentTraitIds.shift();

@@ -10,9 +10,9 @@ export interface QuizState {
 export class QuizSession {
   private state: QuizState;
 
-  constructor(length: number, difficulty: Difficulty | "mixed" = "mixed") {
+  constructor(length: number, difficulty: Difficulty | "mixed" = "mixed", forcedSongId?: string) {
     this.state = {
-      questions: generateQuiz(length, difficulty),
+      questions: generateQuiz(length, difficulty, forcedSongId),
       currentIndex: 0,
       answered: [],
     };

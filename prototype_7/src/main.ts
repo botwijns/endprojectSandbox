@@ -2,6 +2,7 @@ import { QuizSession } from "./quizEngine.ts";
 import { initAudio, getAudioContext, playSong, stopAudio, fontsReady } from "./audioPlayback.ts";
 import { speak, speakFrom, earcon, positionalCue } from "./speech.ts";
 import { InputHandler, CORNERS, type QuizAction, type CornerIndex } from "./inputHandler.ts";
+import { KNOWN_SONGS } from "./knownSongs.ts";
 
 // ── Eyes-free "wat hoor je?" music quiz ──────────────────────────────────────
 // Every question generates a brand-new song from a real music-theory engine and
@@ -28,6 +29,15 @@ const hud = {
     score: document.getElementById("hud-score")!,
     armed: document.getElementById("hud-armed")!,
 };
+
+// Dev-only song picker: force every question in the next round to use one
+// specific known song, to audition it against the quiz's trait questions
+// before leaving it in the random rotation. "Willekeurig" = normal random mix.
+const songPicker = document.getElementById("hud-song-picker") as HTMLSelectElement;
+songPicker.appendChild(new Option("Willekeurig", ""));
+for (const song of KNOWN_SONGS) {
+    songPicker.appendChild(new Option(`${song.title} (${song.composer})`, song.id));
+}
 
 function renderHud(): void {
     const label: Record<Phase, string> = {
@@ -145,7 +155,7 @@ function commitOption(index: CornerIndex): void {
 }
 
 function beginQuiz(): void {
-    session = new QuizSession(QUIZ_LENGTH, "mixed");
+    session = new QuizSession(QUIZ_LENGTH, "mixed", songPicker.value || undefined);
     input.setQuizEnabled(true);
     speak("Daar gaan we. Luister goed.");
     later(presentQuestion, 1600);
