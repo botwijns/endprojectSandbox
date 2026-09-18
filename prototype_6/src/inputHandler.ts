@@ -12,7 +12,6 @@ export type GameAction =
     | { type: "noteSet"; note: number }      // tap on the pad
     | { type: "padHold"; held: boolean }     // pad pressed / released (for sustained notes)
     | { type: "noteNudge"; direction: 1 | -1 } // vertical swipe on the pad
-    | { type: "stepMove"; direction: 1 | -1 }  // horizontal swipe on the pad
     | { type: "noteRemove" }                  // bottom strip — left cell
     | { type: "instrumentSwitch" }            // bottom strip — middle cell
     | { type: "modeToggle" };                 // bottom strip — right cell
@@ -130,28 +129,18 @@ export class InputHandler {
     };
 
     private handlePointerMove = (e: PointerEvent): void => {
-        if (e.pointerId !== this.notePointerId || this.lastX === null || this.lastY === null) return;
+        if (e.pointerId !== this.notePointerId || this.lastY === null) return;
 
-        let dx = e.clientX - this.lastX;
+        // Which step is being edited comes from the phone's facing direction
+        // now (see orientation.ts), so only the vertical axis (pitch) is a
+        // gesture here.
         let dy = e.clientY - this.lastY;
-
-        // Consume the drag in fixed steps; the dominant axis decides the gesture
-        // for each step, so a mostly-horizontal drag scrubs steps and a
-        // mostly-vertical drag nudges pitch.
-        while (Math.abs(dx) >= SWIPE_STEP_PX || Math.abs(dy) >= SWIPE_STEP_PX) {
-            if (Math.abs(dx) >= Math.abs(dy)) {
-                const direction: 1 | -1 = dx > 0 ? 1 : -1;
-                this.emit({ type: "stepMove", direction });
-                const consumed = SWIPE_STEP_PX * Math.sign(dx);
-                this.lastX += consumed;
-                dx -= consumed;
-            } else {
-                const direction: 1 | -1 = dy < 0 ? 1 : -1; // dragging up => higher note
-                this.emit({ type: "noteNudge", direction });
-                const consumed = SWIPE_STEP_PX * Math.sign(dy);
-                this.lastY += consumed;
-                dy -= consumed;
-            }
+        while (Math.abs(dy) >= SWIPE_STEP_PX) {
+            const direction: 1 | -1 = dy < 0 ? 1 : -1; // dragging up => higher note
+            this.emit({ type: "noteNudge", direction });
+            const consumed = SWIPE_STEP_PX * Math.sign(dy);
+            this.lastY += consumed;
+            dy -= consumed;
         }
     };
 

@@ -1,4 +1,5 @@
 import { InputHandler, SCALE_DEGREES } from "./inputHandler.ts";
+import { OrientationTracker } from "./orientation.ts";
 import { Howler } from "howler";
 import { generateDrumPattern, type DrumPattern } from "./music.ts";
 import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts";
@@ -95,8 +96,10 @@ function pitchForSlot(slot: StepSlot): number {
 
 // ── Game state ────────────────────────────────────────────────────────────────
 type Phase = "idle" | "composing" | "done";
-type Mode = "composer" | "edit";
+type Mode = "composer" | "edit" | "listener";
 type HoldFix = "threshold" | "single";
+// Pressing the mode control cycles through these in order.
+const MODE_ORDER: Mode[] = ["composer", "edit", "listener"];
 
 let phase: Phase = "idle";
 let mode: Mode = "composer";
@@ -132,7 +135,7 @@ const INTRO_STEPS: IntroStepDef[] = [
     { kind: "instrument", praise: "Mooi, gewist.", prompt:
         "In het midden onderin wissel je van instrument. Probeer het." },
     { kind: "mode", praise: "Zo wissel je van instrument.", prompt:
-        "Rechtsonder wissel je tussen componeren en bewerken. Bewerken is rustiger, zodat je een noot precies kan zetten. Probeer het." },
+        "Rechtsonder wissel je tussen componeren, bewerken en luisteren. In bewerken bepaalt de richting van je telefoon welke stap je bewerkt. Probeer het." },
     { kind: "finish", praise: "Precies, dat is bewerken.", prompt:
         "Ben je klaar? Tik weer drie keer rechtsboven om het oefenlevel af te ronden." },
 ];
@@ -167,8 +170,28 @@ interface MixtapeTrack {
 }
 let mixtape: MixtapeTrack[] = [];
 
+// ── Facing-direction step columns (edit mode) ───────────────────────────────
+// Straight ahead (however the phone faced when the round started) is column 4
+// (index 3). Turning right sweeps through columns 5-8 across a 60° arc;
+// turning left sweeps through columns 3-1 across the same 60° on that side —
+// asymmetric because there are 4 columns to the right and only 3 to the left.
+const DIRECTION_RANGE_DEG = 60;
+const DIRECTION_DEADZONE_DEG = 5; // ignore sensor jitter right around straight-ahead
+
+function columnForHeadingDelta(delta: number): number {
+    if (Math.abs(delta) <= DIRECTION_DEADZONE_DEG) return 3;
+    const span = DIRECTION_RANGE_DEG - DIRECTION_DEADZONE_DEG;
+    if (delta > 0) {
+        const t = Math.min(1, (delta - DIRECTION_DEADZONE_DEG) / span);
+        return 4 + Math.min(3, Math.floor(t * 4));
+    }
+    const t = Math.min(1, (-delta - DIRECTION_DEADZONE_DEG) / span);
+    return 2 - Math.min(2, Math.floor(t * 3));
+}
+
 // ── UI ────────────────────────────────────────────────────────────────────────
 const inp            = new InputHandler();
+const orientation     = new OrientationTracker();
 const startScreenEl  = document.getElementById("start-screen")!;
 const gameScreenEl   = document.getElementById("game-screen")!;
 const introBtn       = document.getElementById("intro-btn") as HTMLButtonElement;
@@ -229,12 +252,12 @@ function updateHud(): void {
             break;
         case "composing":
             phaseEl.textContent = introMode ? "Oefenlevel — volg de aanwijzingen" : `Opdracht: ${currentBrief.say}`;
-            bpmEl.textContent = mode === "edit"
-                ? `${Math.round(bpm / EDIT_SLOWDOWN)} BPM (langzaam)`
-                : `${bpm} BPM`;
+            bpmEl.textContent = mode === "listener"
+                ? `${bpm} BPM`
+                : `${Math.round(bpm / EDIT_SLOWDOWN)} BPM (langzaam)`;
             instrumentEl.textContent = `instrument: ${INSTRUMENT_LABEL_NL[currentInstrument]}`;
             backingEl.textContent = drumPattern ? `beat: ${drumPattern.name}` : "";
-            modeEl.textContent = mode === "composer" ? "componeren" : "bewerken";
+            modeEl.textContent = mode === "composer" ? "componeren" : mode === "edit" ? "bewerken" : "luisteren";
             holdfixEl.textContent = holdFixMode === "threshold" ? "aanhouden: vertraagd" : "aanhouden: uit";
             break;
         case "done":
@@ -253,9 +276,10 @@ function applyDrumPattern(dp: DrumPattern): void {
 }
 
 // ── Sequencer ─────────────────────────────────────────────────────────────────
-// The loop slows down in edit mode so it's easier to catch each beat.
+// Composer and edit both run slowed down, so there's time to place/check each
+// note. Listener plays the song back at its real tempo.
 function currentStepMs(): number {
-    return stepDurationMs * (mode === "edit" ? EDIT_SLOWDOWN : 1);
+    return stepDurationMs * (mode === "listener" ? 1 : EDIT_SLOWDOWN);
 }
 
 function startSequencer(): void {
@@ -306,7 +330,7 @@ function targetStep(): number {
 }
 
 function setNote(note: number): void {
-    if (phase !== "composing") return;
+    if (phase !== "composing" || mode === "listener") return;
     const step = targetStep();
 
     if (mode === "edit") {
@@ -331,7 +355,7 @@ function setNote(note: number): void {
 }
 
 function nudgeNote(direction: 1 | -1): void {
-    if (phase !== "composing") return;
+    if (phase !== "composing" || mode === "listener") return;
     const step = targetStep();
 
     if (mode === "edit") {
@@ -360,7 +384,7 @@ function nudgeNote(direction: 1 | -1): void {
 // Dedicated remove: clears the note on the current step (edit cursor, or the
 // playhead in composer mode) straight away — no separate erase mode.
 function removeNote(): void {
-    if (phase !== "composing") return;
+    if (phase !== "composing" || mode === "listener") return;
     const step = targetStep();
     const had = pattern[currentInstrument][step] !== null;
     pattern[currentInstrument][step] = null;
@@ -372,9 +396,11 @@ function removeNote(): void {
     introAdvance("remove");
 }
 
-function moveCursor(direction: 1 | -1): void {
-    if (phase !== "composing" || mode !== "edit") return;
-    cursorStep = (cursorStep + direction + STEPS) % STEPS;
+// Moves the edit cursor to `step` (called from the orientation callback, and
+// when edit mode is first entered) — no-op if it's already there.
+function moveCursorTo(step: number): void {
+    if (phase !== "composing" || mode !== "edit" || step === cursorStep) return;
+    cursorStep = step;
     editPreviewNote = null; // moving to a different step abandons any pending preview
     earcon(ctx, "step");
     const slot = pattern[currentInstrument][cursorStep];
@@ -383,20 +409,25 @@ function moveCursor(direction: 1 | -1): void {
     renderGrid();
 }
 
+orientation.onHeadingChange((delta) => moveCursorTo(columnForHeadingDelta(delta)));
+
 function toggleMode(): void {
     if (phase !== "composing") return;
-    mode = mode === "composer" ? "edit" : "composer";
-    startSequencer();                 // apply the edit-mode slowdown (or undo it)
+    const i = (MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length;
+    mode = MODE_ORDER[i];
+    startSequencer();                 // apply the slowdown (or lack of it) for the new mode
     earcon(ctx, "mode");
     if (mode === "edit") {
-        cursorStep = currentStep;
+        cursorStep = columnForHeadingDelta(orientation.currentDelta());
         editPreviewNote = null;
         // Always say what's on this step the moment you land in edit mode.
         const slot = pattern[currentInstrument][cursorStep];
         speak(`bewerken, langzamer. stap ${cursorStep + 1}, ${slot ? `noot ${slot.note + 1}` : "leeg"}`);
         introAdvance("mode");
+    } else if (mode === "composer") {
+        speak("componeren, langzamer");
     } else {
-        speak("componeren");
+        speak("luisteren, op tempo");
     }
     updateHud();
     renderGrid();
@@ -630,6 +661,11 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
     mixtape = [];
     editPreviewNote = null;
 
+    // Whichever way the phone is facing right now becomes "straight ahead"
+    // (edit mode's 4th column) for the rest of this round.
+    void orientation.start();
+    orientation.calibrate();
+
     if (asIntro) {
         startIntro();
     } else {
@@ -679,7 +715,6 @@ inp.onAction((action) => {
             }
             break;
         case "noteNudge":        nudgeNote(action.direction); break;
-        case "stepMove":         moveCursor(action.direction); break;
         case "noteRemove":       removeNote(); break;
         case "instrumentSwitch": switchInstrument(); break;
         case "modeToggle":       toggleMode(); break;
