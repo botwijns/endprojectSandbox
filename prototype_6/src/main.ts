@@ -85,7 +85,7 @@ const STEP_PANNERS: AudioNode[] = Array.from({ length: STEPS }, (_, step) => {
     return panner;
 });
 const REBRIEF_TAP_GUARD_MS = 1200;    // ignore rapid transport taps for re-speaking
-const COMPOSER_SLOWDOWN = 2;          // composer runs this many times slower than the real tempo
+const COMPOSER_SLOWDOWN = 1.4;        // composer runs this many times slower than the real tempo
 const HOLD_THRESHOLD_MS = 180;        // "threshold" hold-fix: minimum hold before a note sustains
 const MIXTAPE_KEY = "p6_mixtape";
 const BEST_KEY = "p6_best";
@@ -195,9 +195,58 @@ const instrumentEl  = document.getElementById("hud-instrument")!;
 const backingEl     = document.getElementById("hud-backing")!;
 const modeEl        = document.getElementById("hud-mode")!;
 const holdfixEl     = document.getElementById("hud-holdfix")!;
+const orientationEl = document.getElementById("hud-orientation")!;
 const logEl         = document.getElementById("log")!;
 
 function log(msg: string) { logEl.textContent = msg; }
+
+// ── Debug: orientation readout ──────────────────────────────────────────────
+// Shows the phone's raw orientation sensor values on screen while composing,
+// purely so this can be sanity-checked on a real device. Not tied to any
+// gameplay mechanic.
+let lastOrientationReading: { heading: number | null; alpha: number | null; beta: number | null; gamma: number | null } | null = null;
+let orientationListening = false;
+
+function renderOrientationDebug(): void {
+    if (phase !== "composing" || mode !== "composer" || !lastOrientationReading) {
+        orientationEl.textContent = "";
+        return;
+    }
+    const fmt = (v: number | null) => v === null ? "–" : `${Math.round(v)}°`;
+    const { heading, alpha, beta, gamma } = lastOrientationReading;
+    orientationEl.textContent =
+        `richting: ${fmt(heading)} (α ${fmt(alpha)} · β ${fmt(beta)} · γ ${fmt(gamma)})`;
+}
+
+function handleOrientationDebug(e: DeviceOrientationEvent): void {
+    // iOS exposes a ready-made compass heading; elsewhere derive one from
+    // alpha (which increases counter-clockwise, so flip it).
+    const compass = (e as any).webkitCompassHeading;
+    const heading = typeof compass === "number"
+        ? compass
+        : (e.alpha !== null ? (360 - e.alpha) % 360 : null);
+    lastOrientationReading = { heading, alpha: e.alpha, beta: e.beta, gamma: e.gamma };
+    renderOrientationDebug();
+}
+
+// Must be called from inside a user-gesture handler — iOS Safari gates
+// DeviceOrientationEvent behind an explicit permission prompt.
+function startOrientationDebug(): void {
+    if (orientationListening) return;
+    const DOE = (window as any).DeviceOrientationEvent;
+    const attach = () => {
+        window.addEventListener("deviceorientationabsolute", handleOrientationDebug as EventListener);
+        window.addEventListener("deviceorientation", handleOrientationDebug as EventListener);
+        orientationListening = true;
+    };
+    if (DOE && typeof DOE.requestPermission === "function") {
+        DOE.requestPermission().then((result: string) => {
+            if (result === "granted") attach();
+        }).catch(() => { /* not actually iOS, or the prompt was denied/unsupported */ });
+    } else {
+        attach();
+    }
+}
 
 const cellEls: HTMLDivElement[][] = [];
 for (let s = 0; s < STEPS; s++) {
@@ -249,6 +298,7 @@ function updateHud(): void {
             phaseEl.textContent = "Je mixtape is klaar! Tik 3× rechtsboven voor een nieuwe.";
             break;
     }
+    renderOrientationDebug();
 }
 
 // ── Drums ────────────────────────────────────────────────────────────────────
@@ -595,6 +645,8 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
     currentStep = -1;
     pattern = emptyPattern();
     mixtape = [];
+
+    startOrientationDebug();
 
     if (asIntro) {
         startIntro();
