@@ -59,8 +59,11 @@ function isMelodic(id: Instrument): id is MelodicInstrument {
     return id === "piano" || id === "guitar" || id === "bass";
 }
 
-function scheduleNote(id: Instrument, pitch: number, when: number, duration: number, volume = 0.7): void {
-    player.queueWaveTable(ctx, ctx.destination, instruments[id], when, pitch, duration, volume);
+function scheduleNote(
+    id: Instrument, pitch: number, when: number, duration: number, volume = 0.7,
+    destination: AudioNode = ctx.destination,
+): void {
+    player.queueWaveTable(ctx, destination, instruments[id], when, pitch, duration, volume);
 }
 
 // Audio needs a user gesture to unlock — the first tap anywhere does it.
@@ -72,6 +75,16 @@ window.addEventListener("pointerdown", () => {
 // ── Constants ─────────────────────────────────────────────────────────────────
 const STEPS = 8;                      // one 8-step bar (eighth notes)
 const ROOT_MIDI = 60;                 // middle C
+
+// In composer mode, each step's audio is panned to match its column — step 0
+// (leftmost) plays from the left speaker, step 7 (rightmost) from the right —
+// so the sound sweeps across in the same direction the columns represent.
+const STEP_PANNERS: AudioNode[] = Array.from({ length: STEPS }, (_, step) => {
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = -1 + (2 * step) / (STEPS - 1);
+    panner.connect(ctx.destination);
+    return panner;
+});
 const REBRIEF_TAP_GUARD_MS = 1200;    // ignore rapid transport taps for re-speaking
 const EDIT_SLOWDOWN = 2;              // the loop runs this many times slower in edit mode
 const HOLD_THRESHOLD_MS = 180;        // "threshold" hold-fix: minimum hold before a note sustains
@@ -292,6 +305,7 @@ function stopSequencer(): void {
 }
 
 function playStep(step: number): void {
+    const destination = mode === "composer" ? STEP_PANNERS[step] : ctx.destination;
     for (const instrument of INSTRUMENTS) {
         const slot = pattern[instrument][step];
         if (!slot) continue;
@@ -301,6 +315,7 @@ function playStep(step: number): void {
             ctx.currentTime + 0.02,
             (currentStepMs() / 1000) * 0.9,
             INSTRUMENT_VOLUME[slot.instrument] * currentVolume,
+            destination,
         );
     }
 }
@@ -320,8 +335,9 @@ function tick(): void {
     renderGrid();
 }
 
-function previewSlot(slot: StepSlot): void {
-    scheduleNote(slot.instrument, pitchForSlot(slot), ctx.currentTime + 0.01, 0.25, 0.6 * currentVolume);
+function previewSlot(slot: StepSlot, step?: number): void {
+    const destination = mode === "composer" && step !== undefined ? STEP_PANNERS[step] : ctx.destination;
+    scheduleNote(slot.instrument, pitchForSlot(slot), ctx.currentTime + 0.01, 0.25, 0.6 * currentVolume, destination);
 }
 
 // ── Composing actions ────────────────────────────────────────────────────────
@@ -347,7 +363,7 @@ function setNote(note: number): void {
     const slot: StepSlot = { note, instrument: currentInstrument };
     pattern[currentInstrument][step] = slot;
     heldNote = note;
-    previewSlot(slot);
+    previewSlot(slot, step);
     earcon(ctx, "place");
     log(`stap ${step + 1}: noot ${note + 1} (${INSTRUMENT_LABEL_NL[currentInstrument]})`);
     renderGrid();
@@ -375,7 +391,7 @@ function nudgeNote(direction: 1 | -1): void {
     const slot: StepSlot = { note, instrument: currentInstrument };
     pattern[currentInstrument][step] = slot;
     heldNote = note; // a sustain in progress follows the new pitch
-    previewSlot(slot);
+    previewSlot(slot, step);
     earcon(ctx, "place");
     log(`stap ${step + 1}: naar noot ${note + 1}`);
     renderGrid();
