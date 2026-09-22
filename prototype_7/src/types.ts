@@ -46,6 +46,12 @@ export interface GeneratedSong {
   drumType?: DrumType;
 }
 
+/** A single audible answer option: a specific instrument + pitch to play instead of speaking a name. */
+export interface AudioOption {
+  instrument: string;
+  pitch: number; // MIDI note number
+}
+
 export interface Question {
   id: string;
   traitId: string;
@@ -56,6 +62,8 @@ export interface Question {
   correctAnswer: string;
   /** The freshly generated song this question is about - each question gets its own song. */
   song: GeneratedSong;
+  /** When set, parallel to `options`: play these notes instead of speaking the option text. */
+  audioOptions?: AudioOption[];
 }
 
 export interface AnsweredQuestion extends Question {

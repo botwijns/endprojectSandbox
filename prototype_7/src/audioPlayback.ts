@@ -125,6 +125,13 @@ export function playSong(song: GeneratedSong): number {
   return song.config.bars * song.config.bpb * beat * 1000;
 }
 
+/** Plays a single isolated note - used for answer options the player hears instead of reads. */
+export function playNote(instrument: string, pitch: number, durationSec = 0.6): void {
+  if (!audioCtx || !player) return;
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  playWithFont(instrument, pitch, audioCtx.currentTime + 0.03, durationSec, 0.75);
+}
+
 export function stopAudio(): void {
   for (const env of envelopes) {
     try { env.cancel(); } catch { /* already finished */ }

@@ -515,6 +515,14 @@ export function pitchClassName(midiPitch: number): string {
   return PITCH_CLASSES[((Math.round(midiPitch) % 12) + 12) % 12];
 }
 
+const SEMITONE_OF: Record<string, number> = Object.fromEntries(PITCH_CLASSES.map((name, i) => [name, i]));
+
+/** MIDI pitch for a pitch-class label (e.g. "C#"), placed in the same octave as `referencePitch`. */
+export function pitchForLabelNearOctave(label: string, referencePitch: number): number {
+  const octave = Math.floor(referencePitch / 12);
+  return octave * 12 + SEMITONE_OF[label];
+}
+
 export const INSTRUMENT_FAMILY: Record<string, string> = {
   piano: "Piano/toetsen",
   guitar: "Gitaar", elGuitar: "Gitaar", disGuitar: "Gitaar",

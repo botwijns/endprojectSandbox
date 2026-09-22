@@ -19,7 +19,11 @@
     #hud select {
       pointer-events: auto; font-size: 13px;
     }
-    /* Dashed guides mirror the hit zones in src/inputHandler.ts. Sighted aid only. */
+    /* Dashed guides mirror the hit zones in src/inputHandler.ts. Sighted aid only.
+       Default layout is 4 corners (50%/50% quadrants); body.answers-2 switches
+       to a left/right split for 2-option questions, matching zonesFor() in
+       src/inputHandler.ts. Repeating the question/song is done by shaking the
+       phone, not a tap zone - see InputHandler.enableMotion(). */
     .zone {
       position: fixed; z-index: 5;
       border: 2px dashed rgb(0 0 0 / 0.20); border-radius: 8px;
@@ -28,18 +32,15 @@
       padding: 8px; box-sizing: border-box; color: rgb(0 0 0 / 0.45);
       pointer-events: none;
     }
-    /* corners: split at x 50%, above 38% and below 62% */
-    #zone-a { left: 0;   top: 0;    width: 50%; height: 38%; }
-    #zone-b { right: 0;  top: 0;    width: 50%; height: 38%; }
-    #zone-c { left: 0;   bottom: 0; width: 50%; height: 38%; }
-    #zone-d { right: 0;  bottom: 0; width: 50%; height: 38%; }
-    /* middle band: y 38%–62%, left cell x<34%, right cell x>66% */
-    #zone-prompt { left: 0;  top: 38%; width: 34%; height: 24%; }
-    #zone-music  { right: 0; top: 38%; width: 34%; height: 24%; }
-    #zone-mid    {
-      left: 34%; top: 38%; width: 32%; height: 24%;
-      border-style: dotted; color: rgb(0 0 0 / 0.28); font-size: 11px;
-    }
+    /* 4-answer layout (default): quadrants split at x 50%, y 50% */
+    #zone-a { left: 0;   top: 0;    width: 50%; height: 50%; }
+    #zone-b { right: 0;  top: 0;    width: 50%; height: 50%; }
+    #zone-c { left: 0;   bottom: 0; width: 50%; height: 50%; }
+    #zone-d { right: 0;  bottom: 0; width: 50%; height: 50%; }
+    /* 2-answer layout: left/right halves, C/D unused */
+    body.answers-2 #zone-a { height: 100%; }
+    body.answers-2 #zone-b { height: 100%; }
+    body.answers-2 #zone-c, body.answers-2 #zone-d { display: none; }
   </style>
 </head>
 <body>
@@ -51,13 +52,10 @@
   <select id="hud-song-picker" title="dwing een specifiek lied af (dev preview)"></select>
 </div>
 
-<div id="zone-a" class="zone">A &mdash; linksboven</div>
-<div id="zone-b" class="zone">B &mdash; rechtsboven</div>
+<div id="zone-a" class="zone">A</div>
+<div id="zone-b" class="zone">B</div>
 <div id="zone-c" class="zone">C &mdash; linksonder</div>
 <div id="zone-d" class="zone">D &mdash; rechtsonder</div>
-<div id="zone-prompt" class="zone">vraag<br>herhalen</div>
-<div id="zone-music" class="zone">muziek<br>opnieuw</div>
-<div id="zone-mid" class="zone">tik 3&times; om te starten</div>
 
 <!-- WebAudioFont instrument + drum banks live in the shared repo-root /public/fonts
      folder (wired up via `publicDir` in vite.prototype_7.config.ts). Paths are

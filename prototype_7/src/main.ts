@@ -1,14 +1,16 @@
 import { QuizSession } from "./quizEngine.ts";
-import { initAudio, getAudioContext, playSong, stopAudio, fontsReady } from "./audioPlayback.ts";
+import { initAudio, getAudioContext, playSong, playNote, stopAudio, fontsReady } from "./audioPlayback.ts";
 import { speak, speakFrom, earcon, positionalCue } from "./speech.ts";
-import { InputHandler, CORNERS, type QuizAction, type CornerIndex } from "./inputHandler.ts";
+import { InputHandler, zonesFor, type QuizAction, type AnswerIndex, type AnswerZone } from "./inputHandler.ts";
 import { KNOWN_SONGS } from "./knownSongs.ts";
 
 // ── Eyes-free "wat hoor je?" music quiz ──────────────────────────────────────
 // Every question generates a brand-new song from a real music-theory engine and
 // asks about something audible in it. Played entirely by ear: the question is
-// spoken, the piece plays, the four answers sit in the four screen corners and
-// are read out with a positional cue (left/right pan, high/low pitch).
+// spoken, the piece plays, and the answers sit either in the four screen
+// corners or split left/right (matching the question's option count), read
+// out with a positional cue (left/right pan, high/low pitch). Shaking the
+// phone repeats the current question.
 
 const QUIZ_LENGTH = 8;
 const PROMPT_READ_MS = 2600; // rough time to speak the question before the piece plays
@@ -87,16 +89,34 @@ function playPiece(): number {
     return ms;
 }
 
+// Announces one answer option: a positional cue, then either the spoken text
+// or - for "hear the note" questions - the letter followed by the actual tone.
+function announceOption(index: AnswerIndex, zone: AnswerZone): void {
+    if (!session?.current) return;
+    const q = session.current;
+    const ctx = getAudioContext();
+    if (ctx) positionalCue(ctx, zone);
+    const audio = q.audioOptions?.[index];
+    if (audio) {
+        later(() => speakFrom(`${zone.letter}.`, zone.pan), 180);
+        later(() => playNote(audio.instrument, audio.pitch), 650);
+    } else {
+        const opt = q.options[index];
+        later(() => speakFrom(`${zone.letter}. ${opt}`, zone.pan), 180);
+    }
+}
+
 function readOptions(): void {
     if (!session?.current) return;
-    const ctx = getAudioContext();
-    session.current.options.forEach((opt, i) => {
-        const corner = CORNERS[i];
-        later(() => {
-            if (ctx) positionalCue(ctx, corner);
-            later(() => speakFrom(`${corner.letter}. ${opt}`, corner.pan), 180);
-        }, i * OPTION_READ_GAP_MS);
+    const zones = zonesFor(session.current.options.length);
+    zones.forEach((zone, i) => {
+        later(() => announceOption(i, zone), i * OPTION_READ_GAP_MS);
     });
+}
+
+function setAnswerLayoutClass(count: number): void {
+    document.body.classList.toggle("answers-2", count <= 2);
+    document.body.classList.toggle("answers-4", count > 2);
 }
 
 // ── Question lifecycle ──────────────────────────────────────────────────────
@@ -107,9 +127,12 @@ function presentQuestion(): void {
     phase = "listening";
     renderHud();
 
+    const q = session.current!;
+    input.setAnswerCount(q.options.length);
+    setAnswerLayoutClass(q.options.length);
+
     // Speech is fire-and-forget status; fixed timers drive the flow so a missing
     // or slow speech-synthesis engine never stalls the quiz.
-    const q = session.current!;
     speak(q.prompt);
     later(() => {
         const ms = playPiece();
@@ -117,18 +140,15 @@ function presentQuestion(): void {
     }, PROMPT_READ_MS);
 }
 
-function previewOption(index: CornerIndex): void {
+function previewOption(index: AnswerIndex): void {
     if (phase !== "listening" || !session?.current) return;
     // The player is navigating now — stop auto-reading the remaining options.
     clearPending();
-    const corner = CORNERS[index];
-    const ctx = getAudioContext();
-    if (ctx) positionalCue(ctx, corner);
-    const opt = session.current.options[index];
-    later(() => speakFrom(`${corner.letter}. ${opt}`, corner.pan), 170);
+    const zone = zonesFor(session.current.options.length)[index];
+    announceOption(index, zone);
 }
 
-function commitOption(index: CornerIndex): void {
+function commitOption(index: AnswerIndex): void {
     if (phase !== "listening" || !session?.current) return;
     const q = session.current;
     const chosen = q.options[index];
@@ -143,7 +163,13 @@ function commitOption(index: CornerIndex): void {
         speak("Goed.");
     } else {
         cue("wrong");
-        later(() => speak(`Fout. Het was ${q.correctAnswer}.`), 500);
+        const correctAudio = q.audioOptions?.[q.options.indexOf(q.correctAnswer)];
+        if (correctAudio) {
+            later(() => speak("Fout. Dit was de juiste noot:"), 500);
+            later(() => playNote(correctAudio.instrument, correctAudio.pitch), 1300);
+        } else {
+            later(() => speak(`Fout. Het was ${q.correctAnswer}.`), 500);
+        }
     }
 
     const advance = () => {
@@ -177,6 +203,7 @@ function handleStart(): void {
     if (phase === "listening" || phase === "answered") return;
     initAudio();
     getAudioContext()?.resume();
+    input.enableMotion();
     cue("start");
     if (fontsReady()) {
         beginQuiz();
@@ -203,17 +230,8 @@ input.onAction((action: QuizAction) => {
         case "optionCommit":
             commitOption(action.index);
             return;
-        case "repeatPrompt":
-            if (phase === "listening" && session?.current) {
-                clearPending();
-                speak(session.current.prompt);
-            }
-            return;
-        case "replayPiece":
-            if (phase === "listening") {
-                clearPending();
-                playPiece();
-            }
+        case "repeat":
+            if (phase === "listening") presentQuestion();
             return;
     }
 });
