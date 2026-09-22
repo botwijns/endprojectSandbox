@@ -50,12 +50,11 @@
       padding: 6px; box-sizing: border-box; color: rgb(0 0 0 / 0.45);
       pointer-events: none;
     }
-    #zone-topright { top: 0; right: 0; width: 40%; height: 22%; }
     #zone-strip {
       position: fixed; z-index: 5;
       bottom: 0; left: 0; width: 100%; height: 14%;
       border: none; padding: 0;
-      display: grid; grid-template-columns: 34fr 33fr 33fr; gap: 3px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 3px;
     }
     #zone-strip > div {
       border: 2px dashed rgb(0 0 0 / 0.22); border-radius: 8px;
@@ -64,7 +63,7 @@
       padding: 4px; pointer-events: none;
     }
     #grid {
-      position: fixed; left: 0; top: 0; width: 50%; height: 86%; z-index: 4;
+      position: fixed; left: 0; top: 0; width: 100%; height: 86%; z-index: 4;
       display: grid;
       grid-template-columns: repeat(8, 1fr);
       grid-template-rows: repeat(8, 1fr);
@@ -76,9 +75,11 @@
       position: fixed; bottom: 15%; left: 8px; z-index: 10;
       font-size: 13px; opacity: 0.85;
     }
-    /* The only spot on screen not already claimed by a gesture zone. */
+    /* Excluded from the pad zone via InputHandler's ctrlStop rectangle (see
+       zoneFor in inputHandler.ts) so its native click isn't stolen by the
+       pad's setPointerCapture(). */
     #stop-btn {
-      position: fixed; z-index: 11; top: 24%; right: 4%;
+      position: fixed; z-index: 11; top: 4px; left: 50%; transform: translateX(-50%);
       font-size: 12px; padding: 4px 10px; cursor: pointer;
       border-radius: 6px; border: 1px solid rgb(0 0 0 / 0.3); background: rgba(255,255,255,0.85);
     }
@@ -94,6 +95,7 @@
   </p>
   <div id="start-options">
     <label><input type="checkbox" id="speech-toggle" checked> Spraak (voice-over)</label>
+    <label><input type="checkbox" id="random-note-toggle"> Willekeurige toonhoogte bij plaatsen</label>
     <fieldset>
       <legend>Aanhouden van een noot</legend>
       <label><input type="radio" name="holdfix" value="threshold" id="holdfix-threshold" checked> Met vertraging (aanbevolen)</label>
@@ -113,17 +115,13 @@
     <span id="hud-bpm"></span>
     <span id="hud-instrument"></span>
     <span id="hud-backing"></span>
-    <span id="hud-mode"></span>
     <span id="hud-holdfix"></span>
-    <span id="hud-orientation"></span>
   </div>
 
-  <div id="zone-topright" class="zone">3&times; tikken = start<br>tijdens spel: 1&times; = opdracht herhalen &middot; 3&times; = klaar</div>
   <div id="grid"></div>
   <div id="zone-strip">
     <div>wis noot<br>op deze stap</div>
     <div>instrument<br>wisselen</div>
-    <div>modus<br>componeren / luisteren</div>
   </div>
   <div id="log"></div>
   <button id="stop-btn">Stop</button>

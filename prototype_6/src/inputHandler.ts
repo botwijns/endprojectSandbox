@@ -7,31 +7,31 @@ const TAP_MAX_GAP_MS = 1500;   // taps further apart than this reset the tempo-t
 const SWIPE_STEP_PX = 44;      // px of vertical drag needed to emit one pitch nudge
 
 export type GameAction =
-    | { type: "bpmSet"; bpm: number }        // 3 quick taps top-right
-    | { type: "transportTap" }               // a single tap top-right
+    | { type: "bpmSet"; bpm: number }        // 3 quick taps anywhere on the pad
     | { type: "noteSet"; note: number }      // tap on the pad
     | { type: "padHold"; held: boolean }     // pad pressed / released (for sustained notes)
     | { type: "noteNudge"; direction: 1 | -1 } // vertical swipe on the pad
-    | { type: "noteRemove" }                  // bottom strip — left cell
-    | { type: "instrumentSwitch" }            // bottom strip — middle cell
-    | { type: "modeToggle" };                 // bottom strip — right cell
+    | { type: "noteRemove" }                  // bottom strip — left half
+    | { type: "instrumentSwitch" };           // bottom strip — right half
 
 type ActionCallback = (action: GameAction) => void;
 
-type Zone = "topRight" | "pad" | "ctrlRemove" | "ctrlInstrument" | "ctrlMode" | "other";
+type Zone = "pad" | "ctrlRemove" | "ctrlInstrument" | "ctrlStop";
 
 // Layout fractions — kept in one place so index.html's visual guides can match.
-const TOP_RIGHT_X = 0.6;
-const TOP_RIGHT_Y = 0.22;
-const PAD_X = 0.5;
 const STRIP_Y = 0.86;          // bottom control strip starts here
-const STRIP_SPLIT_1 = 0.34;    // remove | instrument boundary
-const STRIP_SPLIT_2 = 0.67;    // instrument | mode boundary
+const STRIP_SPLIT = 0.5;       // remove | instrument boundary
+
+// Excludes the top-center Stop button from the pad zone, so its native click
+// isn't stolen by the pad's setPointerCapture().
+const CTRL_STOP_X0 = 0.40;
+const CTRL_STOP_X1 = 0.60;
+const CTRL_STOP_Y1 = 0.07;
 
 export class InputHandler {
     private callbacks: ActionCallback[] = [];
 
-    // Top-right corner: tap x3 to define BPM; a single tap is its own action.
+    // Tap x3 anywhere on the pad to define BPM (and start/resume the game).
     private tapTimestamps: number[] = [];
 
     // The pad: one active pointer drives note placement + swipe gestures.
@@ -65,13 +65,10 @@ export class InputHandler {
         const yf = y / window.innerHeight;
 
         if (yf > STRIP_Y) {
-            if (xf < STRIP_SPLIT_1) return "ctrlRemove";
-            if (xf < STRIP_SPLIT_2) return "ctrlInstrument";
-            return "ctrlMode";
+            return xf < STRIP_SPLIT ? "ctrlRemove" : "ctrlInstrument";
         }
-        if (xf > TOP_RIGHT_X && yf < TOP_RIGHT_Y) return "topRight";
-        if (xf < PAD_X) return "pad";
-        return "other";
+        if (xf > CTRL_STOP_X0 && xf < CTRL_STOP_X1 && yf < CTRL_STOP_Y1) return "ctrlStop";
+        return "pad";
     }
 
     // Maps a y coordinate to a pad row. Row 0 = bottom = lowest note.
@@ -102,19 +99,14 @@ export class InputHandler {
         const zone = this.zoneFor(e.clientX, e.clientY);
 
         switch (zone) {
-            case "topRight":
-                this.emit({ type: "transportTap" });
-                this.registerBpmTap();
-                return;
             case "ctrlRemove":
                 this.emit({ type: "noteRemove" });
                 return;
             case "ctrlInstrument":
                 this.emit({ type: "instrumentSwitch" });
                 return;
-            case "ctrlMode":
-                this.emit({ type: "modeToggle" });
-                return;
+            case "ctrlStop":
+                return; // inert — lets the real Stop button take its own native click
             case "pad":
                 if (this.notePointerId !== null) return; // one pad gesture at a time
                 this.notePointerId = e.pointerId;
@@ -122,6 +114,7 @@ export class InputHandler {
                 (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
                 this.emit({ type: "noteSet", note: this.rowForY(e.clientY) });
                 this.emit({ type: "padHold", held: true });
+                this.registerBpmTap();
                 return;
         }
     };

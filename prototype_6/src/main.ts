@@ -1,4 +1,5 @@
 import { InputHandler, SCALE_DEGREES } from "./inputHandler.ts";
+import { ShakeDetector } from "./shake.ts";
 import { Howler } from "howler";
 import { generateDrumPattern, type DrumPattern } from "./music.ts";
 import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts";
@@ -75,17 +76,16 @@ window.addEventListener("pointerdown", () => {
 const STEPS = 8;                      // one 8-step bar (eighth notes)
 const ROOT_MIDI = 60;                 // middle C
 
-// In composer mode, each step's audio is panned to match its column — step 0
-// (leftmost) plays from the left speaker, step 7 (rightmost) from the right —
-// so the sound sweeps across in the same direction the columns represent.
+// Each step's audio is panned to match its column — step 0 (leftmost) plays
+// from the left speaker, step 7 (rightmost) from the right — so the sound
+// sweeps across in the same direction the columns represent.
 const STEP_PANNERS: AudioNode[] = Array.from({ length: STEPS }, (_, step) => {
     const panner = ctx.createStereoPanner();
     panner.pan.value = -1 + (2 * step) / (STEPS - 1);
     panner.connect(ctx.destination);
     return panner;
 });
-const REBRIEF_TAP_GUARD_MS = 1200;    // ignore rapid transport taps for re-speaking
-const COMPOSER_SLOWDOWN = 1.4;        // composer runs this many times slower than the real tempo
+const SLOWDOWN = 1.4;                 // the game runs this many times slower than the real tempo
 const HOLD_THRESHOLD_MS = 180;        // "threshold" hold-fix: minimum hold before a note sustains
 const MIXTAPE_KEY = "p6_mixtape";
 const BEST_KEY = "p6_best";
@@ -108,43 +108,37 @@ function pitchForSlot(slot: StepSlot): number {
 
 // ── Game state ────────────────────────────────────────────────────────────────
 type Phase = "idle" | "composing" | "done";
-type Mode = "composer" | "listener";
 type HoldFix = "threshold" | "single";
-// Pressing the mode control cycles through these in order.
-const MODE_ORDER: Mode[] = ["composer", "listener"];
 
 let phase: Phase = "idle";
-let mode: Mode = "composer";
 let bpm = 0;
 let stepDurationMs = 0;
 let currentStep = 0;
-let lastTransportTapAt = 0;
 let pendingIntro = false;             // which start-screen button was pressed
+let randomNoteMode = false;           // placed notes get a random pitch instead of tap-height
 
 // Two ways of fixing the "quick tap accidentally places two notes" bug,
 // switchable from the start screen so they're easy to compare.
 let holdFixMode: HoldFix = "threshold";
 let holdStartAt = 0;
 
-// While the pad is held in composer mode the note "sustains": each step the
-// playhead moves onto gets the same note, so holding longer fills more steps.
+// While the pad is held the note "sustains": each step the playhead moves
+// onto gets the same note, so holding longer fills more steps.
 let padHeld = false;
 let heldNote: number | null = null;
 
 // Guided intro tutorial — one gated step at a time.
-type IntroKind = "place" | "remove" | "instrument" | "mode" | "finish";
+type IntroKind = "place" | "remove" | "instrument" | "finish";
 interface IntroStepDef { kind: IntroKind; prompt: string; praise: string }
 const INTRO_STEPS: IntroStepDef[] = [
     { kind: "place", praise: "", prompt:
-        "Beweeg je vinger omhoog en omlaag over de linkerkant van het scherm. Tik om een noot te plaatsen." },
+        "Beweeg je vinger omhoog en omlaag over het scherm. Tik om een noot te plaatsen." },
     { kind: "remove", praise: "Goed zo! Je hebt een noot geplaatst.", prompt:
         "Linksonder wis je de noot op de huidige stap. Probeer het." },
     { kind: "instrument", praise: "Mooi, gewist.", prompt:
-        "In het midden onderin wissel je van instrument. Probeer het." },
-    { kind: "mode", praise: "Zo wissel je van instrument.", prompt:
-        "Rechtsonder wissel je tussen componeren en luisteren. In luisteren hoor je je nummer op het echte tempo terug. Probeer het." },
-    { kind: "finish", praise: "Precies, dat is luisteren.", prompt:
-        "Ben je klaar? Tik weer drie keer rechtsboven om het oefenlevel af te ronden." },
+        "Rechtsonder wissel je van instrument. Probeer het." },
+    { kind: "finish", praise: "Zo wissel je van instrument.", prompt:
+        "Ben je klaar? Schud je telefoon om het oefenlevel af te ronden." },
 ];
 let introMode = false;
 let introStep = 0;
@@ -179,6 +173,7 @@ let mixtape: MixtapeTrack[] = [];
 
 // ── UI ────────────────────────────────────────────────────────────────────────
 const inp            = new InputHandler();
+const shake           = new ShakeDetector();
 const startScreenEl  = document.getElementById("start-screen")!;
 const gameScreenEl   = document.getElementById("game-screen")!;
 const introBtn       = document.getElementById("intro-btn") as HTMLButtonElement;
@@ -186,6 +181,7 @@ const gameBtn        = document.getElementById("game-btn") as HTMLButtonElement;
 const stopBtn        = document.getElementById("stop-btn") as HTMLButtonElement;
 const speechToggleEl = document.getElementById("speech-toggle") as HTMLInputElement;
 const holdfixSingleEl = document.getElementById("holdfix-single") as HTMLInputElement;
+const randomNoteToggleEl = document.getElementById("random-note-toggle") as HTMLInputElement;
 const startNoteEl    = document.getElementById("start-note")!;
 
 const gridEl        = document.getElementById("grid")!;
@@ -193,60 +189,10 @@ const phaseEl       = document.getElementById("hud-phase")!;
 const bpmEl         = document.getElementById("hud-bpm")!;
 const instrumentEl  = document.getElementById("hud-instrument")!;
 const backingEl     = document.getElementById("hud-backing")!;
-const modeEl        = document.getElementById("hud-mode")!;
 const holdfixEl     = document.getElementById("hud-holdfix")!;
-const orientationEl = document.getElementById("hud-orientation")!;
 const logEl         = document.getElementById("log")!;
 
 function log(msg: string) { logEl.textContent = msg; }
-
-// ── Debug: orientation readout ──────────────────────────────────────────────
-// Shows the phone's raw orientation sensor values on screen while composing,
-// purely so this can be sanity-checked on a real device. Not tied to any
-// gameplay mechanic.
-let lastOrientationReading: { heading: number | null; alpha: number | null; beta: number | null; gamma: number | null } | null = null;
-let orientationListening = false;
-
-function renderOrientationDebug(): void {
-    if (phase !== "composing" || mode !== "composer" || !lastOrientationReading) {
-        orientationEl.textContent = "";
-        return;
-    }
-    const fmt = (v: number | null) => v === null ? "–" : `${Math.round(v)}°`;
-    const { heading, alpha, beta, gamma } = lastOrientationReading;
-    orientationEl.textContent =
-        `richting: ${fmt(heading)} (α ${fmt(alpha)} · β ${fmt(beta)} · γ ${fmt(gamma)})`;
-}
-
-function handleOrientationDebug(e: DeviceOrientationEvent): void {
-    // iOS exposes a ready-made compass heading; elsewhere derive one from
-    // alpha (which increases counter-clockwise, so flip it).
-    const compass = (e as any).webkitCompassHeading;
-    const heading = typeof compass === "number"
-        ? compass
-        : (e.alpha !== null ? (360 - e.alpha) % 360 : null);
-    lastOrientationReading = { heading, alpha: e.alpha, beta: e.beta, gamma: e.gamma };
-    renderOrientationDebug();
-}
-
-// Must be called from inside a user-gesture handler — iOS Safari gates
-// DeviceOrientationEvent behind an explicit permission prompt.
-function startOrientationDebug(): void {
-    if (orientationListening) return;
-    const DOE = (window as any).DeviceOrientationEvent;
-    const attach = () => {
-        window.addEventListener("deviceorientationabsolute", handleOrientationDebug as EventListener);
-        window.addEventListener("deviceorientation", handleOrientationDebug as EventListener);
-        orientationListening = true;
-    };
-    if (DOE && typeof DOE.requestPermission === "function") {
-        DOE.requestPermission().then((result: string) => {
-            if (result === "granted") attach();
-        }).catch(() => { /* not actually iOS, or the prompt was denied/unsupported */ });
-    } else {
-        attach();
-    }
-}
 
 const cellEls: HTMLDivElement[][] = [];
 for (let s = 0; s < STEPS; s++) {
@@ -261,11 +207,9 @@ for (let s = 0; s < STEPS; s++) {
     }
 }
 
-// The grid only ever showed where notes *actually* land, but in composer mode
-// that's the playhead, not wherever you tapped — confusing for a sighted
-// tester. Hide it there; it stays visible (and accurate) in listener mode.
+// The grid is a dev aid only and stays hidden — all feedback is audio.
 function renderGrid(): void {
-    gridEl.style.display = mode === "composer" ? "none" : "grid";
+    gridEl.style.display = "none";
     for (let s = 0; s < STEPS; s++) {
         const slot = pattern[currentInstrument][s];
         for (let r = 0; r < SCALE_DEGREES; r++) {
@@ -281,24 +225,20 @@ function renderGrid(): void {
 function updateHud(): void {
     switch (phase) {
         case "idle":
-            phaseEl.textContent = "Tik 3× rechtsboven om te beginnen";
-            bpmEl.textContent = instrumentEl.textContent = backingEl.textContent = modeEl.textContent = holdfixEl.textContent = "";
+            phaseEl.textContent = "Tik 3× om te beginnen";
+            bpmEl.textContent = instrumentEl.textContent = backingEl.textContent = holdfixEl.textContent = "";
             break;
         case "composing":
             phaseEl.textContent = introMode ? "Oefenlevel — volg de aanwijzingen" : `Opdracht: ${currentBrief.say}`;
-            bpmEl.textContent = mode === "listener"
-                ? `${bpm} BPM`
-                : `${Math.round(bpm / COMPOSER_SLOWDOWN)} BPM (langzaam)`;
+            bpmEl.textContent = `${Math.round(bpm / SLOWDOWN)} BPM (langzaam)`;
             instrumentEl.textContent = `instrument: ${INSTRUMENT_LABEL_NL[currentInstrument]}`;
             backingEl.textContent = drumPattern ? `beat: ${drumPattern.name}` : "";
-            modeEl.textContent = mode === "composer" ? "componeren" : "luisteren";
             holdfixEl.textContent = holdFixMode === "threshold" ? "aanhouden: vertraagd" : "aanhouden: uit";
             break;
         case "done":
-            phaseEl.textContent = "Je mixtape is klaar! Tik 3× rechtsboven voor een nieuwe.";
+            phaseEl.textContent = "Je mixtape is klaar! Tik 3× voor een nieuwe.";
             break;
     }
-    renderOrientationDebug();
 }
 
 // ── Drums ────────────────────────────────────────────────────────────────────
@@ -311,10 +251,9 @@ function applyDrumPattern(dp: DrumPattern): void {
 }
 
 // ── Sequencer ─────────────────────────────────────────────────────────────────
-// Composer runs slowed down, so there's time to place/check each note.
-// Listener plays the song back at its real tempo.
+// The game runs slowed down, so there's time to place/check each note.
 function currentStepMs(): number {
-    return stepDurationMs * (mode === "listener" ? 1 : COMPOSER_SLOWDOWN);
+    return stepDurationMs * SLOWDOWN;
 }
 
 function startSequencer(): void {
@@ -327,7 +266,7 @@ function stopSequencer(): void {
 }
 
 function playStep(step: number): void {
-    const destination = mode === "composer" ? STEP_PANNERS[step] : ctx.destination;
+    const destination = STEP_PANNERS[step];
     for (const instrument of INSTRUMENTS) {
         const slot = pattern[instrument][step];
         if (!slot) continue;
@@ -344,13 +283,13 @@ function playStep(step: number): void {
 
 function tick(): void {
     currentStep = (currentStep + 1) % STEPS;
-    // A held pad press in composer mode paints the same note onto each new
-    // step — but only once the hold has lasted past HOLD_THRESHOLD_MS (the
-    // "threshold" fix), so a quick tap that happens to straddle a tick never
-    // gets an accidental second note. The "single" fix disables this
-    // entirely: a touch always places exactly one note.
+    // A held pad press paints the same note onto each new step — but only
+    // once the hold has lasted past HOLD_THRESHOLD_MS (the "threshold" fix),
+    // so a quick tap that happens to straddle a tick never gets an
+    // accidental second note. The "single" fix disables this entirely: a
+    // touch always places exactly one note.
     const longEnough = holdFixMode === "threshold" && (performance.now() - holdStartAt) >= HOLD_THRESHOLD_MS;
-    if (phase === "composing" && mode === "composer" && padHeld && heldNote !== null && longEnough) {
+    if (phase === "composing" && padHeld && heldNote !== null && longEnough) {
         pattern[currentInstrument][currentStep] = { note: heldNote, instrument: currentInstrument };
     }
     playStep(currentStep);
@@ -358,13 +297,13 @@ function tick(): void {
 }
 
 function previewSlot(slot: StepSlot, step?: number): void {
-    const destination = mode === "composer" && step !== undefined ? STEP_PANNERS[step] : ctx.destination;
+    const destination = step !== undefined ? STEP_PANNERS[step] : ctx.destination;
     scheduleNote(slot.instrument, pitchForSlot(slot), ctx.currentTime + 0.01, 0.25, 0.6 * currentVolume, destination);
 }
 
 // ── Composing actions ────────────────────────────────────────────────────────
 function setNote(note: number): void {
-    if (phase !== "composing" || mode === "listener") return;
+    if (phase !== "composing") return;
     const step = currentStep;
 
     const slot: StepSlot = { note, instrument: currentInstrument };
@@ -378,7 +317,7 @@ function setNote(note: number): void {
 }
 
 function nudgeNote(direction: 1 | -1): void {
-    if (phase !== "composing" || mode === "listener") return;
+    if (phase !== "composing") return;
     const step = currentStep;
 
     const existing = pattern[currentInstrument][step]
@@ -396,7 +335,7 @@ function nudgeNote(direction: 1 | -1): void {
 // Dedicated remove: clears the note on the current (playhead) step straight
 // away — no separate erase mode.
 function removeNote(): void {
-    if (phase !== "composing" || mode === "listener") return;
+    if (phase !== "composing") return;
     const step = currentStep;
     const had = pattern[currentInstrument][step] !== null;
     pattern[currentInstrument][step] = null;
@@ -405,22 +344,6 @@ function removeNote(): void {
     log(had ? `stap ${step + 1} gewist` : `stap ${step + 1} was al leeg`);
     renderGrid();
     introAdvance("remove");
-}
-
-function toggleMode(): void {
-    if (phase !== "composing") return;
-    const i = (MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length;
-    mode = MODE_ORDER[i];
-    startSequencer();                 // apply the slowdown (or lack of it) for the new mode
-    earcon(ctx, "mode");
-    if (mode === "composer") {
-        speak("componeren, langzamer");
-    } else {
-        speak("luisteren, op tempo");
-        introAdvance("mode");
-    }
-    updateHud();
-    renderGrid();
 }
 
 function switchInstrument(): void {
@@ -441,7 +364,6 @@ function loadBrief(index: number): void {
     currentScale = currentBrief.scale;
     currentVolume = currentBrief.volume;
     currentInstrument = currentBrief.instrument;
-    mode = "composer";
 
     // fresh groove for the new vibe; the player's melody is kept
     drumPattern = generateDrumPattern(STEPS, currentBrief.grooveStyle);
@@ -531,7 +453,6 @@ function startIntro(): void {
     currentScale = brief.scale;
     currentVolume = brief.volume;
     currentInstrument = brief.instrument;
-    mode = "composer";
 
     drumPattern = generateDrumPattern(STEPS, brief.grooveStyle);
     applyDrumPattern(drumPattern);
@@ -609,6 +530,7 @@ function applyStartOptions(): void {
     setSpeechEnabled(speechToggleEl.checked);
     try { localStorage.setItem(SPEECH_KEY, speechToggleEl.checked ? "1" : "0"); } catch { /* ignore */ }
     holdFixMode = holdfixSingleEl.checked ? "single" : "threshold";
+    randomNoteMode = randomNoteToggleEl.checked;
 }
 
 try {
@@ -623,7 +545,7 @@ introBtn.addEventListener("click", () => {
     startNoteEl.classList.add("hidden");
     showGameScreen();
     updateHud();
-    speak("Tik drie keer rechtsboven om te beginnen.");
+    speak("Tik drie keer om te beginnen.");
 });
 gameBtn.addEventListener("click", () => {
     applyStartOptions();
@@ -631,7 +553,7 @@ gameBtn.addEventListener("click", () => {
     startNoteEl.classList.add("hidden");
     showGameScreen();
     updateHud();
-    speak("Tik drie keer rechtsboven om te beginnen.");
+    speak("Tik drie keer om te beginnen.");
 });
 stopBtn.addEventListener("click", stopGame);
 
@@ -646,7 +568,7 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
     pattern = emptyPattern();
     mixtape = [];
 
-    startOrientationDebug();
+    void shake.start();
 
     if (asIntro) {
         startIntro();
@@ -657,27 +579,22 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
     earcon(ctx, "start");
 }
 
-function reBrief(): void {
-    const now = performance.now();
-    if (now - lastTransportTapAt < REBRIEF_TAP_GUARD_MS) return;
-    lastTransportTapAt = now;
-    speak(currentBrief.say);
-}
+// Finishing a track (and advancing the guided intro's last step) is driven
+// exclusively by a phone shake — there's no tap gesture for it, so a quick
+// run of note-placement taps can never accidentally trigger it.
+shake.onShake(() => {
+    if (phase !== "composing") return;
+    if (introMode) introAdvance("finish");
+    else finishTrack();
+});
 
 // ── Input wiring ──────────────────────────────────────────────────────────────
 inp.onAction((action) => {
     switch (action.type) {
         case "bpmSet":
             if (phase === "idle" || phase === "done") startGame(action.bpm, pendingIntro);
-            else if (phase === "composing") {
-                if (introMode) introAdvance("finish");
-                else finishTrack();
-            }
             break;
-        case "transportTap":
-            if (phase === "composing" && !introMode) reBrief();
-            break;
-        case "noteSet":   setNote(action.note); break;
+        case "noteSet":   setNote(randomNoteMode ? Math.floor(Math.random() * SCALE_DEGREES) : action.note); break;
         case "padHold":
             if (action.held) {
                 padHeld = true;
@@ -690,7 +607,6 @@ inp.onAction((action) => {
         case "noteNudge":        nudgeNote(action.direction); break;
         case "noteRemove":       removeNote(); break;
         case "instrumentSwitch": switchInstrument(); break;
-        case "modeToggle":       toggleMode(); break;
     }
 });
 
