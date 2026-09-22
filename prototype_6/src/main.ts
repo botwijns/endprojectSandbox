@@ -90,6 +90,7 @@ const HOLD_THRESHOLD_MS = 180;        // "threshold" hold-fix: minimum hold befo
 const MIXTAPE_KEY = "p6_mixtape";
 const BEST_KEY = "p6_best";
 const SPEECH_KEY = "p6_speech";
+const LATENCY_KEY = "p6_latency";
 
 interface StepSlot { note: number; instrument: Instrument }
 
@@ -116,6 +117,14 @@ let stepDurationMs = 0;
 let currentStep = 0;
 let pendingIntro = false;             // which start-screen button was pressed
 let randomNoteMode = false;           // placed notes get a random pitch instead of tap-height
+
+// Bluetooth speakers/headsets delay actual audible sound well after the game
+// schedules it, so a tap reacting to "the sound" lands on a step that's
+// already moved on by the time it arrives. latencyMs compensates by
+// attributing a tap to whichever step was current that long ago, instead of
+// literally-current `currentStep` — see stepHistory/perceivedStep() below.
+let latencyMs = 0;
+const stepHistory: { step: number; at: number }[] = [];
 
 // Two ways of fixing the "quick tap accidentally places two notes" bug,
 // switchable from the start screen so they're easy to compare.
@@ -182,6 +191,8 @@ const stopBtn        = document.getElementById("stop-btn") as HTMLButtonElement;
 const speechToggleEl = document.getElementById("speech-toggle") as HTMLInputElement;
 const holdfixSingleEl = document.getElementById("holdfix-single") as HTMLInputElement;
 const randomNoteToggleEl = document.getElementById("random-note-toggle") as HTMLInputElement;
+const latencySliderEl = document.getElementById("latency-slider") as HTMLInputElement;
+const latencyValueEl = document.getElementById("latency-value")!;
 const startNoteEl    = document.getElementById("start-note")!;
 
 const gridEl        = document.getElementById("grid")!;
@@ -283,6 +294,8 @@ function playStep(step: number): void {
 
 function tick(): void {
     currentStep = (currentStep + 1) % STEPS;
+    stepHistory.push({ step: currentStep, at: performance.now() });
+    if (stepHistory.length > 32) stepHistory.shift();
     // A held pad press paints the same note onto each new step — but only
     // once the hold has lasted past HOLD_THRESHOLD_MS (the "threshold" fix),
     // so a quick tap that happens to straddle a tick never gets an
@@ -296,6 +309,19 @@ function tick(): void {
     renderGrid();
 }
 
+// Which step was actually sounding `latencyMs` ago — i.e. the step a tap
+// reacting to audible sound should be attributed to, once output latency
+// (e.g. a Bluetooth speaker) is accounted for. Falls back to the live
+// currentStep when latencyMs is 0 or there isn't enough history yet.
+function perceivedStep(): number {
+    if (latencyMs <= 0) return currentStep;
+    const targetTime = performance.now() - latencyMs;
+    for (let i = stepHistory.length - 1; i >= 0; i--) {
+        if (stepHistory[i].at <= targetTime) return stepHistory[i].step;
+    }
+    return currentStep;
+}
+
 function previewSlot(slot: StepSlot, step?: number): void {
     const destination = step !== undefined ? STEP_PANNERS[step] : ctx.destination;
     scheduleNote(slot.instrument, pitchForSlot(slot), ctx.currentTime + 0.01, 0.25, 0.6 * currentVolume, destination);
@@ -304,7 +330,7 @@ function previewSlot(slot: StepSlot, step?: number): void {
 // ── Composing actions ────────────────────────────────────────────────────────
 function setNote(note: number): void {
     if (phase !== "composing") return;
-    const step = currentStep;
+    const step = perceivedStep();
 
     const slot: StepSlot = { note, instrument: currentInstrument };
     pattern[currentInstrument][step] = slot;
@@ -318,7 +344,7 @@ function setNote(note: number): void {
 
 function nudgeNote(direction: 1 | -1): void {
     if (phase !== "composing") return;
-    const step = currentStep;
+    const step = perceivedStep();
 
     const existing = pattern[currentInstrument][step]
         ?? { note: Math.floor(SCALE_DEGREES / 2), instrument: currentInstrument };
@@ -336,7 +362,7 @@ function nudgeNote(direction: 1 | -1): void {
 // away — no separate erase mode.
 function removeNote(): void {
     if (phase !== "composing") return;
-    const step = currentStep;
+    const step = perceivedStep();
     const had = pattern[currentInstrument][step] !== null;
     pattern[currentInstrument][step] = null;
     earcon(ctx, "erase");
@@ -531,6 +557,8 @@ function applyStartOptions(): void {
     try { localStorage.setItem(SPEECH_KEY, speechToggleEl.checked ? "1" : "0"); } catch { /* ignore */ }
     holdFixMode = holdfixSingleEl.checked ? "single" : "threshold";
     randomNoteMode = randomNoteToggleEl.checked;
+    latencyMs = Number(latencySliderEl.value);
+    try { localStorage.setItem(LATENCY_KEY, String(latencyMs)); } catch { /* ignore */ }
 }
 
 try {
@@ -538,6 +566,17 @@ try {
     if (savedSpeech !== null) speechToggleEl.checked = savedSpeech === "1";
 } catch { /* ignore */ }
 setSpeechEnabled(speechToggleEl.checked);
+
+// Bluetooth output latency is a property of the physical headset, not the
+// session, so (unlike hold-fix/random-note) this is worth remembering.
+try {
+    const savedLatency = localStorage.getItem(LATENCY_KEY);
+    if (savedLatency !== null) latencySliderEl.value = savedLatency;
+} catch { /* ignore */ }
+latencyValueEl.textContent = latencySliderEl.value;
+latencySliderEl.addEventListener("input", () => {
+    latencyValueEl.textContent = latencySliderEl.value;
+});
 
 introBtn.addEventListener("click", () => {
     applyStartOptions();
@@ -567,6 +606,7 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
     currentStep = -1;
     pattern = emptyPattern();
     mixtape = [];
+    stepHistory.length = 0;
 
     void shake.start();
 
