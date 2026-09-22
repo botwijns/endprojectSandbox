@@ -6,14 +6,14 @@ import { KNOWN_SONGS, buildKnownSong } from "./knownSongs.ts";
 // instead of a freshly generated one, when nothing is forced (see below).
 const KNOWN_SONG_CHANCE = 0.25;
 
-function pickSong(forcedSongId?: string): GeneratedSong {
+function pickSong(complexity: Difficulty, forcedSongId?: string): GeneratedSong {
   if (forcedSongId) {
     const forced = KNOWN_SONGS.find((s) => s.id === forcedSongId);
-    if (forced) return buildKnownSong(forced);
+    if (forced) return buildKnownSong(forced, complexity);
   } else if (Math.random() < KNOWN_SONG_CHANCE && KNOWN_SONGS.length > 0) {
-    return buildKnownSong(KNOWN_SONGS[Math.floor(Math.random() * KNOWN_SONGS.length)]);
+    return buildKnownSong(KNOWN_SONGS[Math.floor(Math.random() * KNOWN_SONGS.length)], complexity);
   }
-  return generateRandomSong();
+  return generateRandomSong(complexity);
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +105,7 @@ export const TRAITS: TraitDefinition[] = [
     numOptions: 4,
     getValue: (s) => INSTRUMENT_FAMILY[GENRES.find((g) => g.id === s.config.genre)!.instruments.chords],
     optionPool: Array.from(new Set(Object.values(INSTRUMENT_FAMILY))),
+    isApplicable: (s) => s.chordsAudible,
   },
   {
     id: "density",
@@ -178,6 +179,7 @@ export const TRAITS: TraitDefinition[] = [
     numOptions: 4,
     getValue: (s) => pitchClassName(s.chords[0][0].pitch),
     optionPool: ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"],
+    isApplicable: (s) => s.chordsAudible,
     audible: {
       instrument: (s) => GENRES.find((g) => g.id === s.config.genre)!.instruments.chords,
       pitchFor: (s, label) => pitchForLabelNearOctave(label, s.chords[0][0].pitch),
@@ -191,6 +193,7 @@ export const TRAITS: TraitDefinition[] = [
     numOptions: 4,
     getValue: (s) => String(new Set(s.progressions).size),
     optionPool: ["1", "2", "3", "4"],
+    isApplicable: (s) => s.chordsAudible,
   },
 ];
 
@@ -207,7 +210,8 @@ function pickRandom<T>(arr: T[]): T {
 }
 
 export interface GeneratorOptions {
-  difficulty?: Difficulty | "mixed";
+  /** Song size/instrumentation tier for this question's clip - independent of which trait/question type gets picked. */
+  complexity?: Difficulty;
   recentTraitIds?: string[];
   /** When set, always use this KNOWN_SONGS entry instead of a random/generated song - for auditioning a specific song against the quiz. */
   forcedSongId?: string;
@@ -216,15 +220,14 @@ export interface GeneratorOptions {
 /**
  * Generates a song - usually a fresh, randomly-composed one, occasionally a
  * real known song, or a forced known song when auditioning one - and a
- * procedural question about one of its perceivable traits.
+ * procedural question about one of its perceivable traits. Question types are
+ * always fully mixed; only the song's own size/instrumentation follows `complexity`.
  */
 export function generateQuestion(options: GeneratorOptions = {}): Question {
-  const { difficulty = "mixed", recentTraitIds = [], forcedSongId } = options;
-  const song = pickSong(forcedSongId);
+  const { complexity = "medium", recentTraitIds = [], forcedSongId } = options;
+  const song = pickSong(complexity, forcedSongId);
 
-  let candidateTraits = TRAITS.filter(
-    (t) => (difficulty === "mixed" || t.difficulty === difficulty) && (!t.isApplicable || t.isApplicable(song))
-  );
+  let candidateTraits = TRAITS.filter((t) => !t.isApplicable || t.isApplicable(song));
 
   const fresh = candidateTraits.filter((t) => !recentTraitIds.includes(t.id));
   if (fresh.length > 0) candidateTraits = fresh;
@@ -252,17 +255,4 @@ export function generateQuestion(options: GeneratorOptions = {}): Question {
     audioOptions,
     song,
   };
-}
-
-export function generateQuiz(count: number, difficulty: Difficulty | "mixed" = "mixed", forcedSongId?: string): Question[] {
-  const questions: Question[] = [];
-  const recentTraitIds: string[] = [];
-
-  for (let i = 0; i < count; i++) {
-    const q = generateQuestion({ difficulty, recentTraitIds, forcedSongId });
-    questions.push(q);
-    recentTraitIds.push(q.traitId);
-    if (recentTraitIds.length > 3) recentTraitIds.shift();
-  }
-  return questions;
 }
