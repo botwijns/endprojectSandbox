@@ -101,6 +101,13 @@
       <label><input type="radio" name="holdfix" value="threshold" id="holdfix-threshold" checked> Met vertraging (aanbevolen)</label>
       <label><input type="radio" name="holdfix" value="single" id="holdfix-single"> E&eacute;n noot per tik (geen aanhouden)</label>
     </fieldset>
+    <fieldset>
+      <legend>Geluidsvertraging</legend>
+      <label>Gebruik je een bluetooth-koptelefoon of -speaker? Verhoog dit als noten te laat lijken te vallen.<br>
+        <input type="range" id="latency-slider" min="0" max="400" step="10" value="0">
+        <span id="latency-value">0</span> ms
+      </label>
+    </fieldset>
   </div>
   <p id="start-note" class="hidden"></p>
   <div id="menu-buttons">
