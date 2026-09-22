@@ -1,4 +1,4 @@
-import { MelodyNote, SongConfig, GeneratedSong, ScaleName } from "./types.ts";
+import { MelodyNote, SongConfig, GeneratedSong, ScaleName, Difficulty } from "./types.ts";
 import { generateSong } from "./songGenerator.ts";
 
 // ---------------------------------------------------------------------------
@@ -51,8 +51,8 @@ function isRest(step: MelodyStep): step is { rest: number } {
   return "rest" in step;
 }
 
-/** Turns a hand-written note list into a full GeneratedSong. */
-export function buildKnownSong(entry: KnownSongEntry): GeneratedSong {
+/** Turns a hand-written note list into a full GeneratedSong at the given complexity tier. */
+export function buildKnownSong(entry: KnownSongEntry, complexity: Difficulty): GeneratedSong {
   const melody: MelodyNote[] = [];
   let beat = 0;
   for (const step of entry.melody) {
@@ -79,6 +79,7 @@ export function buildKnownSong(entry: KnownSongEntry): GeneratedSong {
     density: 0.5,
     bpm: entry.bpm,
     genre: "classical",
+    complexity,
   };
 
   return generateSong(cfg, melody, entry.progression);

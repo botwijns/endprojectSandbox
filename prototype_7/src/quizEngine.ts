@@ -1,5 +1,5 @@
 import { Question, AnsweredQuestion, Difficulty } from "./types.ts";
-import { generateQuiz } from "./questionGenerator.ts";
+import { generateQuestion } from "./questionGenerator.ts";
 
 export interface QuizState {
   questions: Question[];
@@ -7,15 +7,35 @@ export interface QuizState {
   answered: AnsweredQuestion[];
 }
 
+// Recomputed from the running score after every answer - only the song's own
+// size/instrumentation follows this; question *type* stays fully mixed.
+function complexityForAccuracy(score: number, answered: number): Difficulty {
+  if (answered === 0) return "medium"; // question 1: no data yet, start in the middle
+  const ratio = score / answered;
+  if (ratio < 0.4) return "easy";
+  if (ratio > 0.7) return "hard";
+  return "medium";
+}
+
 export class QuizSession {
   private state: QuizState;
+  private length: number;
+  private forcedSongId?: string;
+  private recentTraitIds: string[] = [];
 
-  constructor(length: number, difficulty: Difficulty | "mixed" = "mixed", forcedSongId?: string) {
-    this.state = {
-      questions: generateQuiz(length, difficulty, forcedSongId),
-      currentIndex: 0,
-      answered: [],
-    };
+  constructor(length: number, forcedSongId?: string) {
+    this.length = length;
+    this.forcedSongId = forcedSongId;
+    this.state = { questions: [], currentIndex: 0, answered: [] };
+    this.state.questions.push(this.nextQuestion());
+  }
+
+  private nextQuestion(): Question {
+    const complexity = complexityForAccuracy(this.score, this.state.answered.length);
+    const q = generateQuestion({ complexity, recentTraitIds: this.recentTraitIds, forcedSongId: this.forcedSongId });
+    this.recentTraitIds.push(q.traitId);
+    if (this.recentTraitIds.length > 3) this.recentTraitIds.shift();
+    return q;
   }
 
   get current(): Question | undefined {
@@ -23,7 +43,7 @@ export class QuizSession {
   }
 
   get progress() {
-    return { current: this.state.currentIndex + 1, total: this.state.questions.length };
+    return { current: this.state.currentIndex + 1, total: this.length };
   }
 
   get score() {
@@ -31,7 +51,7 @@ export class QuizSession {
   }
 
   get isFinished(): boolean {
-    return this.state.currentIndex >= this.state.questions.length;
+    return this.state.currentIndex >= this.length;
   }
 
   submitAnswer(choice: string): AnsweredQuestion {
@@ -44,6 +64,9 @@ export class QuizSession {
     };
     this.state.answered.push(answered);
     this.state.currentIndex += 1;
+    if (this.state.currentIndex < this.length) {
+      this.state.questions.push(this.nextQuestion());
+    }
     return answered;
   }
 

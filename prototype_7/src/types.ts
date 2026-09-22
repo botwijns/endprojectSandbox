@@ -32,6 +32,8 @@ export interface SongConfig {
   density: number;
   bpm: number;
   genre: string;
+  /** Adaptive song size/instrumentation tier: easy = melody only, medium = + bass, hard = + chords + drums. */
+  complexity: Difficulty;
 }
 
 /** A fully procedurally generated song: notes, chords, and rhythm - no audio file involved. */
@@ -39,8 +41,10 @@ export interface GeneratedSong {
   id: string;
   config: SongConfig;
   melody: MelodyNote[];
-  chords: ChordNote[][]; // one array of chord-tone notes per bar
+  chords: ChordNote[][]; // one array of chord-tone notes per bar - always computed (melody generation needs it), whether or not it's played
   progressions: string[]; // roman-numeral degree per bar
+  /** Whether the chords are actually played back / a fair thing to ask about (true only at "hard" complexity). */
+  chordsAudible: boolean;
   bass?: MelodyNote[];
   drums?: DrumHit[];
   drumType?: DrumType;

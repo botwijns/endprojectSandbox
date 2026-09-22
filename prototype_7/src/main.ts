@@ -29,7 +29,7 @@ const hud = {
     phase: document.getElementById("hud-phase")!,
     progress: document.getElementById("hud-progress")!,
     score: document.getElementById("hud-score")!,
-    armed: document.getElementById("hud-armed")!,
+    tier: document.getElementById("hud-tier")!,
 };
 
 // Dev-only song picker: force every question in the next round to use one
@@ -54,11 +54,12 @@ function renderHud(): void {
         const shown = Math.min(current, total);
         hud.progress.textContent = phase === "done" ? `${total} / ${total}` : `vraag ${shown} / ${total}`;
         hud.score.textContent = `score ${session.score}`;
+        hud.tier.textContent = session.current ? `niveau ${session.current.song.config.complexity}` : "";
     } else {
         hud.progress.textContent = "";
         hud.score.textContent = "";
+        hud.tier.textContent = "";
     }
-    hud.armed.textContent = "";
 }
 
 // ── Timer helpers ───────────────────────────────────────────────────────────
@@ -181,7 +182,7 @@ function commitOption(index: AnswerIndex): void {
 }
 
 function beginQuiz(): void {
-    session = new QuizSession(QUIZ_LENGTH, "mixed", songPicker.value || undefined);
+    session = new QuizSession(QUIZ_LENGTH, songPicker.value || undefined);
     input.setQuizEnabled(true);
     speak("Daar gaan we. Luister goed.");
     later(presentQuestion, 1600);

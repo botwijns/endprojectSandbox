@@ -116,9 +116,11 @@ export function playSong(song: GeneratedSong): number {
       playWithFont(genre.bassInstrument, n.pitch, now + n.startBeat * beat, n.duration * beat, n.velocity * 0.85);
     }
   }
-  for (const bar of song.chords) {
-    for (const n of bar) {
-      playWithFont(chordsFont, n.pitch, now + n.startBeat * beat, n.duration * beat, n.velocity);
+  if (song.chordsAudible) {
+    for (const bar of song.chords) {
+      for (const n of bar) {
+        playWithFont(chordsFont, n.pitch, now + n.startBeat * beat, n.duration * beat, n.velocity);
+      }
     }
   }
 

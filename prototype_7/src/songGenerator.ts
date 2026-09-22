@@ -1,4 +1,4 @@
-import { ScaleName, DrumType, MelodyNote, ChordNote, DrumHit, SongConfig, GeneratedSong } from "./types.ts";
+import { ScaleName, DrumType, MelodyNote, ChordNote, DrumHit, SongConfig, GeneratedSong, Difficulty } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Ported (and lightly typed) from the uploaded "Adaptive Song Generator".
@@ -469,36 +469,51 @@ export function generateSong(cfg: SongConfig, fixedMelody?: MelodyNote[], progre
     seventh: bar[3]?.pitch ?? bar[2].pitch, quality: "maj",
   }));
 
+  // Complexity tier gates what's actually played/askable - the chord data
+  // above is always computed regardless, since the melody needs it to snap
+  // notes to the harmony.
+  const bassAudible = cfg.complexity !== "easy";
+  const drumsAudible = cfg.complexity === "hard";
+
   const song: GeneratedSong = {
     id: `song-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
     config: cfg,
     melody: fixedMelody ?? generateMelody(cfg, chordPitchesPerBar),
     chords: bars,
     progressions: prog,
+    chordsAudible: cfg.complexity === "hard",
   };
 
-  if (genre.hasDrums && genre.drumType) {
+  if (drumsAudible && genre.hasDrums && genre.drumType) {
     song.drums = generateDrums(cfg, genre.drumType);
     song.drumType = genre.drumType;
   }
-  if (genre.bassInstrument) {
+  if (bassAudible && genre.bassInstrument) {
     song.bass = generateBass(cfg, prog);
   }
 
   return song;
 }
 
-/** Builds a randomized config for a random genre and generates a song from it. */
-export function generateRandomSong(): GeneratedSong {
+const COMPLEXITY_BARS: Record<Difficulty, [number, number]> = {
+  easy: [2, 3],
+  medium: [3, 5],
+  hard: [5, 8],
+};
+
+/** Builds a randomized config for a random genre at the given complexity tier and generates a song from it. */
+export function generateRandomSong(complexity: Difficulty): GeneratedSong {
   const genre = pickArr(GENRES);
   const resolved = resolveGenre(genre.id);
+  const [minBars, maxBars] = COMPLEXITY_BARS[complexity];
   const cfg: SongConfig = {
     ...resolved,
-    bars: 2 + Math.floor(Math.random() * 5), // 2-6 bars: enough structure, short enough to quiz on
+    bars: minBars + Math.floor(Math.random() * (maxBars - minBars + 1)),
     bpb: 2 + Math.floor(Math.random() * 5), // 2-6 beats per bar
     density: 0.15 + Math.random() * 0.75,
     bpm: 70 + Math.floor(Math.random() * 120),
     genre: genre.id,
+    complexity,
   };
   return generateSong(cfg);
 }
