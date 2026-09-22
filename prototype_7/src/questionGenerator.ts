@@ -50,14 +50,6 @@ function swingBucket(swing: number): string {
 export const TRAITS: TraitDefinition[] = [
   // ---- Makkelijk ------------------------------------------------------------
   {
-    id: "genre",
-    category: "Genre",
-    difficulty: "easy",
-    prompt: "Welk genre past het best bij dit stuk?",
-    getValue: (s) => GENRES.find((g) => g.id === s.config.genre)!.label,
-    optionPool: GENRES.map((g) => g.label),
-  },
-  {
     id: "tempo-broad",
     category: "Tempo",
     difficulty: "easy",
@@ -72,14 +64,6 @@ export const TRAITS: TraitDefinition[] = [
     prompt: "Zitten er drums in dit stuk?",
     getValue: (s) => bool(!!s.drums, "ja", "nee"),
     optionPool: ["ja", "nee"],
-  },
-  {
-    id: "swing-feel",
-    category: "Ritme",
-    difficulty: "easy",
-    prompt: "Voelt het ritme recht of als een shuffle?",
-    getValue: (s) => swingBucket(s.config.swing),
-    optionPool: ["recht", "shuffle"],
   },
 
   // ---- Gemiddeld ------------------------------------------------------------
@@ -100,49 +84,12 @@ export const TRAITS: TraitDefinition[] = [
     optionPool: Array.from(new Set(Object.values(INSTRUMENT_FAMILY))),
   },
   {
-    id: "bass-style",
-    category: "Instrumentatie",
-    difficulty: "medium",
-    prompt: "Hoe zou je de bas omschrijven?",
-    getValue: (s) => BASS_STYLE[GENRES.find((g) => g.id === s.config.genre)!.bassInstrument!],
-    optionPool: Array.from(new Set(Object.values(BASS_STYLE))),
-    isApplicable: (s) => !!s.bass,
-  },
-  {
-    id: "drum-type",
-    category: "Ritme",
-    difficulty: "medium",
-    prompt: "Klinken de drums akoestisch of elektronisch?",
-    getValue: (s) => (s.drumType === "electronic" ? "elektronisch" : "akoestisch"),
-    optionPool: ["akoestisch", "elektronisch"],
-    isApplicable: (s) => !!s.drums,
-  },
-  {
     id: "density",
     category: "Arrangement",
     difficulty: "medium",
     prompt: "Hoe druk voelt het arrangement?",
     getValue: (s) => densityBucket(s.config.density),
     optionPool: ["dun", "gemiddeld", "druk"],
-  },
-  {
-    id: "scale-mode",
-    category: "Harmonie",
-    difficulty: "medium",
-    prompt: "In welke toonladder of modus staat dit stuk?",
-    getValue: (s) => s.config.scale,
-    optionPool: ["major", "minor", "dorian", "phrygian", "lydian", "mixolydian"],
-  },
-  {
-    id: "tonic-chord-quality",
-    category: "Harmonie",
-    difficulty: "medium",
-    prompt: "Is het allereerste akkoord majeur of mineur?",
-    getValue: (s) => {
-      const q = chordQuality(s, s.progressions[0]);
-      return q === "maj" ? "majeur" : q === "min" ? "mineur" : "verminderd";
-    },
-    optionPool: ["majeur", "mineur", "verminderd"],
   },
   {
     id: "beats-per-bar",
@@ -154,15 +101,7 @@ export const TRAITS: TraitDefinition[] = [
   },
 
   // ---- Moeilijk: specifieke noten/akkoorden - vraagt echt geoefend luisteren ----
-  {
-    id: "key-tonic",
-    category: "Harmonie",
-    difficulty: "hard",
-    prompt: "Op welke grondtoon staat dit stuk gecentreerd?",
-    getValue: (s) => s.config.tonic,
-    optionPool: ["C", "D", "E", "F", "G", "A", "B", "Bb", "Eb"],
-  },
-  {
+    {
     id: "melody-start-note",
     category: "Melodie",
     difficulty: "hard",
