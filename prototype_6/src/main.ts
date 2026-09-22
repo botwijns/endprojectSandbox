@@ -58,8 +58,11 @@ function isMelodic(id: Instrument): id is MelodicInstrument {
     return id === "piano" || id === "guitar" || id === "bass";
 }
 
-function scheduleNote(id: Instrument, pitch: number, when: number, duration: number, volume = 0.7): void {
-    player.queueWaveTable(ctx, ctx.destination, instruments[id], when, pitch, duration, volume);
+function scheduleNote(
+    id: Instrument, pitch: number, when: number, duration: number, volume = 0.7,
+    destination: AudioNode = ctx.destination,
+): void {
+    player.queueWaveTable(ctx, destination, instruments[id], when, pitch, duration, volume);
 }
 
 // Audio needs a user gesture to unlock — the first tap anywhere does it.
@@ -71,8 +74,18 @@ window.addEventListener("pointerdown", () => {
 // ── Constants ─────────────────────────────────────────────────────────────────
 const STEPS = 8;                      // one 8-step bar (eighth notes)
 const ROOT_MIDI = 60;                 // middle C
+
+// In composer mode, each step's audio is panned to match its column — step 0
+// (leftmost) plays from the left speaker, step 7 (rightmost) from the right —
+// so the sound sweeps across in the same direction the columns represent.
+const STEP_PANNERS: AudioNode[] = Array.from({ length: STEPS }, (_, step) => {
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = -1 + (2 * step) / (STEPS - 1);
+    panner.connect(ctx.destination);
+    return panner;
+});
 const REBRIEF_TAP_GUARD_MS = 1200;    // ignore rapid transport taps for re-speaking
-const EDIT_SLOWDOWN = 2;              // the loop runs this many times slower in edit mode
+const COMPOSER_SLOWDOWN = 1.4;        // composer runs this many times slower than the real tempo
 const HOLD_THRESHOLD_MS = 180;        // "threshold" hold-fix: minimum hold before a note sustains
 const MIXTAPE_KEY = "p6_mixtape";
 const BEST_KEY = "p6_best";
@@ -95,15 +108,16 @@ function pitchForSlot(slot: StepSlot): number {
 
 // ── Game state ────────────────────────────────────────────────────────────────
 type Phase = "idle" | "composing" | "done";
-type Mode = "composer" | "edit";
+type Mode = "composer" | "listener";
 type HoldFix = "threshold" | "single";
+// Pressing the mode control cycles through these in order.
+const MODE_ORDER: Mode[] = ["composer", "listener"];
 
 let phase: Phase = "idle";
 let mode: Mode = "composer";
 let bpm = 0;
 let stepDurationMs = 0;
 let currentStep = 0;
-let cursorStep = 0;                   // the step being edited in edit mode
 let lastTransportTapAt = 0;
 let pendingIntro = false;             // which start-screen button was pressed
 
@@ -117,10 +131,6 @@ let holdStartAt = 0;
 let padHeld = false;
 let heldNote: number | null = null;
 
-// Edit mode: a drag previews a pitch out loud but writes nothing until the
-// finger lifts, so you always know what you're about to commit.
-let editPreviewNote: number | null = null;
-
 // Guided intro tutorial — one gated step at a time.
 type IntroKind = "place" | "remove" | "instrument" | "mode" | "finish";
 interface IntroStepDef { kind: IntroKind; prompt: string; praise: string }
@@ -132,8 +142,8 @@ const INTRO_STEPS: IntroStepDef[] = [
     { kind: "instrument", praise: "Mooi, gewist.", prompt:
         "In het midden onderin wissel je van instrument. Probeer het." },
     { kind: "mode", praise: "Zo wissel je van instrument.", prompt:
-        "Rechtsonder wissel je tussen componeren en bewerken. Bewerken is rustiger, zodat je een noot precies kan zetten. Probeer het." },
-    { kind: "finish", praise: "Precies, dat is bewerken.", prompt:
+        "Rechtsonder wissel je tussen componeren en luisteren. In luisteren hoor je je nummer op het echte tempo terug. Probeer het." },
+    { kind: "finish", praise: "Precies, dat is luisteren.", prompt:
         "Ben je klaar? Tik weer drie keer rechtsboven om het oefenlevel af te ronden." },
 ];
 let introMode = false;
@@ -185,9 +195,58 @@ const instrumentEl  = document.getElementById("hud-instrument")!;
 const backingEl     = document.getElementById("hud-backing")!;
 const modeEl        = document.getElementById("hud-mode")!;
 const holdfixEl     = document.getElementById("hud-holdfix")!;
+const orientationEl = document.getElementById("hud-orientation")!;
 const logEl         = document.getElementById("log")!;
 
 function log(msg: string) { logEl.textContent = msg; }
+
+// ── Debug: orientation readout ──────────────────────────────────────────────
+// Shows the phone's raw orientation sensor values on screen while composing,
+// purely so this can be sanity-checked on a real device. Not tied to any
+// gameplay mechanic.
+let lastOrientationReading: { heading: number | null; alpha: number | null; beta: number | null; gamma: number | null } | null = null;
+let orientationListening = false;
+
+function renderOrientationDebug(): void {
+    if (phase !== "composing" || mode !== "composer" || !lastOrientationReading) {
+        orientationEl.textContent = "";
+        return;
+    }
+    const fmt = (v: number | null) => v === null ? "–" : `${Math.round(v)}°`;
+    const { heading, alpha, beta, gamma } = lastOrientationReading;
+    orientationEl.textContent =
+        `richting: ${fmt(heading)} (α ${fmt(alpha)} · β ${fmt(beta)} · γ ${fmt(gamma)})`;
+}
+
+function handleOrientationDebug(e: DeviceOrientationEvent): void {
+    // iOS exposes a ready-made compass heading; elsewhere derive one from
+    // alpha (which increases counter-clockwise, so flip it).
+    const compass = (e as any).webkitCompassHeading;
+    const heading = typeof compass === "number"
+        ? compass
+        : (e.alpha !== null ? (360 - e.alpha) % 360 : null);
+    lastOrientationReading = { heading, alpha: e.alpha, beta: e.beta, gamma: e.gamma };
+    renderOrientationDebug();
+}
+
+// Must be called from inside a user-gesture handler — iOS Safari gates
+// DeviceOrientationEvent behind an explicit permission prompt.
+function startOrientationDebug(): void {
+    if (orientationListening) return;
+    const DOE = (window as any).DeviceOrientationEvent;
+    const attach = () => {
+        window.addEventListener("deviceorientationabsolute", handleOrientationDebug as EventListener);
+        window.addEventListener("deviceorientation", handleOrientationDebug as EventListener);
+        orientationListening = true;
+    };
+    if (DOE && typeof DOE.requestPermission === "function") {
+        DOE.requestPermission().then((result: string) => {
+            if (result === "granted") attach();
+        }).catch(() => { /* not actually iOS, or the prompt was denied/unsupported */ });
+    } else {
+        attach();
+    }
+}
 
 const cellEls: HTMLDivElement[][] = [];
 for (let s = 0; s < STEPS; s++) {
@@ -204,7 +263,7 @@ for (let s = 0; s < STEPS; s++) {
 
 // The grid only ever showed where notes *actually* land, but in composer mode
 // that's the playhead, not wherever you tapped — confusing for a sighted
-// tester. Hide it there; it stays visible (and accurate) in edit mode.
+// tester. Hide it there; it stays visible (and accurate) in listener mode.
 function renderGrid(): void {
     gridEl.style.display = mode === "composer" ? "none" : "grid";
     for (let s = 0; s < STEPS; s++) {
@@ -213,9 +272,7 @@ function renderGrid(): void {
             const cell = cellEls[s][r];
             const filled = !!slot && slot.note === r;
             const onPlayhead = s === currentStep && phase === "composing";
-            const onCursor = s === cursorStep && mode === "edit" && phase === "composing";
             cell.classList.toggle("current", onPlayhead);
-            cell.classList.toggle("cursor", onCursor);
             cell.style.background = filled ? INSTRUMENT_COLOR[slot!.instrument] : "";
         }
     }
@@ -229,18 +286,19 @@ function updateHud(): void {
             break;
         case "composing":
             phaseEl.textContent = introMode ? "Oefenlevel — volg de aanwijzingen" : `Opdracht: ${currentBrief.say}`;
-            bpmEl.textContent = mode === "edit"
-                ? `${Math.round(bpm / EDIT_SLOWDOWN)} BPM (langzaam)`
-                : `${bpm} BPM`;
+            bpmEl.textContent = mode === "listener"
+                ? `${bpm} BPM`
+                : `${Math.round(bpm / COMPOSER_SLOWDOWN)} BPM (langzaam)`;
             instrumentEl.textContent = `instrument: ${INSTRUMENT_LABEL_NL[currentInstrument]}`;
             backingEl.textContent = drumPattern ? `beat: ${drumPattern.name}` : "";
-            modeEl.textContent = mode === "composer" ? "componeren" : "bewerken";
+            modeEl.textContent = mode === "composer" ? "componeren" : "luisteren";
             holdfixEl.textContent = holdFixMode === "threshold" ? "aanhouden: vertraagd" : "aanhouden: uit";
             break;
         case "done":
             phaseEl.textContent = "Je mixtape is klaar! Tik 3× rechtsboven voor een nieuwe.";
             break;
     }
+    renderOrientationDebug();
 }
 
 // ── Drums ────────────────────────────────────────────────────────────────────
@@ -253,9 +311,10 @@ function applyDrumPattern(dp: DrumPattern): void {
 }
 
 // ── Sequencer ─────────────────────────────────────────────────────────────────
-// The loop slows down in edit mode so it's easier to catch each beat.
+// Composer runs slowed down, so there's time to place/check each note.
+// Listener plays the song back at its real tempo.
 function currentStepMs(): number {
-    return stepDurationMs * (mode === "edit" ? EDIT_SLOWDOWN : 1);
+    return stepDurationMs * (mode === "listener" ? 1 : COMPOSER_SLOWDOWN);
 }
 
 function startSequencer(): void {
@@ -268,6 +327,7 @@ function stopSequencer(): void {
 }
 
 function playStep(step: number): void {
+    const destination = mode === "composer" ? STEP_PANNERS[step] : ctx.destination;
     for (const instrument of INSTRUMENTS) {
         const slot = pattern[instrument][step];
         if (!slot) continue;
@@ -277,6 +337,7 @@ function playStep(step: number): void {
             ctx.currentTime + 0.02,
             (currentStepMs() / 1000) * 0.9,
             INSTRUMENT_VOLUME[slot.instrument] * currentVolume,
+            destination,
         );
     }
 }
@@ -296,34 +357,20 @@ function tick(): void {
     renderGrid();
 }
 
-function previewSlot(slot: StepSlot): void {
-    scheduleNote(slot.instrument, pitchForSlot(slot), ctx.currentTime + 0.01, 0.25, 0.6 * currentVolume);
+function previewSlot(slot: StepSlot, step?: number): void {
+    const destination = mode === "composer" && step !== undefined ? STEP_PANNERS[step] : ctx.destination;
+    scheduleNote(slot.instrument, pitchForSlot(slot), ctx.currentTime + 0.01, 0.25, 0.6 * currentVolume, destination);
 }
 
 // ── Composing actions ────────────────────────────────────────────────────────
-function targetStep(): number {
-    return mode === "edit" ? cursorStep : currentStep;
-}
-
 function setNote(note: number): void {
-    if (phase !== "composing") return;
-    const step = targetStep();
-
-    if (mode === "edit") {
-        // Scrub-to-preview: play the pitch, but don't write it yet — release
-        // commits it (see the "padHold" handling below).
-        editPreviewNote = note;
-        previewSlot({ note, instrument: currentInstrument });
-        earcon(ctx, "preview");
-        log(`stap ${step + 1}: proef noot ${note + 1}`);
-        renderGrid();
-        return;
-    }
+    if (phase !== "composing" || mode === "listener") return;
+    const step = currentStep;
 
     const slot: StepSlot = { note, instrument: currentInstrument };
     pattern[currentInstrument][step] = slot;
     heldNote = note;
-    previewSlot(slot);
+    previewSlot(slot, step);
     earcon(ctx, "place");
     log(`stap ${step + 1}: noot ${note + 1} (${INSTRUMENT_LABEL_NL[currentInstrument]})`);
     renderGrid();
@@ -331,19 +378,8 @@ function setNote(note: number): void {
 }
 
 function nudgeNote(direction: 1 | -1): void {
-    if (phase !== "composing") return;
-    const step = targetStep();
-
-    if (mode === "edit") {
-        const base = editPreviewNote ?? pattern[currentInstrument][step]?.note ?? Math.floor(SCALE_DEGREES / 2);
-        const note = Math.max(0, Math.min(SCALE_DEGREES - 1, base + direction));
-        editPreviewNote = note;
-        previewSlot({ note, instrument: currentInstrument });
-        earcon(ctx, "preview");
-        log(`stap ${step + 1}: proef noot ${note + 1}`);
-        renderGrid();
-        return;
-    }
+    if (phase !== "composing" || mode === "listener") return;
+    const step = currentStep;
 
     const existing = pattern[currentInstrument][step]
         ?? { note: Math.floor(SCALE_DEGREES / 2), instrument: currentInstrument };
@@ -351,20 +387,19 @@ function nudgeNote(direction: 1 | -1): void {
     const slot: StepSlot = { note, instrument: currentInstrument };
     pattern[currentInstrument][step] = slot;
     heldNote = note; // a sustain in progress follows the new pitch
-    previewSlot(slot);
+    previewSlot(slot, step);
     earcon(ctx, "place");
     log(`stap ${step + 1}: naar noot ${note + 1}`);
     renderGrid();
 }
 
-// Dedicated remove: clears the note on the current step (edit cursor, or the
-// playhead in composer mode) straight away — no separate erase mode.
+// Dedicated remove: clears the note on the current (playhead) step straight
+// away — no separate erase mode.
 function removeNote(): void {
-    if (phase !== "composing") return;
-    const step = targetStep();
+    if (phase !== "composing" || mode === "listener") return;
+    const step = currentStep;
     const had = pattern[currentInstrument][step] !== null;
     pattern[currentInstrument][step] = null;
-    editPreviewNote = null;
     earcon(ctx, "erase");
     speak(had ? `stap ${step + 1} gewist` : `stap ${step + 1} was al leeg`);
     log(had ? `stap ${step + 1} gewist` : `stap ${step + 1} was al leeg`);
@@ -372,31 +407,17 @@ function removeNote(): void {
     introAdvance("remove");
 }
 
-function moveCursor(direction: 1 | -1): void {
-    if (phase !== "composing" || mode !== "edit") return;
-    cursorStep = (cursorStep + direction + STEPS) % STEPS;
-    editPreviewNote = null; // moving to a different step abandons any pending preview
-    earcon(ctx, "step");
-    const slot = pattern[currentInstrument][cursorStep];
-    speak(slot ? `stap ${cursorStep + 1}, noot ${slot.note + 1}` : `stap ${cursorStep + 1}, leeg`);
-    if (slot) previewSlot(slot);
-    renderGrid();
-}
-
 function toggleMode(): void {
     if (phase !== "composing") return;
-    mode = mode === "composer" ? "edit" : "composer";
-    startSequencer();                 // apply the edit-mode slowdown (or undo it)
+    const i = (MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length;
+    mode = MODE_ORDER[i];
+    startSequencer();                 // apply the slowdown (or lack of it) for the new mode
     earcon(ctx, "mode");
-    if (mode === "edit") {
-        cursorStep = currentStep;
-        editPreviewNote = null;
-        // Always say what's on this step the moment you land in edit mode.
-        const slot = pattern[currentInstrument][cursorStep];
-        speak(`bewerken, langzamer. stap ${cursorStep + 1}, ${slot ? `noot ${slot.note + 1}` : "leeg"}`);
-        introAdvance("mode");
+    if (mode === "composer") {
+        speak("componeren, langzamer");
     } else {
-        speak("componeren");
+        speak("luisteren, op tempo");
+        introAdvance("mode");
     }
     updateHud();
     renderGrid();
@@ -421,8 +442,6 @@ function loadBrief(index: number): void {
     currentVolume = currentBrief.volume;
     currentInstrument = currentBrief.instrument;
     mode = "composer";
-    cursorStep = 0;
-    editPreviewNote = null;
 
     // fresh groove for the new vibe; the player's melody is kept
     drumPattern = generateDrumPattern(STEPS, currentBrief.grooveStyle);
@@ -513,8 +532,6 @@ function startIntro(): void {
     currentVolume = brief.volume;
     currentInstrument = brief.instrument;
     mode = "composer";
-    cursorStep = 0;
-    editPreviewNote = null;
 
     drumPattern = generateDrumPattern(STEPS, brief.grooveStyle);
     applyDrumPattern(drumPattern);
@@ -628,7 +645,8 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
     currentStep = -1;
     pattern = emptyPattern();
     mixtape = [];
-    editPreviewNote = null;
+
+    startOrientationDebug();
 
     if (asIntro) {
         startIntro();
@@ -665,21 +683,11 @@ inp.onAction((action) => {
                 padHeld = true;
                 holdStartAt = performance.now();
             } else {
-                if (mode === "edit" && editPreviewNote !== null) {
-                    const slot: StepSlot = { note: editPreviewNote, instrument: currentInstrument };
-                    pattern[currentInstrument][cursorStep] = slot;
-                    earcon(ctx, "place");
-                    speak(`stap ${cursorStep + 1}: noot ${editPreviewNote + 1}`);
-                    log(`stap ${cursorStep + 1}: noot ${editPreviewNote + 1} (${INSTRUMENT_LABEL_NL[currentInstrument]})`);
-                    renderGrid();
-                }
                 padHeld = false;
                 heldNote = null;
-                editPreviewNote = null;
             }
             break;
         case "noteNudge":        nudgeNote(action.direction); break;
-        case "stepMove":         moveCursor(action.direction); break;
         case "noteRemove":       removeNote(); break;
         case "instrumentSwitch": switchInstrument(); break;
         case "modeToggle":       toggleMode(); break;

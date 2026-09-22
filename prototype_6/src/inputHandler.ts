@@ -4,7 +4,7 @@ export const SCALE_DEGREES = 8;
 const MIN_BPM = 60;
 const MAX_BPM = 200;
 const TAP_MAX_GAP_MS = 1500;   // taps further apart than this reset the tempo-tap sequence
-const SWIPE_STEP_PX = 44;      // px of drag needed to emit one nudge / step move
+const SWIPE_STEP_PX = 44;      // px of vertical drag needed to emit one pitch nudge
 
 export type GameAction =
     | { type: "bpmSet"; bpm: number }        // 3 quick taps top-right
@@ -12,7 +12,6 @@ export type GameAction =
     | { type: "noteSet"; note: number }      // tap on the pad
     | { type: "padHold"; held: boolean }     // pad pressed / released (for sustained notes)
     | { type: "noteNudge"; direction: 1 | -1 } // vertical swipe on the pad
-    | { type: "stepMove"; direction: 1 | -1 }  // horizontal swipe on the pad
     | { type: "noteRemove" }                  // bottom strip — left cell
     | { type: "instrumentSwitch" }            // bottom strip — middle cell
     | { type: "modeToggle" };                 // bottom strip — right cell
@@ -37,7 +36,6 @@ export class InputHandler {
 
     // The pad: one active pointer drives note placement + swipe gestures.
     private notePointerId: number | null = null;
-    private lastX: number | null = null;
     private lastY: number | null = null;
 
     start(): void {
@@ -120,7 +118,6 @@ export class InputHandler {
             case "pad":
                 if (this.notePointerId !== null) return; // one pad gesture at a time
                 this.notePointerId = e.pointerId;
-                this.lastX = e.clientX;
                 this.lastY = e.clientY;
                 (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
                 this.emit({ type: "noteSet", note: this.rowForY(e.clientY) });
@@ -130,35 +127,23 @@ export class InputHandler {
     };
 
     private handlePointerMove = (e: PointerEvent): void => {
-        if (e.pointerId !== this.notePointerId || this.lastX === null || this.lastY === null) return;
+        if (e.pointerId !== this.notePointerId || this.lastY === null) return;
 
-        let dx = e.clientX - this.lastX;
+        // The playhead advances on its own, so a drag on the pad only ever
+        // nudges pitch (vertical axis) on the current step.
         let dy = e.clientY - this.lastY;
-
-        // Consume the drag in fixed steps; the dominant axis decides the gesture
-        // for each step, so a mostly-horizontal drag scrubs steps and a
-        // mostly-vertical drag nudges pitch.
-        while (Math.abs(dx) >= SWIPE_STEP_PX || Math.abs(dy) >= SWIPE_STEP_PX) {
-            if (Math.abs(dx) >= Math.abs(dy)) {
-                const direction: 1 | -1 = dx > 0 ? 1 : -1;
-                this.emit({ type: "stepMove", direction });
-                const consumed = SWIPE_STEP_PX * Math.sign(dx);
-                this.lastX += consumed;
-                dx -= consumed;
-            } else {
-                const direction: 1 | -1 = dy < 0 ? 1 : -1; // dragging up => higher note
-                this.emit({ type: "noteNudge", direction });
-                const consumed = SWIPE_STEP_PX * Math.sign(dy);
-                this.lastY += consumed;
-                dy -= consumed;
-            }
+        while (Math.abs(dy) >= SWIPE_STEP_PX) {
+            const direction: 1 | -1 = dy < 0 ? 1 : -1; // dragging up => higher note
+            this.emit({ type: "noteNudge", direction });
+            const consumed = SWIPE_STEP_PX * Math.sign(dy);
+            this.lastY += consumed;
+            dy -= consumed;
         }
     };
 
     private handlePointerEnd = (e: PointerEvent): void => {
         if (e.pointerId === this.notePointerId) {
             this.notePointerId = null;
-            this.lastX = null;
             this.lastY = null;
             this.emit({ type: "padHold", held: false });
         }
