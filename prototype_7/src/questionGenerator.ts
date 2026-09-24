@@ -171,30 +171,6 @@ export const TRAITS: TraitDefinition[] = [
       pitchFor: (s, label) => pitchForLabelNearOctave(label, s.melody[0].pitch),
     },
   },
-  {
-    id: "first-chord-root",
-    category: "Harmonie",
-    difficulty: "hard",
-    prompt: "Wat is de grondtoon van het allereerste akkoord?",
-    numOptions: 4,
-    getValue: (s) => pitchClassName(s.chords[0][0].pitch),
-    optionPool: ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"],
-    isApplicable: (s) => s.chordsAudible,
-    audible: {
-      instrument: (s) => GENRES.find((g) => g.id === s.config.genre)!.instruments.chords,
-      pitchFor: (s, label) => pitchForLabelNearOctave(label, s.chords[0][0].pitch),
-    },
-  },
-  {
-    id: "unique-chord-count",
-    category: "Harmonie",
-    difficulty: "hard",
-    prompt: "Hoeveel verschillende akkoorden komen er in de progressie voor?",
-    numOptions: 4,
-    getValue: (s) => String(new Set(s.progressions).size),
-    optionPool: ["1", "2", "3", "4"],
-    isApplicable: (s) => s.chordsAudible,
-  },
 ];
 
 function shuffle<T>(arr: T[]): T[] {
