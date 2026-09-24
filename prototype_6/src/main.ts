@@ -136,6 +136,11 @@ let holdStartAt = 0;
 let padHeld = false;
 let heldNote: number | null = null;
 
+// The remove button undoes whichever note was placed most recently (not
+// whatever happens to be under the playhead right now) — tracks a single
+// slot, not a full history, so it's a one-level undo.
+let lastPlacedNote: { instrument: MelodicInstrument; step: number } | null = null;
+
 // Guided intro tutorial — one gated step at a time.
 type IntroKind = "place" | "remove" | "instrument" | "finish";
 interface IntroStepDef { kind: IntroKind; prompt: string; praise: string }
@@ -143,7 +148,7 @@ const INTRO_STEPS: IntroStepDef[] = [
     { kind: "place", praise: "", prompt:
         "Beweeg je vinger omhoog en omlaag over het scherm. Tik om een noot te plaatsen." },
     { kind: "remove", praise: "Goed zo! Je hebt een noot geplaatst.", prompt:
-        "Linksonder wis je de noot op de huidige stap. Probeer het." },
+        "Linksonder wis je de laatst geplaatste noot. Probeer het." },
     { kind: "instrument", praise: "Mooi, gewist.", prompt:
         "Rechtsonder wissel je van instrument. Probeer het." },
     { kind: "finish", praise: "Zo wissel je van instrument.", prompt:
@@ -304,6 +309,7 @@ function tick(): void {
     const longEnough = holdFixMode === "threshold" && (performance.now() - holdStartAt) >= HOLD_THRESHOLD_MS;
     if (phase === "composing" && padHeld && heldNote !== null && longEnough) {
         pattern[currentInstrument][currentStep] = { note: heldNote, instrument: currentInstrument };
+        lastPlacedNote = { instrument: currentInstrument, step: currentStep };
     }
     playStep(currentStep);
     renderGrid();
@@ -335,6 +341,7 @@ function setNote(note: number): void {
     const slot: StepSlot = { note, instrument: currentInstrument };
     pattern[currentInstrument][step] = slot;
     heldNote = note;
+    lastPlacedNote = { instrument: currentInstrument, step };
     previewSlot(slot, step);
     earcon(ctx, "place");
     log(`stap ${step + 1}: noot ${note + 1} (${INSTRUMENT_LABEL_NL[currentInstrument]})`);
@@ -352,22 +359,35 @@ function nudgeNote(direction: 1 | -1): void {
     const slot: StepSlot = { note, instrument: currentInstrument };
     pattern[currentInstrument][step] = slot;
     heldNote = note; // a sustain in progress follows the new pitch
+    lastPlacedNote = { instrument: currentInstrument, step };
     previewSlot(slot, step);
     earcon(ctx, "place");
     log(`stap ${step + 1}: naar noot ${note + 1}`);
     renderGrid();
 }
 
-// Dedicated remove: clears the note on the current (playhead) step straight
-// away — no separate erase mode.
+// Dedicated remove: undoes whichever note was placed most recently — not
+// whatever's under the playhead right now — so it works even if the
+// playhead has already moved on by the time you react. One-level undo: it
+// forgets what it just removed, so pressing it twice in a row (with nothing
+// placed in between) just says there's nothing to undo.
 function removeNote(): void {
     if (phase !== "composing") return;
-    const step = perceivedStep();
-    const had = pattern[currentInstrument][step] !== null;
-    pattern[currentInstrument][step] = null;
+    if (!lastPlacedNote) {
+        speak("nog geen noot geplaatst");
+        log("nog geen noot geplaatst");
+        return;
+    }
+    const { instrument, step } = lastPlacedNote;
+    const had = pattern[instrument][step] !== null;
+    pattern[instrument][step] = null;
+    lastPlacedNote = null;
     earcon(ctx, "erase");
-    speak(had ? `stap ${step + 1} gewist` : `stap ${step + 1} was al leeg`);
-    log(had ? `stap ${step + 1} gewist` : `stap ${step + 1} was al leeg`);
+    const msg = had
+        ? `stap ${step + 1} gewist (${INSTRUMENT_LABEL_NL[instrument]})`
+        : `stap ${step + 1} was al leeg`;
+    speak(msg);
+    log(msg);
     renderGrid();
     introAdvance("remove");
 }
@@ -390,6 +410,7 @@ function loadBrief(index: number): void {
     currentScale = currentBrief.scale;
     currentVolume = currentBrief.volume;
     currentInstrument = currentBrief.instrument;
+    lastPlacedNote = null; // the previous brief's pattern is about to be cleared
 
     // fresh groove for the new vibe; the player's melody is kept
     drumPattern = generateDrumPattern(STEPS, currentBrief.grooveStyle);
@@ -479,6 +500,7 @@ function startIntro(): void {
     currentScale = brief.scale;
     currentVolume = brief.volume;
     currentInstrument = brief.instrument;
+    lastPlacedNote = null;
 
     drumPattern = generateDrumPattern(STEPS, brief.grooveStyle);
     applyDrumPattern(drumPattern);
