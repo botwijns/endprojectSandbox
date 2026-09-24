@@ -132,9 +132,11 @@
     if (formErr) formErr.remove();
   }
 
-  function showFieldErrors(root, template, answers) {
+  // Checks the required questions in `questions`; marks the unanswered ones
+  // and returns false if any are missing.
+  function showFieldErrors(root, questions, answers) {
     var firstBad = null;
-    template.questions.forEach(function (q) {
+    questions.forEach(function (q) {
       if (!q.required) return;
       var has = answers[q.id] !== undefined;
       if (!has) {
@@ -145,7 +147,6 @@
         }
       }
     });
-    if (firstBad) firstBad.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return !firstBad;
   }
 
@@ -171,24 +172,88 @@
       if (template.title) root.appendChild(h('h2', { text: template.title }));
       if (template.intro) root.appendChild(h('p', { class: 'gs-intro', text: template.intro }));
 
-      var form = h('form', { novalidate: true });
-      template.questions.forEach(function (q) { form.appendChild(renderQuestion(q)); });
+      // One question per page: every question stays in the same form (so
+      // collect() still sees all answers), but only the current one is shown.
+      var questions = template.questions;
+      var last = questions.length - 1;
+      var step = 0;
 
+      var intro = root.querySelector('.gs-intro');
+      var form = h('form', { novalidate: true });
+      var progressText = h('p', { class: 'gs-progress-text', 'aria-live': 'polite' });
+      var progressFill = h('div', { class: 'gs-progress-fill' });
+      form.appendChild(h('div', { class: 'gs-progress' }, [
+        progressText,
+        h('div', { class: 'gs-progress-bar', 'aria-hidden': 'true' }, [progressFill]),
+      ]));
+
+      var blocks = questions.map(function (q) {
+        var block = renderQuestion(q);
+        form.appendChild(block);
+        return block;
+      });
+
+      var prev = h('button', { type: 'button', class: 'gs-nav gs-prev', text: 'Vorige' });
+      var next = h('button', { type: 'button', class: 'gs-nav gs-next', text: 'Volgende' });
       var submit = h('button', {
         type: 'submit',
         class: 'gs-submit',
         text: template.submitLabel || 'Versturen',
       });
-      form.appendChild(submit);
+      form.appendChild(h('div', { class: 'gs-nav-row' }, [prev, next, submit]));
       root.appendChild(form);
+
+      function showStep(i, focus) {
+        step = i;
+        blocks.forEach(function (block, n) { block.hidden = n !== step; });
+        if (intro) intro.hidden = step !== 0;
+        progressText.textContent = 'Vraag ' + (step + 1) + ' van ' + questions.length;
+        progressFill.style.width = ((step + 1) / questions.length) * 100 + '%';
+        prev.hidden = step === 0;
+        next.hidden = step === last;
+        submit.hidden = step !== last;
+        if (focus) {
+          var input = blocks[step].querySelector('input, textarea');
+          if (input) input.focus({ preventScroll: true });
+          root.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+
+      // Only move on once the current question's required answer is given.
+      function currentStepValid() {
+        clearErrors(root);
+        return showFieldErrors(root, [questions[step]], collect(form, template));
+      }
+
+      prev.addEventListener('click', function () {
+        clearErrors(root);
+        if (step > 0) showStep(step - 1, true);
+      });
+      next.addEventListener('click', function () {
+        if (currentStepValid() && step < last) showStep(step + 1, true);
+      });
+
+      showStep(0, false);
 
       form.addEventListener('submit', function (ev) {
         ev.preventDefault();
+        // Enter on an earlier page advances instead of submitting.
+        if (step < last) {
+          next.click();
+          return;
+        }
         clearErrors(root);
         var answers = collect(form, template);
-        if (!showFieldErrors(root, template, answers)) return;
+        // Required questions on earlier pages: jump back to the first missing one.
+        if (!showFieldErrors(root, questions, answers)) {
+          for (var i = 0; i < questions.length; i++) {
+            if (blocks[i].querySelector('.gs-field-error')) { showStep(i, true); break; }
+          }
+          return;
+        }
 
         submit.disabled = true;
+        prev.disabled = true;
         submit.textContent = 'Versturen…';
 
         T.submitSurvey(answers).then(
@@ -201,6 +266,7 @@
           },
           function (err) {
             submit.disabled = false;
+            prev.disabled = false;
             submit.textContent = template.submitLabel || 'Versturen';
             var msg = 'Er ging iets mis bij het versturen. Probeer het opnieuw.';
             if (err && err.body && Array.isArray(err.body.errors)) msg = err.body.errors.join(' · ');
