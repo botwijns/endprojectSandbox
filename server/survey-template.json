@@ -15,7 +15,7 @@
     {
       "id": "favorite_prototype",
       "type": "single",
-      "label": "Welk prototype vond je het leukst?",
+      "label": "Welk deel van het spel vond je het leukst?",
       "required": false,
       "options": [
         "1 - Hengelen naar instrumenten",
@@ -29,9 +29,19 @@
       "label": "Hoe goed kon je communiceren met de tandarts?",
       "required": true,
       "min": 1,
-      "max": 5,
+      "max": 10,
       "minLabel": "Niet goed",
       "maxLabel": "Heel goed"
+    },
+    {
+      "id": "rating",
+      "type": "scale",
+      "label": "Welk cijfer zou je het spel geven?",
+      "required": true,
+      "min": 1,
+      "max": 10,
+      "minLabel": "Niet leuk",
+      "maxLabel": "Heel leuk"
     },
     {
       "id": "would_recommend",
