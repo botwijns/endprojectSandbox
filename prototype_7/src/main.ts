@@ -54,7 +54,13 @@ function renderHud(): void {
         const shown = Math.min(current, total);
         hud.progress.textContent = phase === "done" ? `${total} / ${total}` : `vraag ${shown} / ${total}`;
         hud.score.textContent = `score ${session.score}`;
-        hud.tier.textContent = session.current ? `niveau ${session.current.song.config.complexity}` : "";
+        if (session.current) {
+            const rating = Math.round(session.ratingFor(session.current.traitId));
+            const songRating = Math.round(session.current.songRating);
+            hud.tier.textContent = `rating ${rating} vs song ${songRating}`;
+        } else {
+            hud.tier.textContent = "";
+        }
     } else {
         hud.progress.textContent = "";
         hud.score.textContent = "";

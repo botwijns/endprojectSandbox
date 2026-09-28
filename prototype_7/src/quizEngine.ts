@@ -1,5 +1,6 @@
-import { Question, AnsweredQuestion, Difficulty } from "./types.ts";
+import { Question, AnsweredQuestion } from "./types.ts";
 import { generateQuestion } from "./questionGenerator.ts";
+import { BASE_RATING, updateRating } from "./rating.ts";
 
 export interface QuizState {
   questions: Question[];
@@ -7,21 +8,14 @@ export interface QuizState {
   answered: AnsweredQuestion[];
 }
 
-// Recomputed from the running score after every answer - only the song's own
-// size/instrumentation follows this; question *type* stays fully mixed.
-function complexityForAccuracy(score: number, answered: number): Difficulty {
-  if (answered === 0) return "medium"; // question 1: no data yet, start in the middle
-  const ratio = score / answered;
-  if (ratio < 0.4) return "easy";
-  if (ratio > 0.7) return "hard";
-  return "medium";
-}
-
 export class QuizSession {
   private state: QuizState;
   private length: number;
   private forcedSongId?: string;
   private recentTraitIds: string[] = [];
+  // One Elo rating per trait id, in-memory for this round only - starts
+  // neutral and only fills in once a trait has actually been played.
+  private playerRatings: Record<string, number> = {};
 
   constructor(length: number, forcedSongId?: string) {
     this.length = length;
@@ -31,8 +25,11 @@ export class QuizSession {
   }
 
   private nextQuestion(): Question {
-    const complexity = complexityForAccuracy(this.score, this.state.answered.length);
-    const q = generateQuestion({ complexity, recentTraitIds: this.recentTraitIds, forcedSongId: this.forcedSongId });
+    const q = generateQuestion({
+      playerRatings: this.playerRatings,
+      recentTraitIds: this.recentTraitIds,
+      forcedSongId: this.forcedSongId,
+    });
     this.recentTraitIds.push(q.traitId);
     if (this.recentTraitIds.length > 3) this.recentTraitIds.shift();
     return q;
@@ -54,15 +51,21 @@ export class QuizSession {
     return this.state.currentIndex >= this.length;
   }
 
+  /** Current Elo rating for a trait - BASE_RATING if it hasn't been played yet this round. */
+  ratingFor(traitId: string): number {
+    return this.playerRatings[traitId] ?? BASE_RATING;
+  }
+
   submitAnswer(choice: string): AnsweredQuestion {
     const q = this.current;
     if (!q) throw new Error("No current question - quiz already finished.");
-    const answered: AnsweredQuestion = {
-      ...q,
-      chosenAnswer: choice,
-      correct: choice === q.correctAnswer,
-    };
+    const correct = choice === q.correctAnswer;
+    const answered: AnsweredQuestion = { ...q, chosenAnswer: choice, correct };
     this.state.answered.push(answered);
+
+    const current = this.ratingFor(q.traitId);
+    this.playerRatings[q.traitId] = updateRating(current, q.songRating, correct ? 1 : 0);
+
     this.state.currentIndex += 1;
     if (this.state.currentIndex < this.length) {
       this.state.questions.push(this.nextQuestion());

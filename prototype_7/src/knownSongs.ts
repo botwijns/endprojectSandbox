@@ -1,4 +1,4 @@
-import { MelodyNote, SongConfig, GeneratedSong, ScaleName, Difficulty } from "./types.ts";
+import { MelodyNote, SongConfig, GeneratedSong, ScaleName } from "./types.ts";
 import { generateSong } from "./songGenerator.ts";
 
 // ---------------------------------------------------------------------------
@@ -51,8 +51,10 @@ function isRest(step: MelodyStep): step is { rest: number } {
   return "rest" in step;
 }
 
-/** Turns a hand-written note list into a full GeneratedSong at the given complexity tier. */
-export function buildKnownSong(entry: KnownSongEntry, complexity: Difficulty): GeneratedSong {
+/** Fixed density known songs are assembled with - not tunable, since it's not a real generation knob for a hand-transcribed melody. */
+export const KNOWN_SONG_DENSITY = 0.5;
+
+function buildMelody(entry: KnownSongEntry): { melody: MelodyNote[]; totalBeats: number } {
   const melody: MelodyNote[] = [];
   let beat = 0;
   for (const step of entry.melody) {
@@ -68,18 +70,29 @@ export function buildKnownSong(entry: KnownSongEntry, complexity: Difficulty): G
     });
     beat += step.duration;
   }
+  return { melody, totalBeats: beat };
+}
+
+/** The bar count a known song will end up with - exposed so difficulty rating can be computed before actually building the song. */
+export function knownSongBars(entry: KnownSongEntry): number {
+  return Math.max(1, Math.ceil(buildMelody(entry).totalBeats / entry.bpb));
+}
+
+/** Turns a hand-written note list into a full GeneratedSong. Bars/density are fixed by the transcription; only bass/chords/drums are choosable. */
+export function buildKnownSong(entry: KnownSongEntry, layers: { bass: boolean; chords: boolean; drums: boolean }): GeneratedSong {
+  const { melody, totalBeats } = buildMelody(entry);
 
   const cfg: SongConfig = {
     tonic: entry.tonic,
     scale: entry.scale,
     swing: 0,
     melodyOctave: 5,
-    bars: Math.max(1, Math.ceil(beat / entry.bpb)),
+    bars: Math.max(1, Math.ceil(totalBeats / entry.bpb)),
     bpb: entry.bpb,
-    density: 0.5,
+    density: KNOWN_SONG_DENSITY,
     bpm: entry.bpm,
     genre: "classical",
-    complexity,
+    ...layers,
   };
 
   return generateSong(cfg, melody, entry.progression);
