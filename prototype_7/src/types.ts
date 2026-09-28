@@ -32,8 +32,10 @@ export interface SongConfig {
   density: number;
   bpm: number;
   genre: string;
-  /** Adaptive song size/instrumentation tier: easy = melody only, medium = + bass, hard = + chords + drums. */
-  complexity: Difficulty;
+  /** Whether bass/chords/drums are actually generated and played - chosen per-question to hit a target difficulty rating. */
+  bass: boolean;
+  chords: boolean;
+  drums: boolean;
 }
 
 /** A fully procedurally generated song: notes, chords, and rhythm - no audio file involved. */
@@ -43,7 +45,7 @@ export interface GeneratedSong {
   melody: MelodyNote[];
   chords: ChordNote[][]; // one array of chord-tone notes per bar - always computed (melody generation needs it), whether or not it's played
   progressions: string[]; // roman-numeral degree per bar
-  /** Whether the chords are actually played back / a fair thing to ask about (true only at "hard" complexity). */
+  /** Mirrors config.chords - whether the chords are actually played back / a fair thing to ask about. */
   chordsAudible: boolean;
   bass?: MelodyNote[];
   drums?: DrumHit[];
@@ -68,6 +70,8 @@ export interface Question {
   song: GeneratedSong;
   /** When set, parallel to `options`: play these notes instead of speaking the option text. */
   audioOptions?: AudioOption[];
+  /** This specific song's computed difficulty rating for this trait - the Elo "opponent" the player's per-trait rating is matched against. */
+  songRating: number;
 }
 
 export interface AnsweredQuestion extends Question {
