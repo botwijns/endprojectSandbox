@@ -6,64 +6,95 @@ import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts
 import { speak, earcon, setSpeechEnabled } from "./speech.ts";
 import "webaudiofont";
 declare const WebAudioFontPlayer: any;
-declare const _tone_0000_GeneralUserGS_sf2_file: any; // acoustic grand piano
-declare const _tone_0241_GeneralUserGS_sf2_file: any; // nylon guitar
-declare const _tone_0321_GeneralUserGS_sf2_file: any; // acoustic bass
-declare const _drum_36_1_Chaos_sf2_file: any;         // kick
-declare const _drum_38_1_Chaos_sf2_file: any;         // snare
-declare const _drum_42_1_Chaos_sf2_file: any;         // hi-hat
+// Each WebAudioFont file assigns one global var (loaded via a <script> tag in
+// index.html) — this table maps our instrument keys to those var names, so
+// adding an instrument is just one new entry + one new <script> tag instead
+// of a hand-written `declare const` per font.
+declare global { interface Window { [fontVar: string]: unknown } }
+const FONT_VARS = {
+    piano:            "_tone_0000_GeneralUserGS_sf2_file",
+    electricPiano:    "_tone_0040_GeneralUserGS_sf2_file",
+    distortionGuitar: "_tone_0301_GeneralUserGS_sf2_file",
+    electricBass:     "_tone_0331_GeneralUserGS_sf2_file",
+    slapBass:         "_tone_0361_GeneralUserGS_sf2_file",
+    cello:            "_tone_0421_GeneralUserGS_sf2_file",
+    contrabass:       "_tone_0430_GeneralUserGS_sf2_file",
+    trumpet:          "_tone_0560_GeneralUserGS_sf2_file",
+    synthPad:         "_tone_0882_GeneralUserGS_sf2_file",
+    steelDrums:       "_tone_1140_Chaos_sf2_file",
+    kick:             "_drum_36_1_Chaos_sf2_file",
+    snare:            "_drum_38_1_Chaos_sf2_file",
+    highHat:          "_drum_42_1_Chaos_sf2_file",
+} as const;
+type Instrument = keyof typeof FONT_VARS;
+const INSTRUMENTS = Object.keys(FONT_VARS) as Instrument[];
+
 // ── WebAudioFont setup ────────────────────────────────────────────────────────
 const ctx = new AudioContext();
 const player = new WebAudioFontPlayer();
 
-player.loader.decodeAfterLoading(ctx, "_tone_0000_GeneralUserGS_sf2_file");
-player.loader.decodeAfterLoading(ctx, "_tone_0241_GeneralUserGS_sf2_file");
-player.loader.decodeAfterLoading(ctx, "_tone_0321_GeneralUserGS_sf2_file");
-player.loader.decodeAfterLoading(ctx, "_drum_36_1_Chaos_sf2_file");
-player.loader.decodeAfterLoading(ctx, "_drum_38_1_Chaos_sf2_file");
-player.loader.decodeAfterLoading(ctx, "_drum_42_1_Chaos_sf2_file");
+for (const fontVar of Object.values(FONT_VARS)) player.loader.decodeAfterLoading(ctx, fontVar);
+const instruments = Object.fromEntries(
+    Object.entries(FONT_VARS).map(([key, fontVar]) => [key, window[fontVar]]),
+) as Record<Instrument, any>;
 
-const instruments = {
-    piano:   _tone_0000_GeneralUserGS_sf2_file,
-    kick:    _drum_36_1_Chaos_sf2_file,
-    snare:   _drum_38_1_Chaos_sf2_file,
-    highHat: _drum_42_1_Chaos_sf2_file,
-    guitar:  _tone_0241_GeneralUserGS_sf2_file,
-    bass:    _tone_0321_GeneralUserGS_sf2_file,
-};
-
-type Instrument = keyof typeof instruments;
-const INSTRUMENTS: Instrument[] = ["piano", "kick", "snare", "highHat", "guitar", "bass"];
 // The drums are generated automatically, so the player only cycles the melodic voices.
-const MELODIC_INSTRUMENTS: MelodicInstrument[] = ["piano", "guitar", "bass"];
+const MELODIC_INSTRUMENTS: MelodicInstrument[] = [
+    "piano", "electricPiano", "distortionGuitar", "electricBass", "slapBass",
+    "cello", "contrabass", "trumpet", "synthPad", "steelDrums",
+];
+const MELODIC_SET = new Set<Instrument>(MELODIC_INSTRUMENTS);
 const INSTRUMENT_COLOR: Record<Instrument, string> = {
-    piano:   "#4cafef",
-    kick:    "#ff6b6b",
-    snare:   "#ffd93d",
-    highHat: "#6bcb77",
-    guitar:  "#99afff",
-    bass:    "#e699ff",
+    piano:            "#4cafef",
+    electricPiano:    "#6fd1c5",
+    distortionGuitar: "#ff8a3d",
+    electricBass:     "#c77dff",
+    slapBass:         "#e699ff",
+    cello:            "#a0522d",
+    contrabass:       "#7a4522",
+    trumpet:          "#ffd93d",
+    synthPad:         "#8ecae6",
+    steelDrums:       "#4caf50",
+    kick:             "#ff6b6b",
+    snare:            "#ffd93d",
+    highHat:          "#6bcb77",
 };
 const INSTRUMENT_VOLUME: Record<Instrument, number> = {
-    piano: 0.6, kick: 0.8, snare: 0.8, highHat: 0.8, guitar: 0.8, bass: 0.8,
+    piano: 0.6, electricPiano: 0.6, distortionGuitar: 0.7, electricBass: 0.7, slapBass: 0.7,
+    cello: 0.7, contrabass: 0.7, trumpet: 0.6, synthPad: 0.5, steelDrums: 0.7,
+    kick: 0.8, snare: 0.8, highHat: 0.8,
 };
 const INSTRUMENT_LABEL_NL: Record<MelodicInstrument, string> = {
-    piano: "piano", guitar: "gitaar", bass: "bas",
+    piano: "piano", electricPiano: "elektrische piano",
+    distortionGuitar: "rockgitaar", electricBass: "basgitaar", slapBass: "slapbas",
+    cello: "cello", contrabass: "contrabas",
+    trumpet: "trompet", synthPad: "droomklank", steelDrums: "steeldrum",
 };
 // Percussive instruments ring at their natural drum pitch.
-const DRUM_PITCH: Record<Exclude<Instrument, "piano" | "guitar" | "bass">, number> = {
+const DRUM_PITCH: Record<Exclude<Instrument, MelodicInstrument>, number> = {
     kick: 36, snare: 38, highHat: 42,
+};
+// Bass-register instruments sound much more natural transposed down from the
+// piano-centric register the scales are written in.
+const PITCH_OFFSET: Partial<Record<Instrument, number>> = {
+    electricBass: -12, slapBass: -12, cello: -12, contrabass: -24,
 };
 
 function isMelodic(id: Instrument): id is MelodicInstrument {
-    return id === "piano" || id === "guitar" || id === "bass";
+    return MELODIC_SET.has(id);
 }
 
 function scheduleNote(
     id: Instrument, pitch: number, when: number, duration: number, volume = 0.7,
     destination: AudioNode = ctx.destination,
 ): void {
-    player.queueWaveTable(ctx, destination, instruments[id], when, pitch, duration, volume);
+    try {
+        player.queueWaveTable(ctx, destination, instruments[id], when, pitch, duration, volume);
+    } catch {
+        // A font can still be mid-decode right after page load (more fonts
+        // now means a longer decode window) — skip this one note rather
+        // than let it crash the sequencer.
+    }
 }
 
 // Audio needs a user gesture to unlock — the first tap anywhere does it.
@@ -98,13 +129,13 @@ interface StepSlot { note: number; instrument: Instrument }
 let currentScale: number[] = BRIEFS[0].scale;
 let currentVolume = BRIEFS[0].volume;
 
-function pitchForNote(note: number, scale: number[] = currentScale): number {
+function pitchForNote(note: number, instrument: Instrument, scale: number[] = currentScale): number {
     const i = Math.max(0, Math.min(scale.length - 1, note));
-    return ROOT_MIDI + scale[i];
+    return ROOT_MIDI + scale[i] + (PITCH_OFFSET[instrument] ?? 0);
 }
 
 function pitchForSlot(slot: StepSlot): number {
-    return isMelodic(slot.instrument) ? pitchForNote(slot.note) : DRUM_PITCH[slot.instrument];
+    return isMelodic(slot.instrument) ? pitchForNote(slot.note, slot.instrument) : DRUM_PITCH[slot.instrument];
 }
 
 // ── Game state ────────────────────────────────────────────────────────────────
@@ -171,14 +202,9 @@ let introStep = 0;
 
 type Track = (StepSlot | null)[];
 function emptyPattern(): Record<Instrument, Track> {
-    return {
-        piano: Array(STEPS).fill(null),
-        kick: Array(STEPS).fill(null),
-        snare: Array(STEPS).fill(null),
-        highHat: Array(STEPS).fill(null),
-        guitar: Array(STEPS).fill(null),
-        bass: Array(STEPS).fill(null),
-    };
+    return Object.fromEntries(
+        INSTRUMENTS.map(id => [id, Array(STEPS).fill(null)]),
+    ) as Record<Instrument, Track>;
 }
 
 let pattern: Record<Instrument, Track> = emptyPattern();
@@ -405,8 +431,9 @@ function removeNote(): void {
 
 function switchInstrument(): void {
     if (phase !== "composing") return;
-    const i = (MELODIC_INSTRUMENTS.indexOf(currentInstrument) + 1) % MELODIC_INSTRUMENTS.length;
-    currentInstrument = MELODIC_INSTRUMENTS[i];
+    const options = currentBrief.instruments;
+    const i = (options.indexOf(currentInstrument) + 1) % options.length;
+    currentInstrument = options[i];
     earcon(ctx, "instrument");
     speak(INSTRUMENT_LABEL_NL[currentInstrument]);
     updateHud();
@@ -420,7 +447,7 @@ function loadBrief(index: number): void {
     currentBrief = briefAt(index);
     currentScale = currentBrief.scale;
     currentVolume = currentBrief.volume;
-    currentInstrument = currentBrief.instrument;
+    currentInstrument = currentBrief.instruments[0];
     placedNoteStack.length = 0; // the previous brief's pattern is about to be cleared
 
     // fresh groove for the new vibe; the player's melody is kept
@@ -470,28 +497,34 @@ function endSession(): void {
     playMedley();
 }
 
-// Play every saved track back to back — melody *and* its drum groove, each at
-// the loudness the brief asked for.
+// Play every saved track back to back, each looped MEDLEY_REPEATS times so
+// a short riff gets a real moment to land — melody *and* its drum groove,
+// each at the loudness the brief asked for.
+const MEDLEY_REPEATS = 2;
+
 function playMedley(): void {
     let when = ctx.currentTime + 0.6;
     const stepDur = stepDurationMs / 1000;
     for (const track of mixtape) {
         const scale = BRIEFS.find(b => b.id === track.brief)?.scale ?? currentScale;
-        for (const [step, note, id] of track.notes) {
-            player.queueWaveTable(ctx, ctx.destination, instruments[id],
-                when + step * stepDur, pitchForNote(note, scale), stepDur * 0.9,
-                INSTRUMENT_VOLUME[id] * track.volume);
+        for (let repeat = 0; repeat < MEDLEY_REPEATS; repeat++) {
+            const loopStart = when + repeat * STEPS * stepDur;
+            for (const [step, note, id] of track.notes) {
+                player.queueWaveTable(ctx, ctx.destination, instruments[id],
+                    loopStart + step * stepDur, pitchForNote(note, id, scale), stepDur * 0.9,
+                    INSTRUMENT_VOLUME[id] * track.volume);
+            }
+            for (let s = 0; s < STEPS; s++) {
+                const w = loopStart + s * stepDur;
+                if (track.groove.kick[s])
+                    player.queueWaveTable(ctx, ctx.destination, instruments.kick, w, DRUM_PITCH.kick, stepDur * 0.9, INSTRUMENT_VOLUME.kick * track.volume);
+                if (track.groove.snare[s])
+                    player.queueWaveTable(ctx, ctx.destination, instruments.snare, w, DRUM_PITCH.snare, stepDur * 0.9, INSTRUMENT_VOLUME.snare * track.volume);
+                if (track.groove.hihat[s])
+                    player.queueWaveTable(ctx, ctx.destination, instruments.highHat, w, DRUM_PITCH.highHat, stepDur * 0.9, INSTRUMENT_VOLUME.highHat * track.volume);
+            }
         }
-        for (let s = 0; s < STEPS; s++) {
-            const w = when + s * stepDur;
-            if (track.groove.kick[s])
-                player.queueWaveTable(ctx, ctx.destination, instruments.kick, w, DRUM_PITCH.kick, stepDur * 0.9, INSTRUMENT_VOLUME.kick * track.volume);
-            if (track.groove.snare[s])
-                player.queueWaveTable(ctx, ctx.destination, instruments.snare, w, DRUM_PITCH.snare, stepDur * 0.9, INSTRUMENT_VOLUME.snare * track.volume);
-            if (track.groove.hihat[s])
-                player.queueWaveTable(ctx, ctx.destination, instruments.highHat, w, DRUM_PITCH.highHat, stepDur * 0.9, INSTRUMENT_VOLUME.highHat * track.volume);
-        }
-        when += STEPS * stepDur + stepDur; // a beat of space between tracks
+        when += MEDLEY_REPEATS * STEPS * stepDur + stepDur; // a beat of space before the next track
     }
 }
 
@@ -510,7 +543,7 @@ function startIntro(): void {
     currentBrief = brief;
     currentScale = brief.scale;
     currentVolume = brief.volume;
-    currentInstrument = brief.instrument;
+    currentInstrument = brief.instruments[0];
     placedNoteStack.length = 0;
 
     drumPattern = generateDrumPattern(STEPS, brief.grooveStyle);
