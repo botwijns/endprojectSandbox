@@ -197,34 +197,6 @@ export const TRAITS: TraitDefinition[] = [
     // isolating one pitch is harder with more going on around it
     difficultyWeights: { bars: 5, bass: 10, chords: 10, drums: 10, density: 10 },
   },
-  {
-    id: "first-chord-root",
-    category: "Harmonie",
-    difficulty: "hard",
-    prompt: "Wat is de grondtoon van het allereerste akkoord?",
-    numOptions: 4,
-    getValue: (s) => pitchClassName(s.chords[0][0].pitch),
-    optionPool: ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"],
-    requiresChords: true,
-    audible: {
-      instrument: (s) => GENRES.find((g) => g.id === s.config.genre)!.instruments.chords,
-      pitchFor: (s, label) => pitchForLabelNearOctave(label, s.chords[0][0].pitch),
-    },
-    // inherent bump from chords always on; drums add clutter
-    difficultyWeights: { bars: 3, bass: 10, chords: 150, drums: 15, density: 10 },
-  },
-  {
-    id: "unique-chord-count",
-    category: "Harmonie",
-    difficulty: "hard",
-    prompt: "Hoeveel verschillende akkoorden komen er in de progressie voor?",
-    numOptions: 4,
-    getValue: (s) => String(new Set(s.progressions).size),
-    optionPool: ["1", "2", "3", "4"],
-    requiresChords: true,
-    // more bars -> more chords to track; inherent chords bump
-    difficultyWeights: { bars: 25, bass: 10, chords: 150, drums: 15, density: 10 },
-  },
 ];
 
 function shuffle<T>(arr: T[]): T[] {

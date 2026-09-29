@@ -95,6 +95,52 @@
   margin-top: 6px;
 }
 
+.game-survey [hidden] { display: none !important; }
+
+.game-survey .gs-progress { margin-bottom: 12px; }
+.game-survey .gs-progress-text {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  color: var(--gs-muted);
+}
+.game-survey .gs-progress-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--gs-border);
+  overflow: hidden;
+}
+.game-survey .gs-progress-fill {
+  height: 100%;
+  background: var(--gs-accent);
+  transition: width 0.2s ease;
+}
+
+.game-survey .gs-nav-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+/* keep Volgende / Versturen on the right, also when Vorige is hidden */
+.game-survey .gs-nav-row .gs-next,
+.game-survey .gs-nav-row .gs-submit { margin-left: auto; }
+
+.game-survey button.gs-nav {
+  appearance: none;
+  border: 1px solid var(--gs-accent);
+  background: transparent;
+  color: var(--gs-fg);
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 22px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.game-survey button.gs-next {
+  background: var(--gs-accent);
+  color: var(--gs-bg);
+}
+.game-survey button.gs-nav:disabled { opacity: 0.55; cursor: default; }
+
 .game-survey button.gs-submit {
   appearance: none;
   border: 1px solid var(--gs-accent);
