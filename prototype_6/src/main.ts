@@ -116,7 +116,7 @@ const STEP_PANNERS: AudioNode[] = Array.from({ length: STEPS }, (_, step) => {
     panner.connect(ctx.destination);
     return panner;
 });
-const SLOWDOWN = 1.4;                 // the game runs this many times slower than the real tempo
+const SLOWDOWN = 1;                 // the game runs this many times slower than the real tempo
 const HOLD_THRESHOLD_MS = 180;        // "threshold" hold-fix: minimum hold before a note sustains
 const MIXTAPE_KEY = "p6_mixtape";
 const BEST_KEY = "p6_best";
