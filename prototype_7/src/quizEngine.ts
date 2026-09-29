@@ -76,4 +76,26 @@ export class QuizSession {
   get history(): AnsweredQuestion[] {
     return this.state.answered;
   }
+
+  /**
+   * Per-category performance for this round: for every trait actually
+   * answered, how far its final rating ended up from the neutral starting
+   * point (BASE_RATING, the same for every trait) - grouped by category and
+   * averaged, since a category can cover more than one trait. Sorted best
+   * first.
+   */
+  performanceSummary(): { category: string; avgDelta: number }[] {
+    const byCategory = new Map<string, { total: number; count: number }>();
+    for (const traitId of new Set(this.state.answered.map((a) => a.traitId))) {
+      const category = this.state.answered.find((a) => a.traitId === traitId)!.category;
+      const delta = this.ratingFor(traitId) - BASE_RATING;
+      const bucket = byCategory.get(category) ?? { total: 0, count: 0 };
+      bucket.total += delta;
+      bucket.count += 1;
+      byCategory.set(category, bucket);
+    }
+    return Array.from(byCategory.entries())
+      .map(([category, { total, count }]) => ({ category, avgDelta: total / count }))
+      .sort((a, b) => b.avgDelta - a.avgDelta);
+  }
 }

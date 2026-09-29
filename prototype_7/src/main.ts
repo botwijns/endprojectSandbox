@@ -23,6 +23,8 @@ const input = new InputHandler();
 let session: QuizSession | null = null;
 let phase: Phase = "prestart";
 let pendingTimers: number[] = [];
+// Set once a round ends (see endQuiz); only shown in the HUD while phase === "done".
+let lastResultsSummary: { category: string; avgDelta: number }[] = [];
 
 // ── HUD (sighted debug aid only) ─────────────────────────────────────────────
 const hud = {
@@ -30,6 +32,7 @@ const hud = {
     progress: document.getElementById("hud-progress")!,
     score: document.getElementById("hud-score")!,
     tier: document.getElementById("hud-tier")!,
+    results: document.getElementById("hud-results")!,
 };
 
 // Dev-only song picker: force every question in the next round to use one
@@ -61,10 +64,14 @@ function renderHud(): void {
         } else {
             hud.tier.textContent = "";
         }
+        hud.results.textContent = phase === "done" && lastResultsSummary.length
+            ? "beste: " + lastResultsSummary.map(s => `${s.category} (+${Math.round(s.avgDelta)})`).join(", ")
+            : "";
     } else {
         hud.progress.textContent = "";
         hud.score.textContent = "";
         hud.tier.textContent = "";
+        hud.results.textContent = "";
     }
 }
 
@@ -188,6 +195,7 @@ function commitOption(index: AnswerIndex): void {
 }
 
 function beginQuiz(): void {
+    lastResultsSummary = [];
     session = new QuizSession(QUIZ_LENGTH, songPicker.value || undefined);
     input.setQuizEnabled(true);
     speak("Daar gaan we. Luister goed.");
@@ -201,9 +209,14 @@ function endQuiz(): void {
     input.setQuizEnabled(false);
     const total = session.history.length;
     const score = session.score;
+    lastResultsSummary = session.performanceSummary().filter(s => s.avgDelta > 0);
     renderHud();
     cue("done");
     later(() => speak(`Klaar. Je had ${score} van de ${total} goed.`), 500);
+    if (lastResultsSummary.length > 0) {
+        const names = lastResultsSummary.slice(0, 3).map(s => s.category).join(", ");
+        later(() => speak(`Je scoorde het best op: ${names}.`), 3200);
+    }
 }
 
 function handleStart(): void {

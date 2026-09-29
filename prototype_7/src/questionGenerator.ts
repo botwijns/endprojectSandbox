@@ -240,25 +240,40 @@ function pickRandom<T>(arr: T[]): T {
 }
 
 // ---------------------------------------------------------------------------
-// Difficulty rating: BASE_RATING plus each of this trait's weights dotted
-// against the song's own parameter vector (booleans as 0/1). Used both to
-// compute a specific song's rating (the Elo "opponent") and, via the search
-// below, to choose the params that land closest to a target rating.
+// Difficulty rating: BASE_RATING, plus a starting-point offset from the
+// trait's own declared difficulty label, plus each of this trait's weights
+// dotted against how far the song's params deviate from their *neutral*
+// value (the middle of the bars range, 50/50 for each layer toggle, the
+// middle density bucket) - so a song with exactly neutral params always
+// rates at the trait's own center, and deviating either way swings the
+// rating symmetrically instead of only ever making it harder or easier.
+// Used both to compute a specific song's rating (the Elo "opponent") and,
+// via the search below, to choose the params that land closest to a target.
 // ---------------------------------------------------------------------------
-function ratingForTrait(trait: TraitDefinition, params: SongParams): number {
-  const w = trait.difficultyWeights;
-  return (
-    BASE_RATING +
-    w.bars * params.bars +
-    w.bass * (params.bass ? 1 : 0) +
-    w.chords * (params.chords ? 1 : 0) +
-    w.drums * (params.drums ? 1 : 0) +
-    w.density * params.density
-  );
-}
+const DIFFICULTY_BASE_OFFSET: Record<Difficulty, number> = { easy: -150, medium: 0, hard: 150 };
 
 const BARS_CANDIDATES = [2, 3, 4, 5, 6, 7, 8];
-const DENSITY_CANDIDATES = [0.25, 0.5, 0.85]; // thin / medium / busy, matching densityBucket's own thresholds
+const DENSITY_CANDIDATES = [0.2, 0.5, 0.8]; // thin / medium / busy, symmetric around DENSITY_MID
+const BARS_MID = 5; // middle of BARS_CANDIDATES
+const DENSITY_MID = 0.5;
+
+function ratingForTrait(trait: TraitDefinition, params: SongParams): number {
+  const w = trait.difficultyWeights;
+  // requiresChords pins chords to always-on for this trait, so 0.5 isn't a
+  // reachable "neutral" for it - use its own only achievable value (1)
+  // instead, so that dimension contributes zero skew rather than a
+  // permanent one-sided bump.
+  const chordsRef = trait.requiresChords ? 1 : 0.5;
+  return (
+    BASE_RATING +
+    DIFFICULTY_BASE_OFFSET[trait.difficulty] +
+    w.bars * (params.bars - BARS_MID) +
+    w.bass * ((params.bass ? 1 : 0) - 0.5) +
+    w.chords * ((params.chords ? 1 : 0) - chordsRef) +
+    w.drums * ((params.drums ? 1 : 0) - 0.5) +
+    w.density * (params.density - DENSITY_MID)
+  );
+}
 
 /** Picks (bars, bass, chords, drums, density) for `genre` whose rating for `trait` lands as close as possible to `targetRating`. */
 export function pickSongParamsForTrait(trait: TraitDefinition, genre: GenreDefinition, targetRating: number): SongParams {
