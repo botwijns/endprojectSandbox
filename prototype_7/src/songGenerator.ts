@@ -508,6 +508,91 @@ export function generateSongFromParams(genre: GenreDefinition, params: SongParam
   return generateSong(cfg);
 }
 
+// ---- Motif songs (repeating-pattern questions) ---------------------------------
+//
+// generateMelody above mutates its motif every phrase, so "does something
+// repeat / how often" has no reliable answer there. Motif songs instead play
+// one fixed bar ("het stukje") exactly `repeats` times back to back, then fill
+// the rest with bars that are each clearly different - so the answer is known.
+// Harmony is a single static tonic chord, so exact repeats never clash with it
+// and the chords don't give the answer away.
+
+const MOTIF_BPB = 4;
+
+interface BarPattern { durations: number[]; pitches: number[] }
+
+/** A random bar: `noteCount` notes walking over `range`, with a rest at the end so repeats are easy to hear apart. */
+function randomBar(range: number[], noteCount: number, startIndex: number, maxLeap: number): BarPattern {
+  const durations: number[] = [];
+  for (let i = 0; i < noteCount; i++) durations.push(pickArr([0.5, 0.5, 1]));
+  // Leave at least half a beat of silence at the end of the bar.
+  for (let i = durations.length - 1; durations.reduce((a, b) => a + b, 0) > MOTIF_BPB - 0.5 && i >= 0; i--) durations[i] = 0.5;
+
+  const pitches: number[] = [];
+  let idx = startIndex;
+  for (let i = 0; i < noteCount; i++) {
+    pitches.push(range[idx]);
+    const steps = Array.from({ length: maxLeap * 2 + 1 }, (_, s) => s - maxLeap).filter((s) => s !== 0);
+    idx = Math.max(0, Math.min(range.length - 1, idx + pickArr(steps)));
+  }
+  return { durations, pitches };
+}
+
+/** True when two bars would sound like "the same stukje" - same rhythm and at most one different note. */
+function barsTooSimilar(a: BarPattern, b: BarPattern): boolean {
+  if (a.durations.length !== b.durations.length) return false;
+  if (a.durations.some((d, i) => d !== b.durations[i])) return false;
+  return a.pitches.filter((p, i) => p !== b.pitches[i]).length < 2;
+}
+
+/** Builds a song whose melody plays one motif bar `repeats` times, followed by unique filler bars up to `params.bars`. repeats = 1 means nothing repeats. */
+export function generateMotifSong(genre: GenreDefinition, params: SongParams, repeats: number): GeneratedSong {
+  const resolved = resolveGenre(genre.id);
+  const cfg: SongConfig = {
+    ...resolved,
+    ...params,
+    swing: 0,
+    bpb: MOTIF_BPB,
+    bpm: 80 + Math.floor(Math.random() * 51), // 80-130: calm enough to follow bar by bar
+    genre: genre.id,
+  };
+
+  const degrees = scaleDegrees(cfg.tonic, cfg.scale, cfg.melodyOctave);
+  const range = [...degrees, degrees[0] + 12, degrees[2] + 12];
+  const motifNotes = params.density < 0.35 ? 3 : params.density < 0.7 ? 4 : pickArr([5, 6]);
+
+  // The motif starts on a tonic chord tone and moves in small steps, so it sounds like a tune.
+  let motif: BarPattern;
+  do {
+    motif = randomBar(range, motifNotes, pickArr([0, 2, 4]), 2);
+  } while (new Set(motif.pitches).size < 2);
+
+  const bars: BarPattern[] = Array.from({ length: Math.min(repeats, cfg.bars) }, () => motif);
+  const fillers: BarPattern[] = [motif]; // every filler must differ from the motif and from each other
+  while (bars.length < cfg.bars) {
+    let filler: BarPattern;
+    let attempts = 0;
+    do {
+      filler = randomBar(range, 2 + Math.floor(Math.random() * 5), Math.floor(Math.random() * range.length), 3);
+      attempts++;
+    } while (fillers.some((f) => barsTooSimilar(f, filler)) && attempts < 50);
+    fillers.push(filler);
+    bars.push(filler);
+  }
+
+  const melody: MelodyNote[] = [];
+  bars.forEach((bar, b) => {
+    let beat = b * MOTIF_BPB;
+    bar.pitches.forEach((pitch, i) => {
+      melody.push({ pitch, startBeat: beat, duration: bar.durations[i], velocity: i === 0 ? 0.75 : 0.6 });
+      beat += bar.durations[i];
+    });
+  });
+
+  const tonicDegree = cfg.scale === "major" || cfg.scale === "lydian" || cfg.scale === "mixolydian" ? "I" : "i";
+  return { ...generateSong(cfg, melody, [tonicDegree]), motifRepeats: repeats };
+}
+
 export function chordQuality(song: GeneratedSong, degree: string): string {
   return CHORD_QUALITIES[song.config.scale][degree] || "maj";
 }

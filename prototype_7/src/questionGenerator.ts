@@ -1,5 +1,5 @@
 import { GeneratedSong, Question, Difficulty, AudioOption } from "./types.ts";
-import { GENRES, GenreDefinition, generateSongFromParams, SongParams, pitchClassName, pitchForLabelNearOctave, chordQuality, INSTRUMENT_FAMILY, BASS_STYLE } from "./songGenerator.ts";
+import { GENRES, GenreDefinition, generateSongFromParams, generateMotifSong, SongParams, pitchClassName, pitchForLabelNearOctave, chordQuality, INSTRUMENT_FAMILY, BASS_STYLE } from "./songGenerator.ts";
 import { KNOWN_SONGS, buildKnownSong, knownSongBars, KNOWN_SONG_DENSITY } from "./knownSongs.ts";
 import { BASE_RATING } from "./rating.ts";
 
@@ -51,6 +51,8 @@ interface TraitDefinition {
   };
   /** Forces chords on whenever this trait is picked - it needs to ask about them. */
   requiresChords?: boolean;
+  /** Custom song builder for traits the regular generator can't answer reliably - also skips known songs. */
+  buildSong?: (genre: GenreDefinition, params: SongParams) => GeneratedSong;
   difficultyWeights: DifficultyWeights;
 }
 
@@ -98,6 +100,19 @@ export const TRAITS: TraitDefinition[] = [
     getValue: (s) => bool(!!s.drums, "ja", "nee"),
     optionPool: ["ja", "nee"],
     difficultyWeights: { bars: -8, bass: 0, chords: 0, drums: 0, density: 0 }, // longer clip -> more chances to notice drums
+  },
+  {
+    id: "motif-repeats",
+    category: "Herhaling",
+    difficulty: "easy",
+    prompt: "Hoor je een stukje muziek dat steeds terugkomt?",
+    numOptions: 2,
+    getValue: (s) => bool((s.motifRepeats ?? 1) >= 2, "ja", "nee"),
+    optionPool: ["ja", "nee"],
+    buildSong: (genre, params) =>
+      generateMotifSong(genre, params, Math.random() < 0.5 ? 1 : 2 + Math.floor(Math.random() * (Math.min(4, params.bars) - 1))),
+    // a longer stukje and more layers make the repeat harder to notice
+    difficultyWeights: { bars: 0, bass: 15, chords: 10, drums: 15, density: 30 },
   },
 
   // ---- Gemiddeld ------------------------------------------------------------
@@ -178,6 +193,19 @@ export const TRAITS: TraitDefinition[] = [
     optionPool: ["omhoog", "omlaag"],
     isApplicable: (s) => s.melody.length >= 2 && s.melody[s.melody.length - 2].pitch !== s.melody[s.melody.length - 1].pitch,
     difficultyWeights: { bars: 2, bass: 15, chords: 15, drums: 15, density: 10 },
+  },
+  {
+    id: "motif-count",
+    category: "Herhaling",
+    difficulty: "medium",
+    prompt: "Hoeveel keer hoor je het stukje dat terugkomt?",
+    numOptions: 4,
+    getValue: (s) => String(s.motifRepeats),
+    optionPool: ["2", "3", "4", "5"],
+    buildSong: (genre, params) =>
+      generateMotifSong(genre, params, 2 + Math.floor(Math.random() * (Math.min(5, params.bars) - 1))),
+    // more (different) bars around the stukje and more layers make it harder to keep count
+    difficultyWeights: { bars: 20, bass: 15, chords: 10, drums: 20, density: 30 },
   },
 
   // ---- Moeilijk: specifieke noten/akkoorden - vraagt echt geoefend luisteren ----
@@ -302,7 +330,10 @@ function generateSongForTrait(
   targetRating: number,
   forcedSongId?: string
 ): { song: GeneratedSong; songRating: number } {
-  const knownEntry = forcedSongId
+  // Traits with their own builder need control over the melody, so they never use a known song.
+  const knownEntry = trait.buildSong
+    ? undefined
+    : forcedSongId
     ? KNOWN_SONGS.find((s) => s.id === forcedSongId)
     : Math.random() < KNOWN_SONG_CHANCE && KNOWN_SONGS.length > 0
       ? KNOWN_SONGS[Math.floor(Math.random() * KNOWN_SONGS.length)]
@@ -323,9 +354,10 @@ function generateSongForTrait(
   const genre = pickRandom(GENRES);
   const params = pickSongParamsForTrait(trait, genre, targetRating);
   const songRating = ratingForTrait(trait, params);
-  let song = generateSongFromParams(genre, params);
+  const build = trait.buildSong ?? generateSongFromParams;
+  let song = build(genre, params);
   for (let attempt = 0; trait.isApplicable && !trait.isApplicable(song) && attempt < MAX_APPLICABILITY_RETRIES; attempt++) {
-    song = generateSongFromParams(genre, params);
+    song = build(genre, params);
   }
   return { song, songRating };
 }
