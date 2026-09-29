@@ -181,22 +181,22 @@ export const TRAITS: TraitDefinition[] = [
   },
 
   // ---- Moeilijk: specifieke noten/akkoorden - vraagt echt geoefend luisteren ----
-    {
-    id: "melody-start-note",
-    category: "Melodie",
-    difficulty: "hard",
-    prompt: "Op welke noot begint de melodie?",
-    numOptions: 4,
-    getValue: (s) => pitchClassName(s.melody[0].pitch),
-    optionPool: ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"],
-    isApplicable: (s) => s.melody.length > 0,
-    audible: {
-      instrument: (s) => GENRES.find((g) => g.id === s.config.genre)!.instruments.melody,
-      pitchFor: (s, label) => pitchForLabelNearOctave(label, s.melody[0].pitch),
-    },
-    // isolating one pitch is harder with more going on around it
-    difficultyWeights: { bars: 5, bass: 10, chords: 10, drums: 10, density: 10 },
-  },
+  //   {
+  //   id: "melody-start-note",
+  //   category: "Melodie",
+  //   difficulty: "hard",
+  //   prompt: "Op welke noot begint de melodie?",
+  //   numOptions: 4,
+  //   getValue: (s) => pitchClassName(s.melody[0].pitch),
+  //   optionPool: ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"],
+  //   isApplicable: (s) => s.melody.length > 0,
+  //   audible: {
+  //     instrument: (s) => GENRES.find((g) => g.id === s.config.genre)!.instruments.melody,
+  //     pitchFor: (s, label) => pitchForLabelNearOctave(label, s.melody[0].pitch),
+  //   },
+  //   // isolating one pitch is harder with more going on around it
+  //   difficultyWeights: { bars: 5, bass: 10, chords: 10, drums: 10, density: 10 },
+  // },
 ];
 
 function shuffle<T>(arr: T[]): T[] {
