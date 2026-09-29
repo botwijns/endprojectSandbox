@@ -50,6 +50,8 @@ export interface GeneratedSong {
   bass?: MelodyNote[];
   drums?: DrumHit[];
   drumType?: DrumType;
+  /** Only set on motif songs (generateMotifSong): how many times the one-bar motif is heard - 1 means nothing repeats. */
+  motifRepeats?: number;
 }
 
 /** A single audible answer option: a specific instrument + pitch to play instead of speaking a name. */
