@@ -5,6 +5,7 @@ import { generateDrumPattern, type DrumPattern } from "./music.ts";
 import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts";
 import { speak, earcon, setSpeechEnabled } from "./speech.ts";
 import "webaudiofont";
+import { enterFullscreen } from "../../src/fullscreen.ts";
 declare const WebAudioFontPlayer: any;
 // Each WebAudioFont file assigns one global var (loaded via a <script> tag in
 // index.html) — this table maps our instrument keys to those var names, so
@@ -771,6 +772,7 @@ setSpeechEnabled(speechToggleEl.checked);
 // start before a tutorial that hasn't explained the controls yet. This click
 // is a real user gesture, so audio unlock + iOS motion permission work here.
 introBtn.addEventListener("click", () => {
+    void enterFullscreen();
     applyStartOptions();
     pendingIntro = true;
     startNoteEl.classList.add("hidden");
@@ -778,6 +780,7 @@ introBtn.addEventListener("click", () => {
     startGame(BRIEFS[0].tempo, true);
 });
 gameBtn.addEventListener("click", () => {
+    void enterFullscreen();
     applyStartOptions();
     pendingIntro = false;
     startNoteEl.classList.add("hidden");

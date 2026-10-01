@@ -3,6 +3,7 @@ import {InputHandler} from "./inputHandler.ts";
 import {createInitialState,  generateNumberSequence, generateSequence} from "./gameState.ts";
 import {SynthManager} from "./audio/SynthManager.ts";
 import {Howl, Howler} from "howler";
+import { enterFullscreen } from "../../src/fullscreen.ts";
 
 const debug= !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
 const synth = new SynthManager();
@@ -322,6 +323,7 @@ let gameRunning = false;
 
 startBtn.addEventListener("click", async () => {
     if (!gameRunning) {
+        void enterFullscreen();
         Howler.ctx?.resume();
         synth.resume();
 

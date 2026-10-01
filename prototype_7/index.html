@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Wat hoor je? — muziekquiz (prototype 7)</title>
   <style>
     html, body {
@@ -12,7 +14,7 @@
     }
     #hud {
       position: fixed; top: 0; left: 0; width: 100%; z-index: 10;
-      display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 6px 10px; box-sizing: border-box;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 6px 52px 6px 10px; box-sizing: border-box;
       background: rgba(0,0,0,0.55); color: #fff; font-size: 13px;
       pointer-events: none;
     }
@@ -53,16 +55,16 @@
     #start-screen { background: #ffffff; }
     #start-screen[hidden], #game-screen[hidden],
     #preview-panel[hidden], #practice-assist[hidden], #start-note[hidden] { display: none; }
-    h1 { font-size: clamp(1.2rem, 6vw, 2.5rem); margin: 0 0 0.5rem; }
+    h1 { font-size: clamp(1.2rem, 6vmin, 2.5rem); margin: 0 0 0.5rem; }
     #intro-blurb {
-      line-height: 1.7; font-size: clamp(0.8rem, 4vw, 1.3rem); max-width: 40rem; margin: 0.5rem 0;
+      line-height: 1.7; font-size: clamp(0.8rem, 4vmin, 1.3rem); max-width: 40rem; margin: 0.5rem 0;
     }
-    #start-note { font-weight: 700; font-size: clamp(0.9rem, 4vw, 1.3rem); margin: 0.5rem 0; }
+    #start-note { font-weight: 700; font-size: clamp(0.9rem, 4vmin, 1.3rem); margin: 0.5rem 0; }
     #menu-buttons, #preview-buttons, #practice-assist {
       display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; margin-top: 0.5rem;
     }
     button, .home-link {
-      font: inherit; font-size: clamp(0.9rem, 4vw, 1.25rem);
+      font: inherit; font-size: clamp(0.9rem, 4vmin, 1.25rem);
       padding: 0.6rem 1.2rem; cursor: pointer;
     }
     .home-link {
@@ -71,7 +73,7 @@
     }
     #instruction {
       width: 100%; max-width: 40rem; word-break: break-word;
-      font-size: clamp(1rem, 5vw, 2rem); font-weight: 700; line-height: 1.4;
+      font-size: clamp(1rem, 5vmin, 2rem); font-weight: 700; line-height: 1.4;
       margin: 1rem 0;
     }
     #instruction:empty { margin: 0; }
@@ -80,7 +82,7 @@
 
     /* ── Tutorial icons ── */
     #step-icon, #preview-icon-slot {
-      width: clamp(72px, 22vw, 120px); height: clamp(72px, 22vw, 120px); margin: 0.25rem 0;
+      width: clamp(72px, 22vmin, 120px); height: clamp(72px, 22vmin, 120px); margin: 0.25rem 0;
     }
     #step-icon:empty, #preview-icon-slot:empty { margin: 0; height: 0; }
     #step-icon svg, #preview-icon-slot svg { width: 100%; height: 100%; display: block; }
@@ -131,6 +133,21 @@
       .icon-drums .drum-body, .icon-ear .wave, .icon-tap .ripple,
       .icon-shake .shake-phone, .icon-shake .shake-lines { animation: none !important; }
       .icon-tap .ripple { opacity: 0.6; }
+    }
+
+    /* ── Phones in landscape ── */
+    /* Very little height: tighten spacing so the text fits, and let the start
+       screen scroll as a last resort rather than clipping it. */
+    #start-screen, #game-screen { justify-content: safe center; }
+    @media (orientation: landscape) and (max-height: 500px) {
+      #start-screen, #game-screen { padding: 2.25rem 1rem 0.5rem; }
+      #start-screen { overflow-y: auto; touch-action: pan-y; }
+      h1 { margin-bottom: 0.25rem; }
+      #intro-blurb { line-height: 1.4; margin: 0.25rem 0; max-width: 48rem; }
+      #instruction { margin: 0.4rem 0; }
+      #step-icon, #preview-icon-slot { width: 64px; height: 64px; }
+      .home-link, #stop-btn { margin-top: 0.5rem; }
+      button, .home-link { padding: 0.4rem 1rem; }
     }
   </style>
 </head>
