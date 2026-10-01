@@ -117,11 +117,10 @@ const STEP_PANNERS: AudioNode[] = Array.from({ length: STEPS }, (_, step) => {
     return panner;
 });
 const SLOWDOWN = 1;                 // the game runs this many times slower than the real tempo
-const HOLD_THRESHOLD_MS = 180;        // "threshold" hold-fix: minimum hold before a note sustains
+const HOLD_THRESHOLD_MS = 180;        // minimum hold before a note sustains
 const MIXTAPE_KEY = "p6_mixtape";
 const BEST_KEY = "p6_best";
 const SPEECH_KEY = "p6_speech";
-const LATENCY_KEY = "p6_latency";
 
 interface StepSlot { note: number; instrument: Instrument }
 
@@ -140,7 +139,6 @@ function pitchForSlot(slot: StepSlot): number {
 
 // ── Game state ────────────────────────────────────────────────────────────────
 type Phase = "idle" | "composing" | "done";
-type HoldFix = "threshold" | "single";
 
 let phase: Phase = "idle";
 let bpm = 0;
@@ -149,17 +147,6 @@ let currentStep = 0;
 let pendingIntro = false;             // which start-screen button was pressed
 let randomNoteMode = false;           // placed notes get a random pitch instead of tap-height
 
-// Bluetooth speakers/headsets delay actual audible sound well after the game
-// schedules it, so a tap reacting to "the sound" lands on a step that's
-// already moved on by the time it arrives. latencyMs compensates by
-// attributing a tap to whichever step was current that long ago, instead of
-// literally-current `currentStep` — see stepHistory/perceivedStep() below.
-let latencyMs = 0;
-const stepHistory: { step: number; at: number }[] = [];
-
-// Two ways of fixing the "quick tap accidentally places two notes" bug,
-// switchable from the start screen so they're easy to compare.
-let holdFixMode: HoldFix = "threshold";
 let holdStartAt = 0;
 
 // While the pad is held the note "sustains": each step the playhead moves
@@ -184,21 +171,46 @@ function recordPlacedNote(instrument: MelodicInstrument, step: number): void {
     if (placedNoteStack.length > MAX_UNDO_DEPTH) placedNoteStack.shift();
 }
 
-// Guided intro tutorial — one gated step at a time.
-type IntroKind = "place" | "remove" | "instrument" | "finish";
-interface IntroStepDef { kind: IntroKind; prompt: string; praise: string }
-const INTRO_STEPS: IntroStepDef[] = [
-    { kind: "place", praise: "", prompt:
-        "Beweeg je vinger omhoog en omlaag over het scherm. Tik om een noot te plaatsen." },
-    { kind: "remove", praise: "Goed zo! Je hebt een noot geplaatst.", prompt:
-        "Linksonder wis je de laatst geplaatste noot. Probeer het." },
-    { kind: "instrument", praise: "Mooi, gewist.", prompt:
-        "Rechtsonder wissel je van instrument. Probeer het." },
-    { kind: "finish", praise: "Zo wissel je van instrument.", prompt:
-        "Ben je klaar? Schud je telefoon om het oefenlevel af te ronden." },
+// Guided intro tutorial — a card per step with a Volgende button. Steps with
+// a `gate` keep Volgende disabled until the player has done that action once;
+// the last step (shake) has no Volgende at all — the shake itself finishes it.
+type TutGate = "place" | "instrument" | "remove" | "finish";
+type TutVisual = "song" | "track" | "pitch" | "tap" | "instrument" | "remove" | "shake";
+interface TutStep { visual: TutVisual; gate: TutGate | null; text: string; praise?: string }
+const TUTORIAL_STEPS: TutStep[] = [
+    { visual: "song", gate: null, text:
+        "Je gaat zo je eigen liedje maken. We leggen stap voor stap uit hoe dat werkt." },
+    { visual: "track", gate: null, text:
+        "Dit is je spoor: acht tellen die steeds opnieuw rondgaan. Het vakje dat oplicht is de tel waar je nu bent. Hierop bouw je je liedje." },
+    { visual: "pitch", gate: null, text:
+        "Hoe hoger op het scherm, hoe hoger de noot. Luister: de piano gaat alle noten omhoog en weer omlaag." },
+    { visual: "tap", gate: "place", praise: "Goed zo! Je hebt een noot geplaatst.", text:
+        "Tik op het scherm om een noot te plaatsen, precies op de tel die je dan hoort. Hoe hoger je tikt, hoe hoger de noot. Probeer het!" },
+    { visual: "instrument", gate: "instrument", praise: "Mooi, zo wissel je van instrument.", text:
+        "Rechtsonder wissel je van instrument. Probeer het!" },
+    { visual: "remove", gate: "remove", praise: "Goed, die noot is gewist.", text:
+        "Linksonder wis je de laatst geplaatste noot. Probeer het!" },
+    { visual: "shake", gate: "finish", text:
+        "Klaar met je liedje? Schud je telefoon om het in te leveren. Probeer het nu!" },
 ];
+// Indices of the steps that unlock each control, so earlier steps (which are
+// only explaining) can't be disturbed by stray taps.
+const TUT_PLACE_STEP = TUTORIAL_STEPS.findIndex(s => s.gate === "place");
+const TUT_INSTRUMENT_STEP = TUTORIAL_STEPS.findIndex(s => s.gate === "instrument");
+const TUT_REMOVE_STEP = TUTORIAL_STEPS.findIndex(s => s.gate === "remove");
+const TUT_PITCH_STEP = TUTORIAL_STEPS.findIndex(s => s.visual === "pitch");
+const TUT_TRACK_STEP = TUTORIAL_STEPS.findIndex(s => s.visual === "track");
 let introMode = false;
-let introStep = 0;
+let tutStep = 0;
+let pitchDemoUp = true;               // direction of the piano scale demo in the pitch step
+
+function tutorialAllows(gate: Exclude<TutGate, "finish">): boolean {
+    if (!introMode) return true;
+    const unlockAt = gate === "place" ? TUT_PLACE_STEP
+        : gate === "instrument" ? TUT_INSTRUMENT_STEP
+        : TUT_REMOVE_STEP;
+    return tutStep >= unlockAt;
+}
 
 type Track = (StepSlot | null)[];
 function emptyPattern(): Record<Instrument, Track> {
@@ -232,10 +244,7 @@ const introBtn       = document.getElementById("intro-btn") as HTMLButtonElement
 const gameBtn        = document.getElementById("game-btn") as HTMLButtonElement;
 const stopBtn        = document.getElementById("stop-btn") as HTMLButtonElement;
 const speechToggleEl = document.getElementById("speech-toggle") as HTMLInputElement;
-const holdfixSingleEl = document.getElementById("holdfix-single") as HTMLInputElement;
 const randomNoteToggleEl = document.getElementById("random-note-toggle") as HTMLInputElement;
-const latencySliderEl = document.getElementById("latency-slider") as HTMLInputElement;
-const latencyValueEl = document.getElementById("latency-value")!;
 const startNoteEl    = document.getElementById("start-note")!;
 
 const gridEl        = document.getElementById("grid")!;
@@ -243,8 +252,16 @@ const phaseEl       = document.getElementById("hud-phase")!;
 const bpmEl         = document.getElementById("hud-bpm")!;
 const instrumentEl  = document.getElementById("hud-instrument")!;
 const backingEl     = document.getElementById("hud-backing")!;
-const holdfixEl     = document.getElementById("hud-holdfix")!;
 const logEl         = document.getElementById("log")!;
+const hudEl         = document.getElementById("hud")!;
+const zoneRemoveEl  = document.querySelector("#zone-strip > div:nth-child(1)")!;
+const zoneInstrEl   = document.querySelector("#zone-strip > div:nth-child(2)")!;
+const tutorialEl    = document.getElementById("tutorial")!;
+const tutProgressEl = document.getElementById("tut-progress")!;
+const tutVisualEl   = document.getElementById("tut-visual")!;
+const tutTextEl     = document.getElementById("tut-text")!;
+const tutNextBtn    = document.getElementById("tut-next") as HTMLButtonElement;
+const pitchGuideEl  = document.getElementById("pitch-guide")!;
 
 function log(msg: string) { logEl.textContent = msg; }
 
@@ -261,11 +278,15 @@ for (let s = 0; s < STEPS; s++) {
     }
 }
 
-// The grid is a dev aid only and stays hidden — all feedback is audio.
+// The grid stays hidden in the real game — all feedback is audio. Only the
+// tutorial shows it (from the pitch step on), so height ↔ pitch is visible.
 function renderGrid(): void {
-    gridEl.style.display = "none";
+    gridEl.style.display = introMode && tutStep >= TUT_PITCH_STEP ? "" : "none";
     for (let s = 0; s < STEPS; s++) {
-        const slot = pattern[currentInstrument][s];
+        // The tutorial shows every melodic voice, so a note placed before an
+        // instrument switch stays visible until the remove step wipes it.
+        const slot = pattern[currentInstrument][s]
+            ?? (introMode ? MELODIC_INSTRUMENTS.map(id => pattern[id][s]).find(x => x) ?? null : null);
         for (let r = 0; r < SCALE_DEGREES; r++) {
             const cell = cellEls[s][r];
             const filled = !!slot && slot.note === r;
@@ -280,14 +301,13 @@ function updateHud(): void {
     switch (phase) {
         case "idle":
             phaseEl.textContent = "Tik 3× om te beginnen";
-            bpmEl.textContent = instrumentEl.textContent = backingEl.textContent = holdfixEl.textContent = "";
+            bpmEl.textContent = instrumentEl.textContent = backingEl.textContent = "";
             break;
         case "composing":
             phaseEl.textContent = introMode ? "Oefenlevel — volg de aanwijzingen" : `Opdracht: ${currentBrief.say}`;
             bpmEl.textContent = `${Math.round(bpm / SLOWDOWN)} BPM (langzaam)`;
             instrumentEl.textContent = `instrument: ${INSTRUMENT_LABEL_NL[currentInstrument]}`;
             backingEl.textContent = drumPattern ? `beat: ${drumPattern.name}` : "";
-            holdfixEl.textContent = holdFixMode === "threshold" ? "aanhouden: vertraagd" : "aanhouden: uit";
             break;
         case "done":
             phaseEl.textContent = "Je mixtape is klaar! Tik 3× voor een nieuwe.";
@@ -337,33 +357,28 @@ function playStep(step: number): void {
 
 function tick(): void {
     currentStep = (currentStep + 1) % STEPS;
-    stepHistory.push({ step: currentStep, at: performance.now() });
-    if (stepHistory.length > 32) stepHistory.shift();
     // A held pad press paints the same note onto each new step — but only
-    // once the hold has lasted past HOLD_THRESHOLD_MS (the "threshold" fix),
-    // so a quick tap that happens to straddle a tick never gets an
-    // accidental second note. The "single" fix disables this entirely: a
-    // touch always places exactly one note.
-    const longEnough = holdFixMode === "threshold" && (performance.now() - holdStartAt) >= HOLD_THRESHOLD_MS;
+    // once the hold has lasted past HOLD_THRESHOLD_MS, so a quick tap that
+    // happens to straddle a tick never gets an accidental second note.
+    const longEnough = (performance.now() - holdStartAt) >= HOLD_THRESHOLD_MS;
     if (phase === "composing" && padHeld && heldNote !== null && longEnough) {
         pattern[currentInstrument][currentStep] = { note: heldNote, instrument: currentInstrument };
         recordPlacedNote(currentInstrument, currentStep);
     }
+    // Pitch demo: the piano walks up through all notes over one bar, then
+    // back down over the next, alternating for as long as the step is shown.
+    if (introMode && tutStep === TUT_PITCH_STEP && currentStep === 0) {
+        pitchDemoUp = !pitchDemoUp;
+        writePitchDemo();
+    }
     playStep(currentStep);
     renderGrid();
+    renderTutorialPlayhead();
 }
 
-// Which step was actually sounding `latencyMs` ago — i.e. the step a tap
-// reacting to audible sound should be attributed to, once output latency
-// (e.g. a Bluetooth speaker) is accounted for. Falls back to the live
-// currentStep when latencyMs is 0 or there isn't enough history yet.
-function perceivedStep(): number {
-    if (latencyMs <= 0) return currentStep;
-    const targetTime = performance.now() - latencyMs;
-    for (let i = stepHistory.length - 1; i >= 0; i--) {
-        if (stepHistory[i].at <= targetTime) return stepHistory[i].step;
-    }
-    return currentStep;
+// The step a tap writes to: the live playhead (which is -1 until the first tick).
+function tapStep(): number {
+    return Math.max(0, currentStep);
 }
 
 function previewSlot(slot: StepSlot, step?: number): void {
@@ -373,8 +388,8 @@ function previewSlot(slot: StepSlot, step?: number): void {
 
 // ── Composing actions ────────────────────────────────────────────────────────
 function setNote(note: number): void {
-    if (phase !== "composing") return;
-    const step = perceivedStep();
+    if (phase !== "composing" || !tutorialAllows("place")) return;
+    const step = tapStep();
 
     const slot: StepSlot = { note, instrument: currentInstrument };
     pattern[currentInstrument][step] = slot;
@@ -384,12 +399,12 @@ function setNote(note: number): void {
     earcon(ctx, "place");
     log(`stap ${step + 1}: noot ${note + 1} (${INSTRUMENT_LABEL_NL[currentInstrument]})`);
     renderGrid();
-    introAdvance("place");
+    tutorialGate("place");
 }
 
 function nudgeNote(direction: 1 | -1): void {
-    if (phase !== "composing") return;
-    const step = perceivedStep();
+    if (phase !== "composing" || !tutorialAllows("place")) return;
+    const step = tapStep();
 
     const existing = pattern[currentInstrument][step]
         ?? { note: Math.floor(SCALE_DEGREES / 2), instrument: currentInstrument };
@@ -409,7 +424,7 @@ function nudgeNote(direction: 1 | -1): void {
 // playhead has already moved on by the time you react, and pressing it
 // repeatedly walks back through everything just placed.
 function removeNote(): void {
-    if (phase !== "composing") return;
+    if (phase !== "composing" || !tutorialAllows("remove")) return;
     const entry = placedNoteStack.pop();
     if (!entry) {
         speak("nog geen noot geplaatst");
@@ -426,11 +441,11 @@ function removeNote(): void {
     speak(msg);
     log(msg);
     renderGrid();
-    introAdvance("remove");
+    tutorialGate("remove");
 }
 
 function switchInstrument(): void {
-    if (phase !== "composing") return;
+    if (phase !== "composing" || !tutorialAllows("instrument")) return;
     const options = currentBrief.instruments;
     const i = (options.indexOf(currentInstrument) + 1) % options.length;
     currentInstrument = options[i];
@@ -438,7 +453,7 @@ function switchInstrument(): void {
     speak(INSTRUMENT_LABEL_NL[currentInstrument]);
     updateHud();
     renderGrid();
-    introAdvance("instrument");
+    tutorialGate("instrument");
 }
 
 // ── Briefs / mixtape ─────────────────────────────────────────────────────────
@@ -536,46 +551,166 @@ function persistMixtape(): void {
     } catch { /* private mode / disabled — non-fatal */ }
 }
 
-// ── Guided intro (gated tutorial) ───────────────────────────────────────────
+// ── Guided intro (step-by-step tutorial) ────────────────────────────────────
 // Reuses the first real brief as a backdrop — nothing from the intro is saved.
+// Unlike the real game, the tutorial is *visual* too: a card per step with a
+// small pictogram, and (from the pitch step on) the note grid itself.
+
+const SONG_SVG = `<svg class="tut-notes" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <g class="note"><ellipse cx="24" cy="70" rx="10" ry="7.5" fill="#4cafef"/><rect x="31" y="30" width="4" height="40" fill="#4cafef"/></g>
+  <g class="note"><ellipse cx="54" cy="60" rx="10" ry="7.5" fill="#ff8a3d"/><rect x="61" y="20" width="4" height="40" fill="#ff8a3d"/></g>
+  <g class="note"><ellipse cx="82" cy="74" rx="10" ry="7.5" fill="#4caf50"/><rect x="89" y="34" width="4" height="40" fill="#4caf50"/></g>
+</svg>`;
+
+const TAP_SVG = `<svg class="tut-tap" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <rect x="14" y="8" width="72" height="84" rx="8" fill="none" stroke="#bbb" stroke-width="3" stroke-dasharray="6 5"/>
+  <circle class="ripple" cx="50" cy="30" r="20" fill="none" stroke="#4cafef" stroke-width="4"/>
+  <circle cx="50" cy="30" r="9" fill="#4cafef"/>
+</svg>`;
+
+/** Arrow pointing to a bottom corner, for the instrument/remove steps. */
+function cornerArrowSvg(side: "left" | "right"): string {
+    const flip = side === "left" ? ` transform="translate(100 0) scale(-1 1)"` : "";
+    return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g${flip}>
+  <line x1="22" y1="22" x2="74" y2="74" stroke="#4cafef" stroke-width="8" stroke-linecap="round"/>
+  <polygon points="86,86 52,80 80,52" fill="#4cafef"/></g></svg>`;
+}
+
+const SHAKE_SVG = `<svg class="tut-shake" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <g class="phone">
+    <rect x="32" y="12" width="36" height="76" rx="7" fill="#333"/>
+    <rect x="37" y="20" width="26" height="56" rx="2" fill="#bfe3ff"/>
+    <circle cx="50" cy="82" r="3" fill="#666"/>
+  </g>
+  <path d="M18 34 q-8 16 0 32 M82 34 q8 16 0 32" fill="none" stroke="#4cafef" stroke-width="4" stroke-linecap="round"/>
+</svg>`;
+
+let trackTileEls: HTMLDivElement[] = [];
+
+function renderTutorialVisual(visual: TutVisual): void {
+    trackTileEls = [];
+    switch (visual) {
+        case "song":       tutVisualEl.innerHTML = SONG_SVG; break;
+        case "pitch":      tutVisualEl.innerHTML = ""; break; // the grid + #pitch-guide are the visual
+        case "tap":        tutVisualEl.innerHTML = TAP_SVG; break;
+        case "instrument": tutVisualEl.innerHTML = cornerArrowSvg("right"); break;
+        case "remove":     tutVisualEl.innerHTML = cornerArrowSvg("left"); break;
+        case "shake":      tutVisualEl.innerHTML = SHAKE_SVG; break;
+        case "track": {
+            const row = document.createElement("div");
+            row.className = "track-row";
+            for (let s = 0; s < STEPS; s++) {
+                const tile = document.createElement("div");
+                tile.className = "tile";
+                row.appendChild(tile);
+                trackTileEls.push(tile);
+            }
+            tutVisualEl.replaceChildren(row);
+            break;
+        }
+    }
+    tutVisualEl.style.width = visual === "track" ? "100%" : "";
+}
+
+/** Lights the playhead's tile in the track-row visual (no-op otherwise). */
+function renderTutorialPlayhead(): void {
+    trackTileEls.forEach((tile, s) => tile.classList.toggle("on", s === currentStep));
+}
+
+function writePitchDemo(): void {
+    pattern.piano = Array.from({ length: STEPS }, (_, s): StepSlot => ({
+        note: pitchDemoUp ? s : SCALE_DEGREES - 1 - s,
+        instrument: "piano",
+    }));
+}
+
+function showTutorialStep(index: number): void {
+    tutStep = index;
+    const step = TUTORIAL_STEPS[index];
+
+    tutProgressEl.textContent = `Stap ${index + 1} van ${TUTORIAL_STEPS.length}`;
+    tutTextEl.textContent = step.text;
+    renderTutorialVisual(step.visual);
+    zoneInstrEl.classList.toggle("zone-highlight", step.gate === "instrument");
+    zoneRemoveEl.classList.toggle("zone-highlight", step.gate === "remove");
+    tutNextBtn.classList.toggle("hidden", step.gate === "finish");
+    tutNextBtn.disabled = step.gate !== null;
+    pitchGuideEl.classList.toggle("hidden", index < TUT_PITCH_STEP);
+
+    // The beat only starts once the track itself is introduced.
+    if (index === TUT_TRACK_STEP) startSequencer();
+    // Restart the bar so the demo always opens with a full climb up: the
+    // first tick lands on step 0, which flips pitchDemoUp to true.
+    if (index === TUT_PITCH_STEP) {
+        currentInstrument = "piano";
+        pitchDemoUp = false;
+        currentStep = -1;
+        startSequencer();
+    }
+    // The player builds on an empty piano track, not on the scale demo.
+    if (index === TUT_PLACE_STEP) {
+        pattern.piano = Array(STEPS).fill(null);
+        placedNoteStack.length = 0;
+    }
+
+    renderGrid();
+    renderTutorialPlayhead();
+    speak(step.text);
+    log("");
+}
+
 function startIntro(): void {
     const brief = BRIEFS[0];
     currentBrief = brief;
     currentScale = brief.scale;
     currentVolume = brief.volume;
-    currentInstrument = brief.instruments[0];
+    currentInstrument = "piano";
     placedNoteStack.length = 0;
 
     drumPattern = generateDrumPattern(STEPS, brief.grooveStyle);
     applyDrumPattern(drumPattern);
 
     introMode = true;
-    introStep = 0;
-
-    startSequencer();
-    updateHud();
-    renderGrid();
-    speak(`Welkom bij het oefenlevel. ${INTRO_STEPS[0].prompt}`);
-    log(INTRO_STEPS[0].prompt);
+    hudEl.classList.add("hidden");
+    tutorialEl.classList.remove("hidden");
+    // The sequencer stays silent until the track step (see showTutorialStep).
+    showTutorialStep(0);
 }
 
-// Advances the tutorial only if `kind` is exactly the step currently being
-// waited on — self-guarding, so repeating an already-passed action (or doing
-// the wrong thing) is silently ignored rather than skipping steps.
-function introAdvance(kind: IntroKind): void {
-    if (!introMode) return;
-    if (INTRO_STEPS[introStep]?.kind !== kind) return;
+function hideTutorial(): void {
+    tutorialEl.classList.add("hidden");
+    hudEl.classList.remove("hidden");
+    zoneInstrEl.classList.remove("zone-highlight");
+    zoneRemoveEl.classList.remove("zone-highlight");
+    pitchGuideEl.classList.add("hidden");
+    trackTileEls = [];
+    tutStep = 0;
+}
 
-    introStep++;
-    if (introStep >= INTRO_STEPS.length) {
+// Unlocks Volgende once the player has done what the current step asks —
+// self-guarding, so repeating an already-passed action (or doing an action
+// another step is about) is silently ignored. The shake step has no Volgende:
+// the shake itself finishes the practice.
+function tutorialGate(kind: TutGate): void {
+    if (!introMode) return;
+    const step = TUTORIAL_STEPS[tutStep];
+    if (step?.gate !== kind) return;
+
+    if (kind === "finish") {
         finishIntro();
         return;
     }
-    const next = INTRO_STEPS[introStep];
+    if (!tutNextBtn.disabled) return; // already unlocked — don't repeat the praise
+    tutNextBtn.disabled = false;
     earcon(ctx, "done");
-    speak(`${next.praise} ${next.prompt}`.trim());
-    log(next.prompt);
+    const prefix = kind === "instrument" ? `${INSTRUMENT_LABEL_NL[currentInstrument]}. ` : "";
+    speak(`${prefix}${step.praise ?? ""} Druk op volgende.`);
 }
+
+tutNextBtn.addEventListener("click", () => {
+    if (!introMode || tutNextBtn.disabled) return;
+    if (tutStep + 1 < TUTORIAL_STEPS.length) showTutorialStep(tutStep + 1);
+});
 
 function finishIntro(): void {
     stopSequencer();
@@ -584,6 +719,7 @@ function finishIntro(): void {
     window.setTimeout(() => {
         phase = "idle";
         introMode = false;
+        hideTutorial();
         showStartScreen();
         startNoteEl.classList.remove("hidden");
         startNoteEl.textContent = "Oefenlevel voltooid! Druk op ‘Start spel’ voor het hele spel.";
@@ -613,6 +749,7 @@ function stopGame(): void {
     stopSequencer();
     phase = "idle";
     introMode = false;
+    hideTutorial();
     if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
     showStartScreen();
     startNoteEl.classList.add("hidden");
@@ -621,10 +758,7 @@ function stopGame(): void {
 function applyStartOptions(): void {
     setSpeechEnabled(speechToggleEl.checked);
     try { localStorage.setItem(SPEECH_KEY, speechToggleEl.checked ? "1" : "0"); } catch { /* ignore */ }
-    holdFixMode = holdfixSingleEl.checked ? "single" : "threshold";
     randomNoteMode = randomNoteToggleEl.checked;
-    latencyMs = Number(latencySliderEl.value);
-    try { localStorage.setItem(LATENCY_KEY, String(latencyMs)); } catch { /* ignore */ }
 }
 
 try {
@@ -633,24 +767,15 @@ try {
 } catch { /* ignore */ }
 setSpeechEnabled(speechToggleEl.checked);
 
-// Bluetooth output latency is a property of the physical headset, not the
-// session, so (unlike hold-fix/random-note) this is worth remembering.
-try {
-    const savedLatency = localStorage.getItem(LATENCY_KEY);
-    if (savedLatency !== null) latencySliderEl.value = savedLatency;
-} catch { /* ignore */ }
-latencyValueEl.textContent = latencySliderEl.value;
-latencySliderEl.addEventListener("input", () => {
-    latencyValueEl.textContent = latencySliderEl.value;
-});
-
+// The tutorial starts straight away at the first brief's tempo — no 3-tap
+// start before a tutorial that hasn't explained the controls yet. This click
+// is a real user gesture, so audio unlock + iOS motion permission work here.
 introBtn.addEventListener("click", () => {
     applyStartOptions();
     pendingIntro = true;
     startNoteEl.classList.add("hidden");
     showGameScreen();
-    updateHud();
-    speak("Tik drie keer om te beginnen.");
+    startGame(BRIEFS[0].tempo, true);
 });
 gameBtn.addEventListener("click", () => {
     applyStartOptions();
@@ -672,7 +797,6 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
     currentStep = -1;
     pattern = emptyPattern();
     mixtape = [];
-    stepHistory.length = 0;
 
     void shake.start();
 
@@ -690,7 +814,7 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
 // run of note-placement taps can never accidentally trigger it.
 shake.onShake(() => {
     if (phase !== "composing") return;
-    if (introMode) introAdvance("finish");
+    if (introMode) tutorialGate("finish");
     else finishTrack();
 });
 

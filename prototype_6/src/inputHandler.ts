@@ -96,6 +96,10 @@ export class InputHandler {
     }
 
     private handlePointerDown = (e: PointerEvent): void => {
+        // Real HTML controls (e.g. the tutorial's Volgende button) are marked
+        // data-ui — leave them alone so the pad's setPointerCapture() doesn't
+        // steal their native click.
+        if ((e.target as Element | null)?.closest?.("[data-ui]")) return;
         const zone = this.zoneFor(e.clientX, e.clientY);
 
         switch (zone) {

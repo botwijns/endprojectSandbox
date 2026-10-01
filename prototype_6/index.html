@@ -25,7 +25,6 @@
       display: flex; flex-direction: column; gap: 0.6rem; align-items: flex-start;
       font-size: 0.9rem; text-align: left;
     }
-    #start-options fieldset { border: 1px solid rgb(0 0 0 / 0.2); border-radius: 8px; padding: 0.5rem 0.75rem; }
     #start-options label { display: block; margin: 0.15rem 0; }
     #start-note { font-weight: 700; }
     #menu-buttons { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
@@ -83,6 +82,76 @@
       font-size: 12px; padding: 4px 10px; cursor: pointer;
       border-radius: 6px; border: 1px solid rgb(0 0 0 / 0.3); background: rgba(255,255,255,0.85);
     }
+
+    /* ── Tutorial card (oefenlevel only) ─────────────────────────────────── */
+    /* The card lets taps fall through to the pad; only the Volgende button
+       (data-ui, see inputHandler.ts) takes its own clicks. */
+    #tutorial {
+      position: fixed; z-index: 10; top: 34px; left: 50%; transform: translateX(-50%);
+      width: min(92vw, 26rem); box-sizing: border-box;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      padding: 10px 14px 12px; text-align: center;
+      background: rgba(255,255,255,0.8); border: 1px solid rgb(0 0 0 / 0.18);
+      border-radius: 12px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+      pointer-events: none;
+    }
+    #tut-progress { font-size: 12px; color: rgb(0 0 0 / 0.55); font-weight: 600; }
+    #tut-text { margin: 0; font-size: clamp(0.9rem, 4vw, 1.05rem); line-height: 1.4; }
+    #tut-visual:empty { display: none; }
+    #tut-visual svg { width: 72px; height: 72px; display: block; }
+    #tut-next {
+      pointer-events: auto; font-size: 1rem; padding: 0.5rem 1.4rem; cursor: pointer;
+      border-radius: 8px; border: 1px solid rgb(0 0 0 / 0.3); background: #4cafef; color: #fff;
+      font-weight: 600;
+    }
+    #tut-next:disabled { background: #e2e2e2; color: rgb(0 0 0 / 0.4); cursor: default; }
+
+    .track-row { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; width: 100%; }
+    .track-row .tile {
+      height: 28px; border-radius: 5px; background: rgb(0 0 0 / 0.08);
+      transition: background 60ms, transform 60ms;
+    }
+    .track-row .tile.on { background: #4cafef; transform: scale(1.08); }
+
+    /* Vertical hoog/laag key along the right edge, spanning the pad area
+       (0–86% of the height, matching STRIP_Y in inputHandler.ts). */
+    #pitch-guide {
+      position: fixed; z-index: 9; right: 4px; top: 1%; height: 84%; width: 34px;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 700; color: #1b6fa8; pointer-events: none;
+    }
+    #pitch-guide .shaft {
+      flex: 1; width: 4px; border-radius: 2px;
+      background: linear-gradient(#1b6fa8, rgb(76 175 239 / 0.25));
+    }
+
+    #zone-strip > div.zone-highlight {
+      border: 3px solid #4cafef; color: #1b6fa8; font-weight: 700;
+      animation: zone-pulse 1s ease-in-out infinite;
+    }
+    @keyframes zone-pulse {
+      0%, 100% { background: rgb(76 175 239 / 0.08); }
+      50%      { background: rgb(76 175 239 / 0.35); }
+    }
+
+    .tut-notes .note { animation: note-float 1.6s ease-in-out infinite; }
+    .tut-notes .note:nth-child(2) { animation-delay: 0.3s; }
+    .tut-notes .note:nth-child(3) { animation-delay: 0.6s; }
+    @keyframes note-float {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-6px); }
+    }
+    .tut-tap .ripple { transform-origin: 50px 30px; animation: tap-ripple 1.2s ease-out infinite; }
+    @keyframes tap-ripple {
+      0%   { transform: scale(0.4); opacity: 0.9; }
+      100% { transform: scale(1.4); opacity: 0; }
+    }
+    .tut-shake .phone { transform-origin: 50px 50px; animation: phone-shake 0.9s ease-in-out infinite; }
+    @keyframes phone-shake {
+      0%, 100% { transform: rotate(0); }
+      20% { transform: rotate(-14deg); } 40% { transform: rotate(12deg); }
+      60% { transform: rotate(-10deg); } 80% { transform: rotate(6deg); }
+    }
   </style>
 </head>
 <body>
@@ -96,18 +165,6 @@
   <div id="start-options">
     <label><input type="checkbox" id="speech-toggle" checked> Spraak (voice-over)</label>
     <label><input type="checkbox" id="random-note-toggle"> Willekeurige toonhoogte bij plaatsen</label>
-    <fieldset>
-      <legend>Aanhouden van een noot</legend>
-      <label><input type="radio" name="holdfix" value="threshold" id="holdfix-threshold" checked> Met vertraging (aanbevolen)</label>
-      <label><input type="radio" name="holdfix" value="single" id="holdfix-single"> E&eacute;n noot per tik (geen aanhouden)</label>
-    </fieldset>
-    <fieldset>
-      <legend>Geluidsvertraging</legend>
-      <label>Gebruik je een bluetooth-koptelefoon of -speaker? Verhoog dit als noten te laat lijken te vallen.<br>
-        <input type="range" id="latency-slider" min="0" max="400" step="10" value="0">
-        <span id="latency-value">0</span> ms
-      </label>
-    </fieldset>
   </div>
   <p id="start-note" class="hidden"></p>
   <div id="menu-buttons">
@@ -122,7 +179,6 @@
     <span id="hud-bpm"></span>
     <span id="hud-instrument"></span>
     <span id="hud-backing"></span>
-    <span id="hud-holdfix"></span>
   </div>
 
   <div id="grid"></div>
@@ -132,6 +188,16 @@
   </div>
   <div id="log"></div>
   <button id="stop-btn">Stop</button>
+
+  <div id="tutorial" class="hidden">
+    <div id="tut-progress"></div>
+    <div id="tut-visual" aria-hidden="true"></div>
+    <p id="tut-text"></p>
+    <button id="tut-next" data-ui>Volgende</button>
+  </div>
+  <div id="pitch-guide" class="hidden" aria-hidden="true">
+    <span>hoog</span><div class="shaft"></div><span>laag</span>
+  </div>
 </div>
 
 <!-- WebAudioFont instrument banks live in the shared repo-root /public/fonts
