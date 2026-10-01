@@ -4,6 +4,7 @@ import {createInitialState,  generateNumberSequence, generateSequence} from "./g
 import {SynthManager} from "./audio/SynthManager.ts";
 import {InstrumentManager, INSTRUMENTS, type InstrumentDef} from "./audio/InstrumentManager.ts";
 import {Howl, Howler} from "howler";
+import { enterFullscreen } from "../../src/fullscreen.ts";
 
 const debug= !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
 const synth = new SynthManager();
@@ -1114,8 +1115,9 @@ function updateUI(): void {
     renderStepIcon();
     updateInstruction();
 }
-introBtn.addEventListener("click", () => { startNoteEl.hidden = true; startGame(true); });
-gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; startGame(false); });
+// starting from a button click (a user gesture) is when fullscreen is allowed
+introBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(true); });
+gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(false); });
 stopBtn.addEventListener("click", () => stopGame());
 previewRepeatBtn.addEventListener("click", () => repeatExplain(runId));
 previewNextBtn.addEventListener("click", () => advanceSegment(runId));

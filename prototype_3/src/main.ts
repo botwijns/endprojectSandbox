@@ -3,6 +3,7 @@ import { InputHandler } from "./inputHandler.ts";
 import { createInitialState, generateSequence, type Direction } from "./gameState.ts";
 import { SynthManager } from "./audio/SynthManager.ts";
 import {Howl , Howler} from "howler";
+import { enterFullscreen } from "../../src/fullscreen.ts";
 // const debug = true
 const synth = new SynthManager();
 const input = new InputHandler();
@@ -191,6 +192,7 @@ function updateUI(): void {
     }[state.phase];
 }
 startBtn.addEventListener("click", async () => {
+    void enterFullscreen();
     // Unlock AudioContext on the user gesture
     Howler.ctx?.resume();
     // audio.resume();

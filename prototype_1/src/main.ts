@@ -3,6 +3,12 @@ import { GameLoop } from "./gameLoop.ts";
 import { InputHandler } from "./inputHandler.ts";
 import { createInitialState, generateSequence, type Direction } from "./gameState.ts";
 import { SynthManager, NOTE } from "./audio/SynthManager.ts";
+import { enterFullscreen } from "../../src/fullscreen.ts";
+
+// "Klik op de pagina om hem te starten": the first tap or key press also
+// switches to fullscreen (needs a user gesture, so it can't happen on load).
+window.addEventListener("pointerdown", () => void enterFullscreen(), { once: true });
+window.addEventListener("keydown", () => void enterFullscreen(), { once: true });
 
 const synth = new SynthManager();
 const audio = new AudioManager();

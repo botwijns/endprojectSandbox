@@ -9,6 +9,7 @@ import type { GeneratedSong, Question } from "./types.ts";
 import {
     DRUMS_SVG, EAR_SVG, PHONE_ZONES_2_SVG, PHONE_ZONES_4_SVG, TAP_SVG, DOUBLE_TAP_SVG, SHAKE_SVG,
 } from "./introIcons.ts";
+import { enterFullscreen } from "../../src/fullscreen.ts";
 
 // ── Eyes-free "wat hoor je?" music quiz ──────────────────────────────────────
 // Every question generates a brand-new song from a real music-theory engine and
@@ -679,6 +680,7 @@ input.onAction((action: QuizAction) => {
     switch (action.type) {
         case "start":
             // 3 taps: start (or restart, once a round is done) the real quiz
+            void enterFullscreen();
             startGame(false);
             return;
         case "optionPreview":
@@ -693,8 +695,9 @@ input.onAction((action: QuizAction) => {
     }
 });
 
-introBtn.addEventListener("click", () => { startNoteEl.hidden = true; startGame(true); });
-gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; startGame(false); });
+// starting from a button click (a user gesture) is when fullscreen is allowed
+introBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(true); });
+gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(false); });
 stopBtn.addEventListener("click", () => stopGame());
 previewRepeatBtn.addEventListener("click", () => playPreviewStep(runId));
 previewNextBtn.addEventListener("click", () => advancePreview(runId));
