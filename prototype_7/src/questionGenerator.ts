@@ -1,5 +1,5 @@
 import { GeneratedSong, Question, Difficulty, AudioOption } from "./types.ts";
-import { GENRES, GenreDefinition, generateSongFromParams, generateMotifSong, SongParams, pitchClassName, pitchForLabelNearOctave, chordQuality, INSTRUMENT_FAMILY, BASS_STYLE } from "./songGenerator.ts";
+import { GENRES, GenreDefinition, generateSong, resolveGenre, generateSongFromParams, generateMotifSong, SongParams, pitchClassName, pitchForLabelNearOctave, chordQuality, INSTRUMENT_FAMILY, BASS_STYLE } from "./songGenerator.ts";
 import { KNOWN_SONGS, buildKnownSong, knownSongBars, KNOWN_SONG_DENSITY } from "./knownSongs.ts";
 import { BASE_RATING } from "./rating.ts";
 
@@ -276,13 +276,13 @@ function ratingForTrait(trait: TraitDefinition, params: SongParams): number {
 }
 
 /** Picks (bars, bass, chords, drums, density) for `genre` whose rating for `trait` lands as close as possible to `targetRating`. */
-export function pickSongParamsForTrait(trait: TraitDefinition, genre: GenreDefinition, targetRating: number): SongParams {
+export function pickSongParamsForTrait(trait: TraitDefinition, genre: GenreDefinition, targetRating: number, maxBars = Infinity): SongParams {
   const chordsOptions = trait.requiresChords ? [true] : [true, false];
   const drumsOptions = genre.hasDrums ? [true, false] : [false];
 
   let best: SongParams | null = null;
   let bestDist = Infinity;
-  for (const bars of BARS_CANDIDATES) {
+  for (const bars of BARS_CANDIDATES.filter((b) => b <= maxBars)) {
     for (const density of DENSITY_CANDIDATES) {
       for (const bass of [true, false]) {
         for (const drums of drumsOptions) {
@@ -343,10 +343,12 @@ const MAX_APPLICABILITY_RETRIES = 5;
 function generateSongForTrait(
   trait: TraitDefinition,
   targetRating: number,
-  forcedSongId?: string
+  forcedSongId?: string,
+  maxBars?: number
 ): { song: GeneratedSong; songRating: number } {
-  // Traits with their own builder need control over the melody, so they never use a known song.
-  const knownEntry = trait.buildSong
+  // Traits with their own builder need control over the melody, so they never
+  // use a known song - nor does a length-capped song, as a known song's length is fixed.
+  const knownEntry = trait.buildSong || maxBars !== undefined
     ? undefined
     : forcedSongId
     ? KNOWN_SONGS.find((s) => s.id === forcedSongId)
@@ -367,7 +369,7 @@ function generateSongForTrait(
   }
 
   const genre = pickRandom(GENRES);
-  const params = pickSongParamsForTrait(trait, genre, targetRating);
+  const params = pickSongParamsForTrait(trait, genre, targetRating, maxBars);
   const songRating = ratingForTrait(trait, params);
   const build = trait.buildSong ?? generateSongFromParams;
   let song = build(genre, params);
@@ -409,6 +411,12 @@ export interface GeneratorOptions {
   recentTraitIds?: string[];
   /** When set, always use this KNOWN_SONGS entry instead of a random/generated song - for auditioning a specific song against the quiz. */
   forcedSongId?: string;
+  /** When set, always ask this trait instead of picking one - used by the intro's practice questions. */
+  forcedTraitId?: string;
+  /** When set, aim the song's difficulty at this rating instead of the player's rating for the trait. */
+  targetRating?: number;
+  /** When set, never generate a song longer than this many bars (and skip known songs) - keeps the intro's practice songs short. */
+  maxBars?: number;
 }
 
 /**
@@ -417,9 +425,25 @@ export interface GeneratorOptions {
  * player's current rating for that trait (an Elo match between the two).
  */
 export function generateQuestion(options: GeneratorOptions): Question {
-  const { playerRatings, recentTraitIds = [], forcedSongId } = options;
-  const trait = pickTrait(recentTraitIds);
-  const targetRating = playerRatings[trait.id] ?? BASE_RATING;
-  const { song, songRating } = generateSongForTrait(trait, targetRating, forcedSongId);
+  const { playerRatings, recentTraitIds = [], forcedSongId, forcedTraitId, maxBars } = options;
+  const trait = (forcedTraitId && TRAITS.find((t) => t.id === forcedTraitId)) || pickTrait(recentTraitIds);
+  const targetRating = options.targetRating ?? playerRatings[trait.id] ?? BASE_RATING;
+  const { song, songRating } = generateSongForTrait(trait, targetRating, forcedSongId, maxBars);
   return buildQuestionFromTrait(trait, song, songRating);
+}
+
+/**
+ * A short, sparse song with drums for the intro's "met / zonder drums" preview.
+ * The "zonder" half is the same object with `drums` removed, so the player
+ * hears the exact same melody both times.
+ */
+export function generatePreviewSong(): GeneratedSong {
+  // fixed, moderate tempo/metre (generateSongFromParams randomizes both) so
+  // the demo stays short: 4 bars of 4 at 110 bpm is roughly 9 seconds
+  return generateSong({
+    ...resolveGenre("pop"),
+    bars: 4, bpb: 4, bpm: 110, density: 0.5,
+    bass: false, chords: false, drums: true,
+    genre: "pop",
+  });
 }

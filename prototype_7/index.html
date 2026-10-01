@@ -41,6 +41,97 @@
     body.answers-2 #zone-a { height: 100%; }
     body.answers-2 #zone-b { height: 100%; }
     body.answers-2 #zone-c, body.answers-2 #zone-d { display: none; }
+    /* no answer can be given on the start screen or during the intro preview */
+    body.no-zones .zone { display: none; }
+
+    /* ── Start screen / game screen (ported from prototype 5's style.css) ── */
+    #start-screen, #game-screen {
+      position: fixed; inset: 0; z-index: 6;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 3rem 1rem 1rem; box-sizing: border-box; text-align: center;
+    }
+    #start-screen { background: #ffffff; }
+    #start-screen[hidden], #game-screen[hidden],
+    #preview-panel[hidden], #practice-assist[hidden], #start-note[hidden] { display: none; }
+    h1 { font-size: clamp(1.2rem, 6vw, 2.5rem); margin: 0 0 0.5rem; }
+    #intro-blurb {
+      line-height: 1.7; font-size: clamp(0.8rem, 4vw, 1.3rem); max-width: 40rem; margin: 0.5rem 0;
+    }
+    #start-note { font-weight: 700; font-size: clamp(0.9rem, 4vw, 1.3rem); margin: 0.5rem 0; }
+    #menu-buttons, #preview-buttons, #practice-assist {
+      display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; margin-top: 0.5rem;
+    }
+    button, .home-link {
+      font: inherit; font-size: clamp(0.9rem, 4vw, 1.25rem);
+      padding: 0.6rem 1.2rem; cursor: pointer;
+    }
+    .home-link {
+      display: inline-block; margin-top: 1.25rem; color: #111; text-decoration: none;
+      border: 2px solid rgb(0 0 0 / 0.35); border-radius: 6px; background: #f2f2f2;
+    }
+    #instruction {
+      width: 100%; max-width: 40rem; word-break: break-word;
+      font-size: clamp(1rem, 5vw, 2rem); font-weight: 700; line-height: 1.4;
+      margin: 1rem 0;
+    }
+    #instruction:empty { margin: 0; }
+    #preview-panel { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+    #stop-btn { margin-top: 1.5rem; }
+
+    /* ── Tutorial icons ── */
+    #step-icon, #preview-icon-slot {
+      width: clamp(72px, 22vw, 120px); height: clamp(72px, 22vw, 120px); margin: 0.25rem 0;
+    }
+    #step-icon:empty, #preview-icon-slot:empty { margin: 0; height: 0; }
+    #step-icon svg, #preview-icon-slot svg { width: 100%; height: 100%; display: block; }
+
+    .icon-drums .drum-body { transform-box: fill-box; transform-origin: 50% 100%; }
+    .icon-drums.playing .drum-body { animation: drum-shake 0.25s ease-in-out infinite; }
+    .icon-drums .no-overlay { opacity: 0; transition: opacity 0.2s ease; }
+    .icon-drums.crossed .no-overlay { opacity: 0.85; }
+
+    .icon-ear .wave { transform-box: fill-box; transform-origin: 0% 50%; opacity: 0.35; }
+    .icon-ear.listening .wave { animation: wave-pulse 1.6s ease-in-out infinite; }
+    .icon-ear.listening .wave:nth-of-type(2) { animation-delay: 0.3s; }
+    .icon-ear.listening .wave:nth-of-type(3) { animation-delay: 0.6s; }
+
+    .icon-zones [class^="zone-"] { fill: #bfe3ff; transition: fill 0.15s ease; }
+    .icon-zones.lit-0 .zone-0, .icon-zones.lit-1 .zone-1,
+    .icon-zones.lit-2 .zone-2, .icon-zones.lit-3 .zone-3 { fill: #f4a261; }
+
+    .icon-tap .ripple { transform-box: fill-box; transform-origin: 50% 50%; opacity: 0; animation: tap-ripple 1.4s ease-out infinite; }
+    .icon-tap .ripple-2 { animation-delay: 0.3s; }
+
+    .icon-shake .shake-phone { transform-box: fill-box; transform-origin: 50% 50%; animation: shake-wiggle 0.9s ease-in-out infinite; }
+    .icon-shake .shake-lines { animation: shake-lines 0.9s ease-in-out infinite; }
+
+    @keyframes drum-shake {
+      0%, 100% { transform: translateX(0) rotate(0deg); }
+      50%      { transform: translateX(2px) rotate(-3deg); }
+    }
+    @keyframes wave-pulse {
+      0%   { opacity: 0.15; transform: scale(0.85); }
+      50%  { opacity: 0.7;  transform: scale(1.1); }
+      100% { opacity: 0.15; transform: scale(0.85); }
+    }
+    @keyframes tap-ripple {
+      0%   { opacity: 0.9; transform: scale(0.4); }
+      100% { opacity: 0;   transform: scale(1.4); }
+    }
+    @keyframes shake-wiggle {
+      0%, 100% { transform: rotate(0deg); }
+      25%      { transform: rotate(-12deg); }
+      75%      { transform: rotate(12deg); }
+    }
+    @keyframes shake-lines {
+      0%, 100% { opacity: 0.2; }
+      25%, 75% { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .icon-drums .drum-body, .icon-ear .wave, .icon-tap .ripple,
+      .icon-shake .shake-phone, .icon-shake .shake-lines { animation: none !important; }
+      .icon-tap .ripple { opacity: 0.6; }
+    }
   </style>
 </head>
 <body>
@@ -50,13 +141,50 @@
   <span id="hud-score"></span>
   <span id="hud-tier"></span>
   <span id="hud-results"></span>
-  <select id="hud-song-picker" title="dwing een specifiek lied af (dev preview)"></select>
+  <select id="hud-song-picker" data-ui title="dwing een specifiek lied af (dev preview)"></select>
 </div>
 
 <div id="zone-a" class="zone">A</div>
 <div id="zone-b" class="zone">B</div>
 <div id="zone-c" class="zone">C &mdash; linksonder</div>
 <div id="zone-d" class="zone">D &mdash; rechtsonder</div>
+
+<div id="start-screen">
+  <h1>Prototype 7 &mdash; Wat hoor je?</h1>
+  <p id="intro-blurb">
+    Een muziekquiz die je speelt zonder te kijken. Je hoort een vraag en een stukje muziek,
+    daarna worden de antwoorden voorgelezen. Elk antwoord zit op een eigen plek op het scherm:
+    links en rechts, of in de vier hoeken.<br>
+    In het <strong>oefenlevel</strong> hoor je eerst hoe alles klinkt en oefen je met twee vragen.<br>
+    Tik 3&times; ergens op het scherm om meteen de quiz te starten.
+  </p>
+  <p id="start-note" hidden></p>
+  <div id="menu-buttons">
+    <button id="intro-btn" data-ui>Start oefenlevel</button>
+    <button id="game-btn" data-ui>Start quiz</button>
+  </div>
+  <a id="home-link" class="home-link" href="../" data-ui>&larr; Terug naar hoofdmenu</a>
+</div>
+
+<div id="game-screen" hidden>
+  <div id="step-icon" aria-hidden="true"></div>
+  <div id="instruction" aria-live="polite"></div>
+
+  <div id="preview-panel" hidden>
+    <div id="preview-icon-slot" aria-hidden="true"></div>
+    <div id="preview-buttons">
+      <button id="preview-repeat-btn" data-ui>Herhaal</button>
+      <button id="preview-next-btn" data-ui>Volgende</button>
+    </div>
+  </div>
+
+  <div id="practice-assist" hidden>
+    <button id="repeat-question-btn" data-ui>Herhaal vraag</button>
+    <button id="read-options-btn" data-ui>Lees antwoorden voor</button>
+  </div>
+
+  <button id="stop-btn" data-ui>Stop &mdash; terug naar startscherm</button>
+</div>
 
 <!-- WebAudioFont instrument + drum banks live in the shared repo-root /public/fonts
      folder (wired up via `publicDir` in vite.prototype_7.config.ts). Paths are

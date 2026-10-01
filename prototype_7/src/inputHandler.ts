@@ -53,6 +53,9 @@ type Zone =
 export class InputHandler {
     private callbacks: ActionCallback[] = [];
     private quizEnabled = false;
+    // While false every tap and shake is ignored - used while the intro's
+    // preview panel (Herhaal/Volgende) owns the screen.
+    private active = true;
     private answerCount: number = 4;
 
     // Pre-start / post-end: count quick taps anywhere.
@@ -82,6 +85,13 @@ export class InputHandler {
     /** Enable zone routing (during a run) or fall back to start-tap counting. */
     setQuizEnabled(enabled: boolean): void {
         this.quizEnabled = enabled;
+        this.startTaps = [];
+        this.armedIndex = null;
+    }
+
+    /** Ignore (false) or resume (true) all taps and shakes, without touching quiz/start-tap mode. */
+    setActive(active: boolean): void {
+        this.active = active;
         this.startTaps = [];
         this.armedIndex = null;
     }
@@ -142,6 +152,9 @@ export class InputHandler {
     }
 
     private handlePointerDown = (e: PointerEvent): void => {
+        if (!this.active) return;
+        // on-screen buttons/links (start screen, intro helpers) are not answer or start taps
+        if (e.target instanceof Element && e.target.closest("[data-ui]")) return;
         if (!this.quizEnabled) {
             this.registerStartTap();
             return;
@@ -162,6 +175,7 @@ export class InputHandler {
     };
 
     private handleMotion = (e: DeviceMotionEvent): void => {
+        if (!this.active) return;
         const acc = e.acceleration ?? e.accelerationIncludingGravity;
         if (!acc) return;
         const magnitude = Math.sqrt((acc.x ?? 0) ** 2 + (acc.y ?? 0) ** 2 + (acc.z ?? 0) ** 2);
