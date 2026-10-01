@@ -11,7 +11,6 @@ const instruments = new InstrumentManager();
 const input = new InputHandler(debug);
 const state = createInitialState();
 const scoreEl = document.getElementById("score")!;
-const phaseEl = document.getElementById("phase")!;
 const collectionEl = document.getElementById("collection")!;
 const logEl = document.getElementById("log")!;
 const instructionEl = document.getElementById("instruction")!;
@@ -42,12 +41,26 @@ const MAX_STRIKES = 3;
 let gameRunning = false;   // a round (intro or full game) is currently active
 let introMode = false;     // currently playing the guided tutorial
 let introComplete = false; // the tutorial fish has been landed — freeze play
-let introDemoActive = false; // playing the player-paced "fish vs. drums" preview
-let previewIndex = 0;      // index into PREVIEW_STEPS while introDemoActive is true
+let introDemoActive = false; // the current segment is an "explain" slide (loop paused)
+let segmentIndex = 0;      // index into INTRO_SEGMENTS
 let lastRenderedStepIconPhase: string | null = null; // avoids restarting ambient icon loops
 let runId = 0;             // bumped on every start/stop so async work can bail out
 let demoTimer: ReturnType<typeof setTimeout> | null = null;
 let introEndTimer: ReturnType<typeof setTimeout> | null = null;
+
+// a practice drill (isolated, ungraded rep of one physical action) is active
+let activeDrill: DrillKind | null = null;
+let drillCueActive = false;   // true during a drill's brief post-success celebration
+
+// fresh, drill-scoped detection state — never read/written by the real phase
+// machine further down, which keeps its own armBeta/armBetaBaseline etc.
+let drillTiltBaseline: number | null = null;
+let drillThrowMin: number | null = null;
+let drillThrowMax: number | null = null;
+let drillListenWindowUntil = 0;
+let drillListenHooked = false;
+let drillCrankAngle = 0;
+const DRILL_REEL_TARGET = 360; // one full turn — a drill rep, not a full fight
 
 const INTRO_DONE_TEXT =
     "🎉 Goed gedaan! Je hebt je eerste vis gevangen. Terug naar het startscherm...";
@@ -76,7 +89,7 @@ function updateInstruction(text?: string): void {
         instructionEl.textContent = text;
         return;
     }
-    if (introDemoActive) return;      // the demo owns the instruction text
+    if (introDemoActive || activeDrill !== null) return; // explain/drill own the text
     if (introComplete) {
         instructionEl.textContent = INTRO_DONE_TEXT;
         return;
@@ -145,31 +158,62 @@ function restartAnimation(el: Element, className: string): void {
     el.classList.add(className);
 }
 
-/** Fish/drums icon shown in the player-paced preview panel. */
-function renderPreviewIcon(kind: "fish" | "drums" | null): void {
-    if (kind === null) {
+const ICON_BASE_CLASS: Record<ExplainSegment["icon"], string> = {
+    fish: "icon-fish", drums: "icon-drums", ear: "icon-ear",
+    phone: "icon-phone", reel: "icon-reel",
+};
+
+/** Icon shown in the player-paced explain panel (fish/drums/ear/phone/reel). */
+function renderExplainIcon(seg: ExplainSegment | null): void {
+    if (seg === null) {
         previewIconSlotEl.innerHTML = "";
         previewIconSlotEl.className = "";
         return;
     }
-    previewIconSlotEl.innerHTML = kind === "fish" ? FISH_SVG : DRUMS_SVG;
-    previewIconSlotEl.className = kind === "fish" ? "icon-fish" : "icon-drums";
+    previewIconSlotEl.innerHTML =
+        seg.icon === "fish" ? FISH_SVG :
+        seg.icon === "drums" ? DRUMS_SVG :
+        seg.icon === "ear" ? EAR_SVG :
+        seg.icon === "phone" ? PHONE_SVG : REEL_SVG;
+    previewIconSlotEl.className = ICON_BASE_CLASS[seg.icon];
 }
 
-/** Toggle the preview icon's "currently playing" animation. */
-function setPreviewIconPlaying(playing: boolean, kind: "fish" | "drums"): void {
-    previewIconSlotEl.className = kind === "fish" ? "icon-fish" : "icon-drums";
-    if (playing) restartAnimation(previewIconSlotEl, "playing");
+/** Toggle the explain icon's "currently playing" animation (ear uses its own
+ *  ambient "listening" pulse as the playing indicator). */
+function setExplainIconPlaying(playing: boolean, icon: ExplainSegment["icon"]): void {
+    previewIconSlotEl.className = ICON_BASE_CLASS[icon];
+    if (playing) restartAnimation(previewIconSlotEl, icon === "ear" ? "listening" : "playing");
 }
 
 /**
- * Persistent icon shown next to the instruction text during the real
- * (physical) tutorial steps — phone-tilt for idle/throwing, ear for
- * listening, reel-arrow for reeling. Skipped entirely outside the intro, and
- * only re-injected when the phase actually changes, so the ambient loops
- * (ear pulse, phone tilt-back) don't restart on every updateUI() call.
+ * Persistent icon shown next to the instruction text — during a practice
+ * drill (tilt/throw/listen/reel) or during the real (physical) final-level
+ * phases — phone-tilt for idle/throwing, ear for listening, reel-arrow for
+ * reeling. Skipped entirely outside the intro, and only re-injected when the
+ * phase/drill actually changes, so ambient loops (ear pulse, phone tilt-back)
+ * don't restart on every updateUI() call.
  */
 function renderStepIcon(): void {
+    if (activeDrill !== null) {
+        const key = "drill:" + activeDrill;
+        if (key === lastRenderedStepIconPhase) return;
+        lastRenderedStepIconPhase = key;
+        if (activeDrill === "tilt") {
+            stepIconEl.innerHTML = PHONE_SVG;
+            stepIconEl.className = "icon-phone tilt-back";
+        } else if (activeDrill === "throw") {
+            stepIconEl.innerHTML = PHONE_SVG;
+            stepIconEl.className = "icon-phone swing-demo";
+        } else if (activeDrill === "listen") {
+            stepIconEl.innerHTML = EAR_SVG;
+            stepIconEl.className = "icon-ear listening";
+        } else {
+            stepIconEl.innerHTML = REEL_SVG;
+            stepIconEl.className = "icon-reel spinning";
+            stepIconEl.style.setProperty("--reel-progress", "0");
+        }
+        return;
+    }
     if (!introMode || introDemoActive || introComplete) {
         if (lastRenderedStepIconPhase !== null) {
             stepIconEl.innerHTML = "";
@@ -212,63 +256,289 @@ function clearDemoTimer(): void {
     if (demoTimer !== null) { clearTimeout(demoTimer); demoTimer = null; }
 }
 
-interface PreviewStep { kind: "fish" | "drums"; def: InstrumentDef; caption: string; }
+// --- the intro script: explain every action, practice it, then put it all
+// together for real -----------------------------------------------------
+type DrillKind = "tilt" | "throw" | "listen" | "reel";
+interface ExplainSegment {
+    type: "explain"; id: string; mode: "sound" | "motion";
+    icon: "fish" | "drums" | "ear" | "phone" | "reel";
+    caption: string;
+    soundDef?: InstrumentDef;   // required when mode === "sound"
+    motionClass?: string;       // required when mode === "motion"
+}
+interface DrillSegment { type: "drill"; id: string; drill: DrillKind; }
+type Segment = ExplainSegment | DrillSegment;
 
-const PREVIEW_STEPS: PreviewStep[] = [
-    { kind: "fish", def: INSTRUMENTS.find(i => i.id === "guitar")!,
+const INTRO_SEGMENTS: Segment[] = [
+    { type: "explain", id: "sound-fish", mode: "sound", icon: "fish",
+      soundDef: INSTRUMENTS.find(i => i.id === "guitar")!,
       caption: "Luister eerst. Dít is een vis — een melodie. Zó eentje wil je vangen:" },
-    { kind: "drums", def: INSTRUMENTS.find(i => i.isDrum)!,
+    { type: "explain", id: "sound-drums", mode: "sound", icon: "drums",
+      soundDef: INSTRUMENTS.find(i => i.isDrum)!,
       caption: "En dít zijn de drums — een kale dreun, geen melodie. Die laat je zwemmen:" },
+    { type: "explain", id: "tilt-explain", mode: "motion", icon: "phone", motionClass: "tilt-back",
+      caption: "Zo trek je de hengel terug: kantel je telefoon rustig naar achteren." },
+    { type: "drill", id: "tilt-drill", drill: "tilt" },
+    { type: "explain", id: "throw-explain", mode: "motion", icon: "phone", motionClass: "swing-demo",
+      caption: "En zo gooi je uit: eerst naar achteren, dan met een zwaai naar voren." },
+    { type: "drill", id: "throw-drill", drill: "throw" },
+    { type: "explain", id: "listen-explain", mode: "sound", icon: "ear",
+      soundDef: INSTRUMENTS.find(i => i.id === "piano")!,
+      caption: "Zo klinkt een vis die bijt. Hoor je dit? Raak dan meteen het scherm aan." },
+    { type: "drill", id: "listen-drill", drill: "listen" },
+    { type: "explain", id: "reel-explain", mode: "motion", icon: "reel", motionClass: "demo-spin",
+      caption: "Binnenhalen doe je door met je duim rondjes te draaien op het scherm." },
+    { type: "drill", id: "reel-drill", drill: "reel" },
 ];
 
-/** Show (and start playing) one preview step. */
-function showPreviewStep(index: number, myRun: number): void {
-    if (myRun !== runId || !introDemoActive) return;
-    previewIndex = index;
-    const step = PREVIEW_STEPS[index];
-    renderPreviewIcon(step.kind);
-    updateInstruction(step.caption);
-    playPreviewStep(myRun);
+const DRILL_INSTRUCTIONS: Record<DrillKind, string> = {
+    tilt:   "Nu jij! Kantel je telefoon naar achteren.",
+    throw:  "Nu jij! Zwaai je telefoon naar voren.",
+    listen: "Nu jij! Tik op het scherm zodra je de melodie hoort.",
+    reel:   "Nu jij! Draai met je duim rondjes op het scherm.",
+};
+const DRILL_DONE_TEXT: Record<DrillKind, string> = {
+    tilt:   "Goed geoefend! 🎉",
+    throw:  "Goed geoefend! 🎉",
+    listen: "Precies op tijd! 🎉",
+    reel:   "Goed geoefend! 🎉",
+};
+
+/** Pure: plays an explain segment's sound once + starts its icon's "playing"
+ *  animation. Schedules nothing itself — callers decide what happens next.
+ *  Returns the duration in ms (0 if the samples weren't ready yet). */
+function playExplainSoundOnce(seg: ExplainSegment, myRun: number): number {
+    if (myRun !== runId) return 0;
+    instruments.stopAll();
+    setExplainIconPlaying(true, seg.icon);
+    return instruments.playMelody(seg.soundDef!) * 1000;
 }
 
-/** Herhaal: (re)play the current preview step's sound from the start. Always
- *  safe to call repeatedly — never stacks audio or leaks timers. */
-function playPreviewStep(myRun: number): void {
-    if (myRun !== runId || !introDemoActive) return;
-    instruments.stopAll();
+function stopExplainIconPlaying(seg: ExplainSegment): void {
+    setExplainIconPlaying(false, seg.icon);
+}
+
+/** Sound segments' automatic first playback: wait 1s, play, wait 1s, play
+ *  again — gives a young player a moment to get ready before each sound. */
+function pacedAutoPlay(seg: ExplainSegment, myRun: number): void {
     clearDemoTimer();
-    const step = PREVIEW_STEPS[previewIndex];
-    setPreviewIconPlaying(true, step.kind);
-    const dur = instruments.playMelody(step.def);
+    const segIdx = segmentIndex;
+    const stillValid = () => myRun === runId && segmentIndex === segIdx;
     demoTimer = setTimeout(() => {
-        if (myRun !== runId) return;
         demoTimer = null;
-        setPreviewIconPlaying(false, step.kind);
-    }, dur * 1000);
+        if (!stillValid()) return;
+        const dur1 = playExplainSoundOnce(seg, myRun);
+        demoTimer = setTimeout(() => {
+            demoTimer = null;
+            if (!stillValid()) return;
+            stopExplainIconPlaying(seg);
+            demoTimer = setTimeout(() => {
+                demoTimer = null;
+                if (!stillValid()) return;
+                const dur2 = playExplainSoundOnce(seg, myRun);
+                demoTimer = setTimeout(() => {
+                    demoTimer = null;
+                    if (!stillValid()) return;
+                    stopExplainIconPlaying(seg);
+                }, dur2);
+            }, 1000);
+        }, dur1);
+    }, 1000);
 }
 
-/** Volgende: move to the next preview step, or — once every step has been
- *  shown — start the real tutorial loop. */
-function advancePreview(myRun: number): void {
-    if (myRun !== runId || !introDemoActive) return;
+/** Motion segments' automatic first playback: wait 1s, then start the
+ *  (already-infinite) CSS loop — there's no natural "second play" for a loop. */
+function pacedDemoStart(seg: ExplainSegment, myRun: number): void {
+    clearDemoTimer();
+    const segIdx = segmentIndex;
+    demoTimer = setTimeout(() => {
+        demoTimer = null;
+        if (myRun !== runId || segmentIndex !== segIdx) return;
+        restartAnimation(previewIconSlotEl, seg.motionClass!);
+    }, 1000);
+}
+
+/** Herhaal: always instant, never paced — a deliberate replay shouldn't make
+ *  the player wait through the slow first-time pacing again. */
+function repeatExplain(myRun: number): void {
+    if (myRun !== runId) return;
+    const seg = INTRO_SEGMENTS[segmentIndex];
+    if (seg.type !== "explain") return;
     clearDemoTimer();
     instruments.stopAll();
-    const nextIndex = previewIndex + 1;
-    if (nextIndex < PREVIEW_STEPS.length) {
-        showPreviewStep(nextIndex, myRun);
-        return;
+    if (seg.mode === "sound") {
+        const dur = playExplainSoundOnce(seg, myRun);
+        const segIdx = segmentIndex;
+        demoTimer = setTimeout(() => {
+            demoTimer = null;
+            if (myRun !== runId || segmentIndex !== segIdx) return;
+            stopExplainIconPlaying(seg);
+        }, dur);
+    } else {
+        restartAnimation(previewIconSlotEl, seg.motionClass!);
     }
-    renderPreviewIcon(null);
+}
+
+/** Show one segment: an explain slide (caption + paced demo) or a drill
+ *  (hands off to startDrill). */
+function enterSegment(index: number, myRun: number): void {
+    if (myRun !== runId) return;
+    segmentIndex = index;
+    const seg = INTRO_SEGMENTS[index];
+    previewPanelEl.hidden = seg.type !== "explain";
+    if (seg.type === "explain") {
+        introDemoActive = true;
+        renderExplainIcon(seg);
+        updateInstruction(seg.caption);
+        if (seg.mode === "sound") pacedAutoPlay(seg, myRun);
+        else pacedDemoStart(seg, myRun);
+    } else {
+        introDemoActive = false;
+        renderExplainIcon(null);
+        startDrill(seg.drill, myRun);
+    }
+    updateUI();
+}
+
+/** Volgende, and also reached automatically from a drill's success: advance
+ *  to the next segment, or — once the script is done — start the final level. */
+function advanceSegment(myRun: number): void {
+    if (myRun !== runId) return;
+    clearDemoTimer();
+    instruments.stopAll();
+    const next = segmentIndex + 1;
+    if (next >= INTRO_SEGMENTS.length) { startFinalLevel(myRun); return; }
+    enterSegment(next, myRun);
+}
+
+/** The real, continuous cast-to-catch run — unchanged phase machine, same
+ *  hints/icons, landing the one real scored fish via finishIntro(). */
+function startFinalLevel(myRun: number): void {
+    if (myRun !== runId) return;
+    previewPanelEl.hidden = true;
+    renderExplainIcon(null);
+    introDemoActive = false;
+    activeDrill = null;
     updateInstruction("Klaar? Daar gaan we — volg de aanwijzingen.");
     demoTimer = setTimeout(() => {
-        if (myRun !== runId) return;
         demoTimer = null;
-        introDemoActive = false;
-        previewPanelEl.hidden = true;
+        if (myRun !== runId) return;
+        lastRenderedStepIconPhase = null;
         state.running = true;
-        loop.start();
         updateUI();
     }, 1200);
+}
+
+// --- the four practice drills: isolated, ungraded reps, entirely separate
+// from the real phase machine (which keeps its own armBeta/state.phase/etc
+// untouched until the final level begins) --------------------------------
+
+function getNormalizedBeta(): number | null {
+    const o = input.getOrientation();
+    return o.beta !== null ? 180 + o.beta : null;
+}
+
+function tickTiltDrill(): void {
+    const beta = getNormalizedBeta();
+    if (beta === null) return;
+    if (drillTiltBaseline === null) { drillTiltBaseline = beta; return; }
+    if (beta - drillTiltBaseline > 10) completeDrill("tilt");
+}
+
+function tickThrowDrill(): void {
+    const beta = getNormalizedBeta();
+    if (beta === null) return;
+    if (drillThrowMin === null || beta < drillThrowMin) drillThrowMin = beta;
+    if (drillThrowMax === null || beta > drillThrowMax) drillThrowMax = beta;
+    if (drillThrowMax - drillThrowMin > 10) completeDrill("throw");
+}
+
+/** Force a practice bite immediately (no random wait) — always a catchable
+ *  instrument, exactly like spawnBite()'s introMode branch, but entirely
+ *  local to the drill (never touches state.activeInstrument). */
+function forceDrillBite(myRun: number): void {
+    if (myRun !== runId || activeDrill !== "listen") return;
+    const def = pick(CATCHABLE);
+    const dobberId = soundDobber.play("caught");
+    soundDobber.volume(0.8, dobberId);
+    const dur = instruments.playMelody(def);
+    drillListenWindowUntil = performance.now() + dur * 1000 + 600;
+}
+
+function tickListenDrill(): void {
+    // a miss just quietly re-forces another bite — no strikes, ever, in a drill
+    if (performance.now() > drillListenWindowUntil) forceDrillBite(runId);
+}
+
+function onDrillListenPress(): void {
+    if (activeDrill !== "listen" || drillCueActive || drillListenHooked) return;
+    if (performance.now() <= drillListenWindowUntil) {
+        drillListenHooked = true;
+        completeDrill("listen");
+    }
+}
+
+function tickReelDrill(): void {
+    drillCrankAngle = input.getCrankDegrees();
+    setReelProgress(Math.min(1, Math.abs(drillCrankAngle) / DRILL_REEL_TARGET));
+    if (Math.abs(drillCrankAngle) >= DRILL_REEL_TARGET) completeDrill("reel");
+}
+
+function tickDrill(): void {
+    if (drillCueActive) return; // blocks re-detection during the success pause
+    if (activeDrill === "tilt") tickTiltDrill();
+    else if (activeDrill === "throw") tickThrowDrill();
+    else if (activeDrill === "listen") tickListenDrill();
+    else if (activeDrill === "reel") tickReelDrill();
+}
+
+function startDrill(drill: DrillKind, myRun: number): void {
+    if (myRun !== runId) return;
+    activeDrill = drill;
+    drillCueActive = false;
+    lastRenderedStepIconPhase = null; // force a fresh icon render for this drill
+    if (drill === "tilt") {
+        drillTiltBaseline = null;
+    } else if (drill === "throw") {
+        drillThrowMin = null;
+        drillThrowMax = null;
+    } else if (drill === "listen") {
+        drillListenHooked = false;
+        forceDrillBite(myRun);
+    } else {
+        resetCrank();
+        drillCrankAngle = 0;
+    }
+    updateInstruction(DRILL_INSTRUCTIONS[drill]);
+    renderStepIcon();
+    updateUI();
+}
+
+/** A drill succeeded: confirm it audibly + visually, then hand off to the
+ *  next segment. Every drill completion plays a clear success sound — the
+ *  motion-only drills (tilt/throw/reel) produce no sound of their own, so
+ *  this is the player's only audible "yes, that was it" cue for them. */
+function completeDrill(drill: DrillKind): void {
+    if (activeDrill !== drill || drillCueActive) return;
+    drillCueActive = true;
+    soundCatching.play("success");
+    updateInstruction(DRILL_DONE_TEXT[drill]);
+    if (drill === "throw") {
+        // a one-shot forward flourish for the brief celebration beat
+        stepIconEl.innerHTML = PHONE_SVG;
+        stepIconEl.className = "icon-phone tilt-forward";
+        lastRenderedStepIconPhase = "drill:throw:done";
+    }
+    const myRun = runId;
+    const segIdx = segmentIndex;
+    clearDemoTimer();
+    demoTimer = setTimeout(() => {
+        demoTimer = null;
+        if (myRun !== runId || segmentIndex !== segIdx) return;
+        drillCueActive = false;
+        activeDrill = null;
+        advanceSegment(myRun);
+    }, 900);
 }
 
 /** Herhaal geluid (intro only): replay the melody currently on the hook,
@@ -318,10 +588,18 @@ function showGameScreen(): void {
 
 /** Full teardown — stop everything and return to the start screen. */
 function stopGame(): void {
-    runId++;                       // invalidate any in-flight preview / timers
+    runId++;                       // invalidate any in-flight explain/drill timers
     introDemoActive = false;
     introComplete = false;
-    previewIndex = 0;
+    segmentIndex = 0;
+    activeDrill = null;
+    drillCueActive = false;
+    drillTiltBaseline = null;
+    drillThrowMin = null;
+    drillThrowMax = null;
+    drillListenWindowUntil = 0;
+    drillListenHooked = false;
+    drillCrankAngle = 0;
     clearDemoTimer();
     if (introEndTimer !== null) { clearTimeout(introEndTimer); introEndTimer = null; }
     state.running = false;
@@ -336,7 +614,7 @@ function stopGame(): void {
     instructionEl.textContent = "";
     log("");
     previewPanelEl.hidden = true;
-    renderPreviewIcon(null);
+    renderExplainIcon(null);
     listeningAssistEl.hidden = true;
     stepIconEl.innerHTML = "";
     stepIconEl.className = "";
@@ -375,28 +653,30 @@ async function startGame(asIntro: boolean): Promise<void> {
 
     introMode = asIntro;
     introComplete = false;
-    introDemoActive = asIntro;   // suppress the step text until the preview is done
-    previewIndex = 0;
+    introDemoActive = false;     // enterSegment()/the else-branch below set this correctly
+    activeDrill = null;
+    drillCueActive = false;
+    segmentIndex = 0;
     state.score = 0;
     state.collectedInstruments = [];
 
     showGameScreen();
     input.start();
-    startRound();                  // phase -> idle, background music on (loop not running yet)
+    startRound();                  // phase -> idle, background music on
     gameRunning = true;
+    loop.start();                  // safe to start immediately: the loop no-ops
+                                    // whenever introComplete is false, activeDrill is
+                                    // null, and state.running is false — exactly the
+                                    // case during every explain segment below
 
     if (asIntro) {
-        // player-paced preview: Herhaal/Volgende drive it from here on, and
-        // advancePreview() starts the real loop once the player clicks through
-        // every step — state.running stays false until then.
-        previewPanelEl.hidden = false;
-        showPreviewStep(0, myRun);
-        updateUI();
+        // the intro script (explain -> drill, four times, then the final level)
+        // drives state.running/activeDrill/introDemoActive from here on
+        enterSegment(0, myRun);
         return;
     }
 
     state.running = true;
-    loop.start();
     updateUI();
 }
 
@@ -517,8 +797,9 @@ function startRound(): void {
 
 
 const loop = new GameLoop((dt) => {
-    if (!state.running) return;
     if (introComplete) return; // tutorial fish landed — hold everything still
+    if (activeDrill !== null) { tickDrill(); return; } // drill detection takes over
+    if (!state.running) return;
 
     const orientation = input.getOrientation();
     //if beta is smaller than zero, we have crossed the z plane, to prevent errors, we will update the beta to a number that is always positive
@@ -772,11 +1053,28 @@ function resolveReel(): void {
 }
 
 input.onPress(startReeling);
+input.onPress(onDrillListenPress);
 
 if (debug) {
-    (window as any).__game = { state, INSTRUMENTS, crank: () => ({ crankAngle, crankVelocity, center: input.getCrankCenter() }) };
-    // keyboard shortcuts so the ear mechanic can be tested on desktop
+    (window as any).__game = {
+        state, INSTRUMENTS,
+        crank: () => ({ crankAngle, crankVelocity, center: input.getCrankCenter() }),
+        activeDrill: () => activeDrill,
+        segmentIndex: () => segmentIndex,
+    };
+    // keyboard shortcuts so the mechanic can be tested on desktop
     window.addEventListener("keydown", (e) => {
+        // drive whichever practice drill is active first — on desktop, mouse-driven
+        // debug orientation always reports beta:0, so there's no real tilt signal
+        if (activeDrill === "tilt" && e.key === "t") { completeDrill("tilt"); return; }
+        if (activeDrill === "throw" && e.key === "t") { completeDrill("throw"); return; }
+        if (activeDrill === "listen" && e.key === "l") { onDrillListenPress(); return; }
+        if (activeDrill === "reel" && e.key === " ") {
+            e.preventDefault();
+            drillCrankAngle = DRILL_REEL_TARGET;
+            completeDrill("reel");
+            return;
+        }
         if (!state.running) return;
         if (e.key === "t" && state.phase === "idle") {
             soundThrow.play();
@@ -796,14 +1094,6 @@ if (debug) {
 
 function updateUI(): void {
     scoreEl.textContent = `Score: ${state.score}`;
-    phaseEl.textContent = {
-        listening: "Luister goed...",
-        reeling:   "binnenhalen!",
-        success:   "gevangen!",
-        failure:   "ontsnapt!",
-        idle:      "idle",
-        throwing:  "uitgooien!"
-    }[state.phase];
 
     // the instrument on the hook stays hidden until the reel-in resolves
     const caught = CATCHABLE
@@ -827,7 +1117,7 @@ function updateUI(): void {
 introBtn.addEventListener("click", () => { startNoteEl.hidden = true; startGame(true); });
 gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; startGame(false); });
 stopBtn.addEventListener("click", () => stopGame());
-previewRepeatBtn.addEventListener("click", () => playPreviewStep(runId));
-previewNextBtn.addEventListener("click", () => advancePreview(runId));
+previewRepeatBtn.addEventListener("click", () => repeatExplain(runId));
+previewNextBtn.addEventListener("click", () => advanceSegment(runId));
 repeatSoundBtn.addEventListener("click", () => repeatListeningSound());
 forceBiteBtn.addEventListener("click", () => forceBite());

@@ -11,7 +11,7 @@ body {
   overflow: hidden;
 }
 
-#score, #phase, #log {
+#score, #log {
   width: 100%;
   text-align: center;
   word-break: break-word;
@@ -142,6 +142,9 @@ body {
 .icon-phone.tilt-forward svg {
   animation: phone-tilt-forward 0.6s ease-out 1;
 }
+.icon-phone.swing-demo svg {
+  animation: phone-swing-demo 2.4s ease-in-out infinite;
+}
 
 .icon-reel {
   transform-box: fill-box;
@@ -149,6 +152,11 @@ body {
 }
 .icon-reel.spinning .reel-arc {
   animation: reel-spin 2.2s linear infinite;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.icon-reel.demo-spin .reel-arc {
+  animation: reel-spin 4s linear infinite;
   transform-box: fill-box;
   transform-origin: 50% 50%;
 }
@@ -187,13 +195,22 @@ body {
    like a fishing rod (top edge tips away from the player) */
 @keyframes phone-tilt-back {
   0%, 100% { transform: rotateX(0deg); }
-  50%      { transform: rotateX(-24deg); }
+  50%      { transform: rotateX(-35deg); }
 }
 
 /* throwing: the phone tilts forward, top edge leaning toward the player */
 @keyframes phone-tilt-forward {
-  0%   { transform: rotateX(-24deg); }
-  100% { transform: rotateX(22deg); }
+  0%   { transform: rotateX(-35deg); }
+  100% { transform: rotateX(32deg); }
+}
+
+/* throw explanation: a full, repeatable back-then-forward cast so the player
+   can watch the whole motion as many times as they like before trying it */
+@keyframes phone-swing-demo {
+  0%   { transform: rotateX(0deg); }
+  35%  { transform: rotateX(-35deg); }
+  65%  { transform: rotateX(32deg); }
+  100% { transform: rotateX(0deg); }
 }
 
 @keyframes reel-spin {
