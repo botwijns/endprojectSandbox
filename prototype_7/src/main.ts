@@ -22,7 +22,7 @@ import {
 // quiz - see the introduction section below. Tapping 3× anywhere outside the
 // buttons still starts the quiz, so it stays playable without looking.
 
-const QUIZ_LENGTH = 16;
+const QUIZ_LENGTH = 8;
 const PROMPT_READ_MS = 2600; // rough time to speak the question before the piece plays
 const OPTION_READ_GAP_MS = 1900; // spacing when reading the four options in a row
 const RESULT_ADVANCE_MS = 3200; // delay before the next question after an answer
