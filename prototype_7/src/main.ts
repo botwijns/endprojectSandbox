@@ -365,7 +365,7 @@ function updateIntroUI(): void {
     // the assist buttons only make sense while a practice question is open -
     // and not on the last one: four corners plus buttons is too crowded on a
     // phone, and by then the player repeats the question by shaking instead
-    const lastPractice = practiceIndex >= PRACTICE.length - 1;
+    const lastPractice = practiceIndex >= PRACTICE.length - 2;
     practiceAssistEl.hidden = !(introMode && !introDemoActive && phase === "listening" && !lastPractice);
     // the dashed answer guides only matter while a question can be answered
     document.body.classList.toggle("no-zones", startScreenEl.hidden === false || introDemoActive);
