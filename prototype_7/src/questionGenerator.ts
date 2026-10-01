@@ -58,15 +58,15 @@ interface TraitDefinition {
 
 const bool = (v: boolean, yes: string, no: string) => (v ? yes : no);
 
-function tempoBucket(bpm: number): string {
-  return bpm < 90 ? "langzaam" : bpm < 140 ? "gemiddeld" : "snel";
-}
-function densityBucket(density: number): string {
-  return density < 0.35 ? "dun" : density < 0.7 ? "gemiddeld" : "druk";
-}
-function swingBucket(swing: number): string {
-  return swing >= 0.18 ? "shuffle" : "recht";
-}
+// function tempoBucket(bpm: number): string {
+//   return bpm < 90 ? "langzaam" : bpm < 140 ? "gemiddeld" : "snel";
+// }
+// function densityBucket(density: number): string {
+//   return density < 0.35 ? "dun" : density < 0.7 ? "gemiddeld" : "druk";
+// }
+// function swingBucket(swing: number): string {
+//   return swing >= 0.18 ? "shuffle" : "recht";
+// }
 
 function noteCountDistractors(song: GeneratedSong, correctAnswer: string): string[] {
   const correct = Number(correctAnswer);
@@ -81,16 +81,16 @@ function melodyDirection(a: number, b: number): string {
 
 export const TRAITS: TraitDefinition[] = [
   // ---- Makkelijk ------------------------------------------------------------
-  {
-    id: "tempo-broad",
-    category: "Tempo",
-    difficulty: "easy",
-    prompt: "Hoe zou je het tempo omschrijven?",
-    numOptions: 2,
-    getValue: (s) => tempoBucket(s.config.bpm),
-    optionPool: ["langzaam", "gemiddeld", "snel"],
-    difficultyWeights: { bars: -10, bass: 0, chords: 0, drums: 0, density: 0 }, // longer clip -> easier to judge tempo
-  },
+  // {
+  //   id: "tempo-broad",
+  //   category: "Tempo",
+  //   difficulty: "easy",
+  //   prompt: "Hoe zou je het tempo omschrijven?",
+  //   numOptions: 2,
+  //   getValue: (s) => tempoBucket(s.config.bpm),
+  //   optionPool: ["langzaam", "gemiddeld", "snel"],
+  //   difficultyWeights: { bars: -10, bass: 0, chords: 0, drums: 0, density: 0 }, // longer clip -> easier to judge tempo
+  // },
   {
     id: "has-drums",
     category: "Ritme",
@@ -120,7 +120,7 @@ export const TRAITS: TraitDefinition[] = [
     id: "melody-instrument-family",
     category: "Instrumentatie",
     difficulty: "medium",
-    prompt: "Tot welke familie hoort het instrument van de hoofdmelodie?",
+    prompt: "Tot welke familie hoort het instrument van de melodie?",
     numOptions: 4,
     getValue: (s) => INSTRUMENT_FAMILY[GENRES.find((g) => g.id === s.config.genre)!.instruments.melody],
     optionPool: Array.from(new Set(Object.values(INSTRUMENT_FAMILY))),
@@ -139,16 +139,16 @@ export const TRAITS: TraitDefinition[] = [
     // same as melody-instrument-family, plus an inherent bump from chords always being on, plus drums adding clutter
     difficultyWeights: { bars: -15, bass: 0, chords: 130, drums: 20, density: 35 },
   },
-  {
-    id: "density",
-    category: "Arrangement",
-    difficulty: "medium",
-    prompt: "Hoe druk voelt het arrangement?",
-    numOptions: 2,
-    getValue: (s) => densityBucket(s.config.density),
-    optionPool: ["dun", "gemiddeld", "druk"],
-    difficultyWeights: { bars: -5, bass: 0, chords: 0, drums: 0, density: 0 }, // longer clip -> easier to judge how busy it is
-  },
+  // {
+  //   id: "density",
+  //   category: "Arrangement",
+  //   difficulty: "medium",
+  //   prompt: "Hoe druk voelt het arrangement?",
+  //   numOptions: 2,
+  //   getValue: (s) => densityBucket(s.config.density),
+  //   optionPool: ["dun", "gemiddeld", "druk"],
+  //   difficultyWeights: { bars: -5, bass: 0, chords: 0, drums: 0, density: 0 }, // longer clip -> easier to judge how busy it is
+  // },
   {
     id: "beats-per-bar",
     category: "Ritme",
