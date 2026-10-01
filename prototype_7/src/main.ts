@@ -230,7 +230,7 @@ const INTRO_DONE_TEXT = "🎉 Goed gedaan! Je kent nu de quiz. Terug naar het st
 const INTRO_STEPS: Record<IntroStep, string> = {
     listen:  "Stap 1 van 4 — Luister naar de vraag, het stukje muziek en de antwoorden.",
     tap:     "Stap 2 van 4 — Tik één keer op een kant om dat antwoord te horen.",
-    commit:  "Stap 3 van 4 — Tik nog een keer op dezelfde kant om het te kiezen.",
+    commit:  "Stap 3 van 4 — Tik twee keer op dezelfde kant om het te kiezen.",
     corners: "Stap 4 van 4 — Nu zijn er vier hoeken. Schud je telefoon om de vraag opnieuw te horen.",
     done:    INTRO_DONE_TEXT,
 };
