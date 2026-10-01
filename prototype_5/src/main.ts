@@ -21,6 +21,14 @@ const startNoteEl = document.getElementById("start-note")!;
 const introBtn = document.getElementById("intro-btn") as HTMLButtonElement;
 const gameBtn = document.getElementById("game-btn") as HTMLButtonElement;
 const stopBtn = document.getElementById("stop-btn") as HTMLButtonElement;
+const stepIconEl = document.getElementById("step-icon")!;
+const previewPanelEl = document.getElementById("preview-panel")!;
+const previewIconSlotEl = document.getElementById("preview-icon-slot")!;
+const previewRepeatBtn = document.getElementById("preview-repeat-btn") as HTMLButtonElement;
+const previewNextBtn = document.getElementById("preview-next-btn") as HTMLButtonElement;
+const listeningAssistEl = document.getElementById("listening-assist")!;
+const repeatSoundBtn = document.getElementById("repeat-sound-btn") as HTMLButtonElement;
+const forceBiteBtn = document.getElementById("force-bite-btn") as HTMLButtonElement;
 
 // total instruments the player must collect (everything except the drums)
 const CATCHABLE = INSTRUMENTS.filter(i => !i.isDrum);
@@ -34,7 +42,9 @@ const MAX_STRIKES = 3;
 let gameRunning = false;   // a round (intro or full game) is currently active
 let introMode = false;     // currently playing the guided tutorial
 let introComplete = false; // the tutorial fish has been landed — freeze play
-let introDemoActive = false; // playing the "this is a fish / these are drums" demo
+let introDemoActive = false; // playing the player-paced "fish vs. drums" preview
+let previewIndex = 0;      // index into PREVIEW_STEPS while introDemoActive is true
+let lastRenderedStepIconPhase: string | null = null; // avoids restarting ambient icon loops
 let runId = 0;             // bumped on every start/stop so async work can bail out
 let demoTimer: ReturnType<typeof setTimeout> | null = null;
 let introEndTimer: ReturnType<typeof setTimeout> | null = null;
@@ -75,39 +85,211 @@ function updateInstruction(text?: string): void {
     instructionEl.textContent = table[state.phase] ?? "";
 }
 
-/**
- * Play a short listening demo: a catchable fish's melody, then the drum trap,
- * each with a caption, so the player learns the difference before fishing.
- * Resolves when done; bails out immediately if the session is stopped (runId).
- */
-function runIntroDemo(myRun: number): Promise<void> {
-    return new Promise((resolve) => {
-        const goodFish = INSTRUMENTS.find(i => i.id === "guitar")!;
-        const drums = INSTRUMENTS.find(i => i.isDrum)!;
-        const steps: { text: string; def: InstrumentDef; gap: number }[] = [
-            { text: "Luister eerst. Dít is een vis — een melodie. Zó eentje wil je vangen:", def: goodFish, gap: 5000 },
-            { text: "En dít zijn de drums — een kale dreun, geen melodie. Die laat je zwemmen:", def: drums, gap: 5000 },
-            { text: "Nog een keer de vis (vangen)...", def: goodFish, gap: 2000 },
-            { text: "...en de drums (níét vangen).", def: drums, gap: 2000 },
-        ];
+// --- hand-drawn tutorial icons (inline SVG, no external assets) ------------
+// Flat, bold-outline pictograms meant to be read at a glance by a young
+// player. Animation is driven by CSS classes toggled from here — see the
+// matching keyframes (fish-wiggle/note-float/drum-shake/wave-pulse/
+// phone-tilt-*/reel-spin) in style.css.
 
-        introDemoActive = true;
-        let i = 0;
-        const step = (): void => {
-            if (myRun !== runId) { resolve(); return; }   // stopped mid-demo
-            if (i >= steps.length) {
-                introDemoActive = false;
-                instructionEl.textContent = "Klaar? Daar gaan we — volg de aanwijzingen.";
-                demoTimer = setTimeout(resolve, 1300);
-                return;
-            }
-            const s = steps[i++];
-            instructionEl.textContent = s.text;
-            const dur = instruments.playMelody(s.def);
-            demoTimer = setTimeout(step, dur * 1000 + s.gap);
-        };
-        step();
-    });
+const FISH_SVG = `<svg viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg">
+  <g class="fish-tail"><path d="M30 30 L8 14 L8 46 Z" fill="#3d8fc4"/></g>
+  <g class="fish-body">
+    <ellipse cx="58" cy="30" rx="28" ry="15" fill="#4fa3d1"/>
+    <circle cx="76" cy="25" r="2.6" fill="#0a2540"/>
+  </g>
+  <g class="note"><ellipse cx="58" cy="14" rx="3.5" ry="2.6" fill="#0a2540"/><rect x="61" y="4" width="1.6" height="10" fill="#0a2540"/></g>
+  <g class="note"><ellipse cx="72" cy="10" rx="3.5" ry="2.6" fill="#0a2540"/><rect x="75" y="0" width="1.6" height="10" fill="#0a2540"/></g>
+  <g class="note"><ellipse cx="44" cy="12" rx="3.5" ry="2.6" fill="#0a2540"/><rect x="47" y="2" width="1.6" height="10" fill="#0a2540"/></g>
+</svg>`;
+
+const DRUMS_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <g class="drum-body">
+    <line x1="30" y1="8" x2="46" y2="34" stroke="#5a3a22" stroke-width="4" stroke-linecap="round"/>
+    <line x1="70" y1="8" x2="54" y2="34" stroke="#5a3a22" stroke-width="4" stroke-linecap="round"/>
+    <rect x="20" y="35" width="60" height="40" fill="#c0392b"/>
+    <ellipse cx="50" cy="35" rx="30" ry="10" fill="#e8c39e"/>
+    <ellipse cx="50" cy="75" rx="30" ry="10" fill="#8f2418"/>
+  </g>
+  <g class="no-overlay">
+    <circle cx="50" cy="50" r="44" fill="none" stroke="#e63946" stroke-width="7"/>
+    <line x1="18" y1="18" x2="82" y2="82" stroke="#e63946" stroke-width="7"/>
+  </g>
+</svg>`;
+
+const EAR_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <path d="M60 18 C40 18 24 34 24 55 C24 74 36 88 52 88 C58 88 61 82 56 78 C46 74 38 65 38 54 C38 40 48 30 61 30 C69 30 74 36 71 43" fill="none" stroke="#2f2f2f" stroke-width="6" stroke-linecap="round"/>
+  <path class="wave" d="M78 38 Q90 55 78 72" fill="none" stroke="#2f7fbf" stroke-width="5" stroke-linecap="round"/>
+  <path class="wave" d="M84 32 Q96 55 84 78" fill="none" stroke="#2f7fbf" stroke-width="5" stroke-linecap="round"/>
+  <path class="wave" d="M90 26 Q99 55 90 84" fill="none" stroke="#2f7fbf" stroke-width="5" stroke-linecap="round"/>
+</svg>`;
+
+const PHONE_SVG = `<svg viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg">
+  <rect x="4" y="8" width="92" height="44" rx="9" fill="#333333"/>
+  <rect x="11" y="13" width="70" height="34" rx="3" fill="#bfe3ff"/>
+  <circle cx="90" cy="30" r="3" fill="#666666"/>
+</svg>`;
+
+const REEL_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <g class="reel-arc">
+    <circle cx="50" cy="50" r="42" fill="none" stroke="#888888" stroke-width="6" stroke-dasharray="200 64"/>
+    <polygon points="82,20 92,26 80,32" fill="#888888"/>
+  </g>
+  <circle class="reel-progress" cx="50" cy="50" r="35" fill="none" stroke="#2e7d32" stroke-width="6" stroke-linecap="round"/>
+</svg>`;
+
+/** Remove+re-add a class via a forced reflow so its CSS animation restarts
+ *  even when the class was already present (a plain re-add is a no-op). */
+function restartAnimation(el: Element, className: string): void {
+    el.classList.remove(className);
+    void (el as HTMLElement).offsetWidth;
+    el.classList.add(className);
+}
+
+/** Fish/drums icon shown in the player-paced preview panel. */
+function renderPreviewIcon(kind: "fish" | "drums" | null): void {
+    if (kind === null) {
+        previewIconSlotEl.innerHTML = "";
+        previewIconSlotEl.className = "";
+        return;
+    }
+    previewIconSlotEl.innerHTML = kind === "fish" ? FISH_SVG : DRUMS_SVG;
+    previewIconSlotEl.className = kind === "fish" ? "icon-fish" : "icon-drums";
+}
+
+/** Toggle the preview icon's "currently playing" animation. */
+function setPreviewIconPlaying(playing: boolean, kind: "fish" | "drums"): void {
+    previewIconSlotEl.className = kind === "fish" ? "icon-fish" : "icon-drums";
+    if (playing) restartAnimation(previewIconSlotEl, "playing");
+}
+
+/**
+ * Persistent icon shown next to the instruction text during the real
+ * (physical) tutorial steps — phone-tilt for idle/throwing, ear for
+ * listening, reel-arrow for reeling. Skipped entirely outside the intro, and
+ * only re-injected when the phase actually changes, so the ambient loops
+ * (ear pulse, phone tilt-back) don't restart on every updateUI() call.
+ */
+function renderStepIcon(): void {
+    if (!introMode || introDemoActive || introComplete) {
+        if (lastRenderedStepIconPhase !== null) {
+            stepIconEl.innerHTML = "";
+            stepIconEl.className = "";
+            lastRenderedStepIconPhase = null;
+        }
+        return;
+    }
+    if (state.phase === lastRenderedStepIconPhase) return;
+    lastRenderedStepIconPhase = state.phase;
+
+    if (state.phase === "idle") {
+        stepIconEl.innerHTML = PHONE_SVG;
+        stepIconEl.className = "icon-phone tilt-back";
+    } else if (state.phase === "throwing") {
+        stepIconEl.innerHTML = PHONE_SVG;
+        stepIconEl.className = "icon-phone tilt-forward";
+    } else if (state.phase === "listening") {
+        stepIconEl.innerHTML = EAR_SVG;
+        stepIconEl.className = "icon-ear listening";
+    } else if (state.phase === "reeling") {
+        stepIconEl.innerHTML = REEL_SVG;
+        stepIconEl.className = "icon-reel spinning";
+        stepIconEl.style.setProperty("--reel-progress", "0");
+    } else {
+        stepIconEl.innerHTML = "";
+        stepIconEl.className = "";
+    }
+}
+
+/** Live crank progress (0..1), driving the reel icon's progress ring on every
+ *  tick — no timer needed. No-ops when the reel icon isn't currently shown. */
+function setReelProgress(progress: number): void {
+    if (stepIconEl.className.includes("icon-reel")) {
+        stepIconEl.style.setProperty("--reel-progress", String(progress));
+    }
+}
+
+function clearDemoTimer(): void {
+    if (demoTimer !== null) { clearTimeout(demoTimer); demoTimer = null; }
+}
+
+interface PreviewStep { kind: "fish" | "drums"; def: InstrumentDef; caption: string; }
+
+const PREVIEW_STEPS: PreviewStep[] = [
+    { kind: "fish", def: INSTRUMENTS.find(i => i.id === "guitar")!,
+      caption: "Luister eerst. Dít is een vis — een melodie. Zó eentje wil je vangen:" },
+    { kind: "drums", def: INSTRUMENTS.find(i => i.isDrum)!,
+      caption: "En dít zijn de drums — een kale dreun, geen melodie. Die laat je zwemmen:" },
+];
+
+/** Show (and start playing) one preview step. */
+function showPreviewStep(index: number, myRun: number): void {
+    if (myRun !== runId || !introDemoActive) return;
+    previewIndex = index;
+    const step = PREVIEW_STEPS[index];
+    renderPreviewIcon(step.kind);
+    updateInstruction(step.caption);
+    playPreviewStep(myRun);
+}
+
+/** Herhaal: (re)play the current preview step's sound from the start. Always
+ *  safe to call repeatedly — never stacks audio or leaks timers. */
+function playPreviewStep(myRun: number): void {
+    if (myRun !== runId || !introDemoActive) return;
+    instruments.stopAll();
+    clearDemoTimer();
+    const step = PREVIEW_STEPS[previewIndex];
+    setPreviewIconPlaying(true, step.kind);
+    const dur = instruments.playMelody(step.def);
+    demoTimer = setTimeout(() => {
+        if (myRun !== runId) return;
+        demoTimer = null;
+        setPreviewIconPlaying(false, step.kind);
+    }, dur * 1000);
+}
+
+/** Volgende: move to the next preview step, or — once every step has been
+ *  shown — start the real tutorial loop. */
+function advancePreview(myRun: number): void {
+    if (myRun !== runId || !introDemoActive) return;
+    clearDemoTimer();
+    instruments.stopAll();
+    const nextIndex = previewIndex + 1;
+    if (nextIndex < PREVIEW_STEPS.length) {
+        showPreviewStep(nextIndex, myRun);
+        return;
+    }
+    renderPreviewIcon(null);
+    updateInstruction("Klaar? Daar gaan we — volg de aanwijzingen.");
+    demoTimer = setTimeout(() => {
+        if (myRun !== runId) return;
+        demoTimer = null;
+        introDemoActive = false;
+        previewPanelEl.hidden = true;
+        state.running = true;
+        loop.start();
+        updateUI();
+    }, 1200);
+}
+
+/** Herhaal geluid (intro only): replay the melody currently on the hook,
+ *  without extending the catch window — it helps identify what's biting, it
+ *  doesn't remove the mechanic's time pressure. */
+function repeatListeningSound(): void {
+    if (!introMode || state.phase !== "listening" || state.activeInstrument === null) return;
+    const def = INSTRUMENTS.find(i => i.id === state.activeInstrument);
+    if (!def) return;
+    instruments.stopAll();
+    instruments.playMelody(def);
+}
+
+/** Nog een vis laten bijten (intro only): force a bite immediately instead of
+ *  waiting for the random timer. The button is disabled while a bite is
+ *  already active (see updateUI/the loop) rather than interrupting it. */
+function forceBite(): void {
+    if (!introMode || state.phase !== "listening" || state.activeInstrument !== null) return;
+    biteTimer = 0;
+    spawnBite();
+    updateUI();
 }
 
 function finishIntro(): void {
@@ -136,10 +318,11 @@ function showGameScreen(): void {
 
 /** Full teardown — stop everything and return to the start screen. */
 function stopGame(): void {
-    runId++;                       // invalidate any in-flight demo / timers
+    runId++;                       // invalidate any in-flight preview / timers
     introDemoActive = false;
     introComplete = false;
-    if (demoTimer !== null) { clearTimeout(demoTimer); demoTimer = null; }
+    previewIndex = 0;
+    clearDemoTimer();
     if (introEndTimer !== null) { clearTimeout(introEndTimer); introEndTimer = null; }
     state.running = false;
     input.stop();
@@ -152,6 +335,12 @@ function stopGame(): void {
     gameBtn.disabled = false;
     instructionEl.textContent = "";
     log("");
+    previewPanelEl.hidden = true;
+    renderPreviewIcon(null);
+    listeningAssistEl.hidden = true;
+    stepIconEl.innerHTML = "";
+    stepIconEl.className = "";
+    lastRenderedStepIconPhase = null;
     showStartScreen();
 }
 
@@ -186,7 +375,8 @@ async function startGame(asIntro: boolean): Promise<void> {
 
     introMode = asIntro;
     introComplete = false;
-    introDemoActive = asIntro;   // suppress the step text until the demo is done
+    introDemoActive = asIntro;   // suppress the step text until the preview is done
+    previewIndex = 0;
     state.score = 0;
     state.collectedInstruments = [];
 
@@ -196,8 +386,13 @@ async function startGame(asIntro: boolean): Promise<void> {
     gameRunning = true;
 
     if (asIntro) {
-        await runIntroDemo(myRun);
-        if (myRun !== runId) return; // stopped during the demo
+        // player-paced preview: Herhaal/Volgende drive it from here on, and
+        // advancePreview() starts the real loop once the player clicks through
+        // every step — state.running stays false until then.
+        previewPanelEl.hidden = false;
+        showPreviewStep(0, myRun);
+        updateUI();
+        return;
     }
 
     state.running = true;
@@ -396,6 +591,10 @@ const loop = new GameLoop((dt) => {
             spawnBite();
         }
 
+        if (introMode) {
+            repeatSoundBtn.disabled = state.activeInstrument === null;
+            forceBiteBtn.disabled = state.activeInstrument !== null;
+        }
     }
     else if (state.phase == "reeling"){
         stepTimer += dt;
@@ -420,6 +619,10 @@ const loop = new GameLoop((dt) => {
         // faster cranking -> faster reel sound
         if (isSoundPlaying) {
             soundFishingReel.rate(Math.min(2, Math.max(0.7, 0.7 + Math.abs(crankVelocity) / 8)));
+        }
+
+        if (introMode) {
+            setReelProgress(Math.min(1, Math.abs(crankAngle) / REEL_TARGET));
         }
 
         // reeled in — two full turns — the outcome is revealed now
@@ -614,8 +817,17 @@ function updateUI(): void {
     collectionEl.hidden = introMode;
     scoreEl.hidden = introMode;
 
+    // the listening-step assist buttons only make sense mid-tutorial, while
+    // there's actually something (or nothing yet) to react to
+    listeningAssistEl.hidden = !(introMode && state.phase === "listening");
+
+    renderStepIcon();
     updateInstruction();
 }
 introBtn.addEventListener("click", () => { startNoteEl.hidden = true; startGame(true); });
 gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; startGame(false); });
 stopBtn.addEventListener("click", () => stopGame());
+previewRepeatBtn.addEventListener("click", () => playPreviewStep(runId));
+previewNextBtn.addEventListener("click", () => advancePreview(runId));
+repeatSoundBtn.addEventListener("click", () => repeatListeningSound());
+forceBiteBtn.addEventListener("click", () => forceBite());

@@ -27,7 +27,22 @@
   </div>
 
   <div id="game-screen" hidden>
+    <div id="step-icon" aria-hidden="true"></div>
     <div id="instruction"></div>
+
+    <div id="preview-panel" hidden>
+      <div id="preview-icon-slot" aria-hidden="true"></div>
+      <div id="preview-buttons">
+        <button id="preview-repeat-btn" data-ui>Herhaal</button>
+        <button id="preview-next-btn" data-ui>Volgende</button>
+      </div>
+    </div>
+
+    <div id="listening-assist" hidden>
+      <button id="repeat-sound-btn" data-ui>Herhaal geluid</button>
+      <button id="force-bite-btn" data-ui>Nog een vis laten bijten</button>
+    </div>
+
     <div id="score">Score: 0</div>
     <div id="collection"></div>
     <div id="log"></div>

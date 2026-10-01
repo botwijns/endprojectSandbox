@@ -44,8 +44,169 @@ body {
   width: 100%;
 }
 
-#start-screen[hidden], #game-screen[hidden] {
+#preview-panel, #listening-assist {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+#preview-buttons, #listening-assist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+#start-screen[hidden], #game-screen[hidden],
+#preview-panel[hidden], #listening-assist[hidden] {
   display: none;
+}
+
+/* --- tutorial icons --------------------------------------------------- */
+
+#step-icon, #preview-icon-slot {
+  width: clamp(72px, 22vw, 120px);
+  height: clamp(72px, 22vw, 120px);
+  margin: 0.25rem 0;
+}
+
+#step-icon {
+  /* lets the phone's rotateX tilt read as leaning toward/away from the
+     player instead of flattening in place */
+  perspective: 500px;
+}
+
+#step-icon:empty, #preview-icon-slot:empty {
+  margin: 0;
+}
+
+#step-icon svg, #preview-icon-slot svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.icon-fish .fish-body, .icon-fish .fish-tail {
+  transform-box: fill-box;
+  transform-origin: 70% 50%;
+}
+.icon-fish.playing .fish-body, .icon-fish.playing .fish-tail {
+  animation: fish-wiggle 0.5s ease-in-out infinite;
+}
+.icon-fish .note {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.icon-fish.playing .note {
+  animation: note-float 1.4s ease-out infinite;
+}
+.icon-fish.playing .note:nth-of-type(2) { animation-delay: 0.35s; }
+.icon-fish.playing .note:nth-of-type(3) { animation-delay: 0.7s; }
+
+.icon-drums .drum-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.icon-drums.playing .drum-body {
+  animation: drum-shake 0.25s ease-in-out infinite;
+}
+.icon-drums .no-overlay {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.icon-drums.playing .no-overlay {
+  opacity: 0.85;
+}
+
+.icon-ear .wave {
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  opacity: 0.35;
+}
+.icon-ear.listening .wave {
+  animation: wave-pulse 1.6s ease-in-out infinite;
+}
+.icon-ear.listening .wave:nth-of-type(2) { animation-delay: 0.3s; }
+.icon-ear.listening .wave:nth-of-type(3) { animation-delay: 0.6s; }
+
+/* the transform lives on the <svg> child, not #step-icon itself — perspective
+   has to be established by an ancestor of the element it foreshortens */
+.icon-phone svg {
+  transform-origin: 50% 50%;
+}
+.icon-phone.tilt-back svg {
+  animation: phone-tilt-back 1.6s ease-in-out infinite;
+}
+.icon-phone.tilt-forward svg {
+  animation: phone-tilt-forward 0.6s ease-out 1;
+}
+
+.icon-reel {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.icon-reel.spinning .reel-arc {
+  animation: reel-spin 2.2s linear infinite;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.icon-reel .reel-progress {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  transform: rotate(-90deg);
+  stroke-dasharray: 220;
+  stroke-dashoffset: calc(220 * (1 - var(--reel-progress, 0)));
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+@keyframes fish-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  50%      { transform: rotate(8deg); }
+}
+
+@keyframes note-float {
+  0%   { opacity: 0; transform: translateY(0) scale(0.8); }
+  15%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-22px) scale(1.1); }
+}
+
+@keyframes drum-shake {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  50%      { transform: translateX(2px) rotate(-3deg); }
+}
+
+@keyframes wave-pulse {
+  0%   { opacity: 0.15; transform: scale(0.85); }
+  50%  { opacity: 0.7;  transform: scale(1.1); }
+  100% { opacity: 0.15; transform: scale(0.85); }
+}
+
+/* idle: the phone leans gently back and returns, as if being pulled back
+   like a fishing rod (top edge tips away from the player) */
+@keyframes phone-tilt-back {
+  0%, 100% { transform: rotateX(0deg); }
+  50%      { transform: rotateX(-24deg); }
+}
+
+/* throwing: the phone tilts forward, top edge leaning toward the player */
+@keyframes phone-tilt-forward {
+  0%   { transform: rotateX(-24deg); }
+  100% { transform: rotateX(22deg); }
+}
+
+@keyframes reel-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-fish .fish-body, .icon-fish .fish-tail, .icon-fish .note,
+  .icon-drums .drum-body, .icon-ear .wave,
+  .icon-phone svg, .icon-reel .reel-arc {
+    animation: none !important;
+  }
 }
 
 #start-note {
