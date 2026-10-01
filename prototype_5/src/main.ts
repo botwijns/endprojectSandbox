@@ -408,6 +408,7 @@ function advanceSegment(myRun: number): void {
     clearDemoTimer();
     instruments.stopAll();
     const next = segmentIndex + 1;
+    if (next>= 2) {previewNextBtn.textContent = "Probeer het zelf"}
     if (next >= INTRO_SEGMENTS.length) { startFinalLevel(myRun); return; }
     enterSegment(next, myRun);
 }
