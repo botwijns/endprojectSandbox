@@ -241,6 +241,18 @@ body {
   margin-top: 0.5rem;
 }
 
+#home-link {
+  display: block;
+  margin-top: 1.25rem;
+  text-align: center;
+  color: #555555;
+  font-size: clamp(0.8rem, 3.5vw, 1rem);
+  text-decoration: none;
+}
+#home-link:hover, #home-link:focus-visible {
+  text-decoration: underline;
+}
+
 button {
   font-size: clamp(0.9rem, 4vw, 1.25rem);
   padding: 0.6rem 1.2rem;
