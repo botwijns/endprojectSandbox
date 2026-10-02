@@ -436,9 +436,37 @@ function startFinalLevel(myRun: number): void {
 // from the real phase machine (which keeps its own armBeta/state.phase/etc
 // untouched until the final level begins) --------------------------------
 
+/** The sensor's beta wraps from 180 to -180 when the phone is tilted far back
+ *  (over the shoulder). Comparing raw readings across that wrap looks like a
+ *  ~360° jump forward, which used to fire the forward cast mid-backswing.
+ *  This tracker accumulates the shortest per-frame step instead, giving a
+ *  continuous angle (starting at 180 + beta, the old normalized scale) that
+ *  can go past 360 or below 0 without jumping. */
+function createBetaUnwrapper() {
+    let lastRaw: number | null = null;
+    let unwrapped: number | null = null;
+    return {
+        read(raw: number | null): number | null {
+            if (raw === null) return unwrapped;
+            if (lastRaw === null || unwrapped === null) {
+                unwrapped = 180 + raw;
+            } else {
+                unwrapped += ((raw - lastRaw + 540) % 360) - 180;
+            }
+            lastRaw = raw;
+            return unwrapped;
+        },
+        reset(): void {
+            lastRaw = null;
+            unwrapped = null;
+        },
+    };
+}
+
+const drillBeta = createBetaUnwrapper();
+
 function getNormalizedBeta(): number | null {
-    const o = input.getOrientation();
-    return o.beta !== null ? 180 + o.beta : null;
+    return drillBeta.read(input.getOrientation().beta);
 }
 
 function tickTiltDrill(): void {
@@ -500,6 +528,7 @@ function startDrill(drill: DrillKind, myRun: number): void {
     activeDrill = drill;
     drillCueActive = false;
     lastRenderedStepIconPhase = null; // force a fresh icon render for this drill
+    drillBeta.reset();
     if (drill === "tilt") {
         drillTiltBaseline = null;
     } else if (drill === "throw") {
@@ -755,6 +784,9 @@ const STEP_INTERVAL = 4.0; // seconds
 let stepTimer = 0;
 var armBeta: number|null = null;
 var armBetaBaseline: number|null = null;
+// furthest-back tilt reached during the throwing phase; the cast needs a real forward swing from here
+var throwPeakBeta: number|null = null;
+const gameBeta = createBetaUnwrapper();
 // @ts-ignore
 var nextSound: boolean = true;
 var nextSoundTimeout: ReturnType<typeof setTimeout> | null = null; // add this
@@ -785,6 +817,9 @@ function startRound(): void {
     state.randomDistances = generateNumberSequence(3, 1,5)
     // armTime = 0;
     armBeta = null;
+    armBetaBaseline = null;
+    throwPeakBeta = null;
+    gameBeta.reset();
     state.drawnStage = 0
     state.drawn = false;
     state.armed = false;
@@ -806,10 +841,8 @@ const loop = new GameLoop((dt) => {
     if (!state.running) return;
 
     const orientation = input.getOrientation();
-    //if beta is smaller than zero, we have crossed the z plane, to prevent errors, we will update the beta to a number that is always positive
-    const beta = orientation.beta !== null
-        ? 180 + orientation.beta
-        : orientation.beta;
+    // unwrapped so a big swing over the shoulder (beta wrapping 180 -> -180) doesn't look like a jump forward
+    const beta = gameBeta.read(orientation.beta);
     console.log(beta)
     stepTimer += dt;
     if (state.phase =="idle" && beta!==null){
@@ -833,13 +866,15 @@ const loop = new GameLoop((dt) => {
             // we change the state to throwing, as we change the state, the baseline remains the same for the rest of the round
             soundThrow.play()
             state.phase = "throwing"
+            throwPeakBeta = beta
             updateUI()
         }
     }
     //wait a tick between phases
     else if(state.phase == "throwing"&&armBetaBaseline!==null && beta!==null){
-        // all parameters are set, so we only check if the beta difference gets lower than 2?
-        if (beta-armBetaBaseline<2){
+        if (throwPeakBeta === null || beta > throwPeakBeta) throwPeakBeta = beta
+        // cast once the phone is back near the baseline AND actually swung forward from its furthest-back point
+        if (beta-armBetaBaseline<2 && throwPeakBeta-beta>10){
             //in case the sound still plays, we stop and play the sound again for the actual throw
             soundThrow.stop()
             soundThrow.play()
@@ -1098,6 +1133,8 @@ if (debug) {
         if (e.key === "t" && state.phase === "idle") {
             soundThrow.play();
             state.phase = "throwing";
+            // fake a backswing peak so the flat desktop beta counts as the forward swing on the next tick
+            throwPeakBeta = (armBetaBaseline ?? 0) + 90;
             updateUI();
         } else if (e.key === "l") {
             biteTimer = 0;
