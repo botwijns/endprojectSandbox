@@ -892,6 +892,11 @@ const loop = new GameLoop((dt) => {
     else if (state.phase == "reeling"){
         stepTimer += dt;
         const touching = input.getPointer() !== null;
+        //during reeling, set the armBaseBetabaseline to the current beta, this is to have a better baseline
+
+        if (armBetaBaseline!==null && beta!==null){
+            armBetaBaseline = beta;
+        }
 
         // reeling engages the instant the screen is touched
         if (touching && !isSoundPlaying) {
@@ -1005,7 +1010,6 @@ function spawnBite(): void {
  */
 function startReeling(): void {
     if (!state.running || state.phase !== "listening") return;
-
     state.pendingInstrument = state.activeInstrument; // may be null (touched during silence)
     state.activeInstrument = null;
     instruments.stopAll();
