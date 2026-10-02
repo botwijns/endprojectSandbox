@@ -855,7 +855,7 @@ const loop = new GameLoop((dt) => {
                     soundFishingUnderwater.volume(0.3)
                     soundFishingUnderwater.loop(true)
                     soundFishingBackground.stop()
-                    }, 1500
+                    }, 500
                 )
                 stepTimer=0
                 biteTimer=0
