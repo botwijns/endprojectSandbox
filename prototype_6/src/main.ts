@@ -61,7 +61,7 @@ const INSTRUMENT_COLOR: Record<Instrument, string> = {
     highHat:          "#6bcb77",
 };
 const INSTRUMENT_VOLUME: Record<Instrument, number> = {
-    piano: 0.6, electricPiano: 0.6, distortionGuitar: 0.7, electricBass: 0.7, slapBass: 0.7,
+    piano: 0.6, electricPiano: 0.6, distortionGuitar: 0.5, electricBass: 1, slapBass: 0.7,
     cello: 0.7, contrabass: 0.7, trumpet: 0.6, synthPad: 0.5, steelDrums: 0.7,
     kick: 0.8, snare: 0.8, highHat: 0.8,
 };
