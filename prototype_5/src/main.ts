@@ -844,8 +844,8 @@ const loop = new GameLoop((dt) => {
             soundThrow.stop()
             soundThrow.play()
             soundFishingReelThrow.play("throw")
-            armBetaBaseline = null
-            // set beta to null to ensure that we stay in this state for a little longer without triggering the next state
+            // set state to waiting to ensure it waits without changing the armbetabaseline
+            state.phase = "waiting"
             setTimeout(() => {
                 soundFishingReelThrow.stop()
                 soundDobber.play("land")

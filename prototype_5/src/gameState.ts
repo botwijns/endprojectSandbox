@@ -11,7 +11,7 @@ export interface State {
     sequence: Direction[];
     playerInput: Direction[];
     entities: Entity[];
-    phase: "idle"|"throwing"|"listening"| "reeling" | "success"|"failure";
+    phase: "idle"|"throwing"|"listening"| "reeling" | "success"|"failure"|"waiting";
     currentStep: number;
     score: number;
     running: boolean;
