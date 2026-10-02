@@ -409,6 +409,7 @@ function advanceSegment(myRun: number): void {
     instruments.stopAll();
     const next = segmentIndex + 1;
     if (next>= 2) {previewNextBtn.textContent = "Probeer het zelf"}
+    else{ previewNextBtn.textContent = "Volgende"}
     if (next >= INTRO_SEGMENTS.length) { startFinalLevel(myRun); return; }
     enterSegment(next, myRun);
 }
@@ -740,6 +741,7 @@ var soundCaught = new Howl({
     }
 })
 var soundFishingBackground = new Howl({src: ["sounds/fishing-background.webm", "sounds/fishing-background.mp3","sounds/fishing-background.wav"]})
+var soundFishingUnderwater = new Howl({src: ["sounds/underwater.webm", "sounds/underwater.mp3"]})
 var soundThrow = new Howl({src: ["sounds/throw-woosh.webm", "sounds/throw-woosh.wav", "sounds/throw-woosh.mp3"]})
 var soundFishingReel = new Howl({src: ["sounds/fishingreel.webm", "sounds/fishingreel.mp3","sounds/fishingreel.wav"]})
 var soundFishingReelThrow = new Howl({
@@ -847,6 +849,14 @@ const loop = new GameLoop((dt) => {
             setTimeout(() => {
                 soundFishingReelThrow.stop()
                 soundDobber.play("land")
+                setTimeout(() =>{
+                    //stop background of outside water and switch to underwater sound
+                    soundFishingUnderwater.play()
+                    soundFishingUnderwater.volume(0.3)
+                    soundFishingUnderwater.loop(true)
+                    soundFishingBackground.stop()
+                    }, 1500
+                )
                 stepTimer=0
                 biteTimer=0
                 nextBiteDelay = 1.5 + Math.random()*2
@@ -920,7 +930,7 @@ const loop = new GameLoop((dt) => {
             soundCatching.play("escaped")
             state.pendingInstrument = null;
             resetCrank();
-            state.phase = "idle";
+            state.phase = "listening";
             biteTimer = 0;
             nextBiteDelay = 2;
             log("de vis is los! luister opnieuw");
@@ -1012,7 +1022,10 @@ function resolveReel(): void {
     soundFishingReel.stop();
     isSoundPlaying = false;
     soundCaught.play("caught");
-
+    soundFishingUnderwater.stop()
+    soundFishingBackground.play()
+    soundFishingBackground.volume(0.3)
+    soundFishingBackground.loop(true)
     const id = state.pendingInstrument;
     const def = id ? INSTRUMENTS.find(i => i.id === id) ?? null : null;
     state.pendingInstrument = null;
