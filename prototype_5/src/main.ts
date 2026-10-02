@@ -810,7 +810,7 @@ const loop = new GameLoop((dt) => {
     const beta = orientation.beta !== null
         ? 180 + orientation.beta
         : orientation.beta;
-    // console.log(beta, gamma)
+    console.log(beta)
     stepTimer += dt;
     if (state.phase =="idle" && beta!==null){
         //only do this if beta is not null:
