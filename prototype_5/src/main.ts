@@ -136,11 +136,30 @@ const EAR_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <path class="wave" d="M90 26 Q99 55 90 84" fill="none" stroke="#2f7fbf" stroke-width="5" stroke-linecap="round"/>
 </svg>`;
 
-const PHONE_SVG = `<svg viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg">
+const PHONE_BODY_SVG = `<svg class="phone-body" viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg">
   <rect x="4" y="8" width="92" height="44" rx="9" fill="#333333"/>
   <rect x="11" y="13" width="70" height="34" rx="3" fill="#bfe3ff"/>
   <circle cx="90" cy="30" r="3" fill="#666666"/>
 </svg>`;
+
+// Direction cues next to the tilting phone. They do NOT rotate with it (the
+// tilt animation lives on .phone-body only); style.css decides which arrow +
+// label is visible per mode class (tilt-back / tilt-forward / swing-demo).
+// Curved arc on the right edge: arrowhead at the top = the top edge swings
+// away/back, arrowhead at the bottom = it swings toward you/forward.
+const PHONE_SVG = `${PHONE_BODY_SVG}
+<div class="dir-arrows">
+  <svg class="dir-arrow dir-back" viewBox="0 0 40 60" xmlns="http://www.w3.org/2000/svg">
+    <path d="M8 52 C34 44 34 20 14 13" fill="none" stroke="#e67e22" stroke-width="5" stroke-linecap="round"/>
+    <polygon points="5,12 17,4 18,19" fill="#e67e22"/>
+  </svg>
+  <svg class="dir-arrow dir-forward" viewBox="0 0 40 60" xmlns="http://www.w3.org/2000/svg">
+    <path d="M8 8 C34 16 34 40 14 47" fill="none" stroke="#e67e22" stroke-width="5" stroke-linecap="round"/>
+    <polygon points="5,48 17,56 18,41" fill="#e67e22"/>
+  </svg>
+</div>
+<span class="dir-label dir-label-back">naar achteren</span>
+<span class="dir-label dir-label-forward">naar voren</span>`;
 
 const REEL_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <g class="reel-arc">
