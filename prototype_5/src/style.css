@@ -146,35 +146,41 @@ body {
   animation: phone-swing-demo 2.4s ease-in-out infinite;
 }
 
-/* the phone icon is wider than the other icons: the phone sits centred and the
-   direction arrow lives in the free space to its right */
+/* the phone icon is bigger than the other icons: the phone sits centred with a
+   ring around it (like an orbit around the phone's horizontal axis); the
+   ring's front half crosses over the screen, its back half hides behind the
+   phone, and an arrowhead on the front half shows which way it turns.
+   The box matches the ring SVGs' 200x130 viewBox so they overlay 1:1. */
 #step-icon.icon-phone, #preview-icon-slot.icon-phone {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: clamp(150px, 46vw, 210px);
+  width: clamp(170px, 52vw, 230px);
+  height: auto;
+  aspect-ratio: 200 / 130;
   /* room for the "naar achteren / naar voren" label under the phone */
   margin-bottom: 1.9em;
 }
 #step-icon.icon-phone .phone-body, #preview-icon-slot.icon-phone .phone-body {
-  width: 62%;
+  position: relative;
+  z-index: 1;
+  width: 55%;
   height: auto;
   flex: none;
 }
-.icon-phone .dir-arrows {
+#step-icon.icon-phone .ring, #preview-icon-slot.icon-phone .ring {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center end;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
   pointer-events: none;
 }
-#step-icon.icon-phone .dir-arrow, #preview-icon-slot.icon-phone .dir-arrow {
-  grid-area: 1 / 1;
-  width: 20%;
-  height: auto;
-}
-.icon-phone .dir-arrow {
+.icon-phone .ring-back  { z-index: 0; }  /* behind the phone */
+.icon-phone .ring-front { z-index: 2; }  /* in front of the phone */
+/* arrowheads on the front half: hidden until the mode class turns one on */
+.icon-phone .dir-back, .icon-phone .dir-forward {
   opacity: 0;
 }
 .icon-phone .dir-label {
@@ -305,14 +311,15 @@ body {
     animation: none !important;
   }
   /* no pulsing/sweeping cues either — show the cue(s) for the current mode
-     statically (the swing demo shows both arrows but no label, since the two
-     labels would sit on top of each other) */
-  .icon-phone .dir-arrow, .icon-phone .dir-label {
+     statically (the swing demo shows both arrowheads, one above and one below
+     the middle, but no label, since the two labels would sit on top of each
+     other) */
+  .icon-phone .dir-back, .icon-phone .dir-forward, .icon-phone .dir-label {
     animation: none !important;
   }
   .icon-phone.tilt-back .dir-back, .icon-phone.tilt-back .dir-label-back,
   .icon-phone.tilt-forward .dir-forward, .icon-phone.tilt-forward .dir-label-forward,
-  .icon-phone.swing-demo .dir-arrow {
+  .icon-phone.swing-demo .dir-back, .icon-phone.swing-demo .dir-forward {
     opacity: 0.9;
   }
 }

@@ -142,22 +142,24 @@ const PHONE_BODY_SVG = `<svg class="phone-body" viewBox="0 0 100 60" xmlns="http
   <circle cx="90" cy="30" r="3" fill="#666666"/>
 </svg>`;
 
-// Direction cues next to the tilting phone. They do NOT rotate with it (the
-// tilt animation lives on .phone-body only); style.css decides which arrow +
-// label is visible per mode class (tilt-back / tilt-forward / swing-demo).
-// Curved arc on the right edge: arrowhead at the top = the top edge swings
-// away/back, arrowhead at the bottom = it swings toward you/forward.
-const PHONE_SVG = `${PHONE_BODY_SVG}
-<div class="dir-arrows">
-  <svg class="dir-arrow dir-back" viewBox="0 0 40 60" xmlns="http://www.w3.org/2000/svg">
-    <path d="M8 52 C34 44 34 20 14 13" fill="none" stroke="#e67e22" stroke-width="5" stroke-linecap="round"/>
-    <polygon points="5,12 17,4 18,19" fill="#e67e22"/>
-  </svg>
-  <svg class="dir-arrow dir-forward" viewBox="0 0 40 60" xmlns="http://www.w3.org/2000/svg">
-    <path d="M8 8 C34 16 34 40 14 47" fill="none" stroke="#e67e22" stroke-width="5" stroke-linecap="round"/>
-    <polygon points="5,48 17,56 18,41" fill="#e67e22"/>
-  </svg>
-</div>
+// A ring around the phone shows which way it tilts. The phone tilts around its
+// horizontal axis, so the ring is a tall ellipse around that axis: its right
+// (front) half crosses over the screen, its left (back) half sits behind the
+// phone and only peeks out above and below it. The ring itself does NOT tilt
+// (the animation lives on .phone-body only). The arrowhead on the front half
+// points up = the front of the ring turns upward = the top edge swings
+// back/away; pointing down = the top edge swings toward you/forward.
+// style.css decides which arrowhead + label is visible per mode class
+// (tilt-back / tilt-forward / swing-demo). Both rings share the 200x130 box.
+const PHONE_SVG = `<svg class="ring ring-back" viewBox="0 0 200 130" xmlns="http://www.w3.org/2000/svg">
+  <path d="M100 7 A34 58 0 0 0 100 123" fill="none" stroke="#e67e22" stroke-width="5" stroke-linecap="round" opacity="0.5"/>
+</svg>
+${PHONE_BODY_SVG}
+<svg class="ring ring-front" viewBox="0 0 200 130" xmlns="http://www.w3.org/2000/svg">
+  <path d="M100 7 A34 58 0 0 1 100 123" fill="none" stroke="#e67e22" stroke-width="5" stroke-linecap="round"/>
+  <polyline class="dir-back" points="122,56 134,43 146,56" fill="none" stroke="#e67e22" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline class="dir-forward" points="122,74 134,87 146,74" fill="none" stroke="#e67e22" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
 <span class="dir-label dir-label-back">naar achteren</span>
 <span class="dir-label dir-label-forward">naar voren</span>`;
 
