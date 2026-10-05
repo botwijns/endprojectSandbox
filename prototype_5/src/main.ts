@@ -137,11 +137,32 @@ const EAR_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <path class="wave" d="M90 26 Q99 55 90 84" fill="none" stroke="#2f7fbf" stroke-width="5" stroke-linecap="round"/>
 </svg>`;
 
-const PHONE_SVG = `<svg viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg">
+const PHONE_BODY_SVG = `<svg class="phone-body" viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg">
   <rect x="4" y="8" width="92" height="44" rx="9" fill="#333333"/>
   <rect x="11" y="13" width="70" height="34" rx="3" fill="#bfe3ff"/>
   <circle cx="90" cy="30" r="3" fill="#666666"/>
 </svg>`;
+
+// A ring around the phone shows which way it tilts. The phone tilts around its
+// horizontal axis, so the ring is a tall ellipse around that axis: its right
+// (front) half crosses over the screen, its left (back) half sits behind the
+// phone and only peeks out above and below it. The ring itself does NOT tilt
+// (the animation lives on .phone-body only). The arrowhead on the front half
+// points up = the front of the ring turns upward = the top edge swings
+// back/away; pointing down = the top edge swings toward you/forward.
+// style.css decides which arrowhead + label is visible per mode class
+// (tilt-back / tilt-forward / swing-demo). Both rings share the 200x130 box.
+const PHONE_SVG = `<svg class="ring ring-back" viewBox="0 0 200 130" xmlns="http://www.w3.org/2000/svg">
+  <path d="M100 7 A34 58 0 0 0 100 123" fill="none" stroke="#e67e22" stroke-width="5" stroke-linecap="round" opacity="0.5"/>
+</svg>
+${PHONE_BODY_SVG}
+<svg class="ring ring-front" viewBox="0 0 200 130" xmlns="http://www.w3.org/2000/svg">
+  <path d="M100 7 A34 58 0 0 1 100 123" fill="none" stroke="#e67e22" stroke-width="5" stroke-linecap="round"/>
+  <polyline class="dir-back" points="122,56 134,43 146,56" fill="none" stroke="#e67e22" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline class="dir-forward" points="122,74 134,87 146,74" fill="none" stroke="#e67e22" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+<span class="dir-label dir-label-back">naar achteren</span>
+<span class="dir-label dir-label-forward">naar voren</span>`;
 
 const REEL_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <g class="reel-arc">
