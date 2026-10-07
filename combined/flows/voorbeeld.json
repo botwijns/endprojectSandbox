@@ -1,0 +1,12 @@
+{
+  "name": "voorbeeld",
+  "surveyAtEnd": false,
+  "segments": [
+    { "proto": "p7", "mode": "intro", "params": {} },
+    { "proto": "p7", "mode": "game", "params": { "questions": 4 } },
+    { "proto": "p5", "mode": "intro", "params": {} },
+    { "proto": "p5", "mode": "game", "params": { "fishToCatch": 3, "maxStrikes": 3, "onFail": "continue" } },
+    { "proto": "p6", "mode": "intro", "params": { "speech": true } },
+    { "proto": "p6", "mode": "game", "params": { "songCount": 2, "briefs": ["vrolijk", "slaapliedje"], "speech": true, "randomNote": false } }
+  ]
+}
