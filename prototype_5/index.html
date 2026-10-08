@@ -18,8 +18,8 @@
       Vang vissen op je gehoor. Elke vis is een instrument met een eigen melodie:
       hoor je een melodie, dan haal je binnen. Hoor je de <strong>drums</strong>
       &mdash; een kale dreun &mdash; dan laat je die zwemmen.<br>
-      In het <strong>oefenlevel</strong> hoor je eerst allebei en leer je stap voor stap
-      hoe het werkt. Je bent klaar zodra je &eacute;&eacute;n vis vangt.
+      In het <strong>oefenlevel</strong> legt de visser je stap voor stap uit hoe het
+      werkt. Je bent klaar zodra je &eacute;&eacute;n vis vangt.
     </p>
     <p id="start-note" hidden></p>
     <div id="menu-buttons">
@@ -30,20 +30,13 @@
   </div>
 
   <div id="game-screen" hidden>
-    <div id="step-icon" aria-hidden="true"></div>
     <div id="instruction"></div>
 
-    <div id="preview-panel" hidden>
-      <div id="preview-icon-slot" aria-hidden="true"></div>
-      <div id="preview-buttons">
-        <button id="preview-repeat-btn" data-ui>Herhaal</button>
-        <button id="preview-next-btn" data-ui>Volgende</button>
-      </div>
-    </div>
-
-    <div id="listening-assist" hidden>
-      <button id="repeat-sound-btn" data-ui>Herhaal geluid</button>
-      <button id="force-bite-btn" data-ui>Nog een vis laten bijten</button>
+    <!-- the intro level's animated scenes (src/intro/): on land, then under water -->
+    <div id="intro-stage" hidden>
+      <div id="intro-land" class="intro-layer"></div>
+      <div id="intro-water" class="intro-layer"></div>
+      <div id="intro-caption" hidden></div>
     </div>
 
     <div id="score">Score: 0</div>
