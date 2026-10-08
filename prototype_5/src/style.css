@@ -129,6 +129,29 @@ body {
   padding: 0.4rem 0.8rem;
 }
 
+/* the day's task list: a big tap target in the top-left corner, so it can be
+   found without looking (the fullscreen toggle owns the top-right corner) */
+#tasklist-btn {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 12;
+  width: clamp(4.5rem, 22vmin, 9rem);
+  height: clamp(4.5rem, 22vmin, 9rem);
+  margin: 0;
+  padding: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  border: 0;
+  border-bottom-right-radius: 100%;
+  background: #e8eef7;
+  font-size: clamp(1.6rem, 9vmin, 3.5rem);
+  touch-action: manipulation;
+}
+#tasklist-btn[hidden] {
+  display: none;
+}
+
 #start-note {
   text-align: center;
   font-weight: 700;

@@ -15,9 +15,11 @@
 
   <div id="start-screen">
     <p id="intro-blurb">
-      Vang vissen op je gehoor. Elke vis is een instrument met een eigen melodie:
-      hoor je een melodie, dan haal je binnen. Hoor je de <strong>drums</strong>
-      &mdash; een kale dreun &mdash; dan laat je die zwemmen.<br>
+      Vang vissen op je gehoor. Elke vis heeft een eigen geluid: de trompetvis
+      blaast een fanfare, de hamerhaai slaat op een aambeeld.<br>
+      Elke dag krijg je een <strong>lijstje</strong> met vissen die je moet vangen.
+      Tik <strong>linksboven</strong> in het scherm om te horen welke vissen je nog
+      mist. Vang je een vis die niet op je lijstje staat, dan gooi je hem terug.<br>
       In het <strong>oefenlevel</strong> legt de visser je stap voor stap uit hoe het
       werkt. Je bent klaar zodra je &eacute;&eacute;n vis vangt.
     </p>
@@ -30,6 +32,8 @@
   </div>
 
   <div id="game-screen" hidden>
+    <!-- reads out the fish still on today's list; data-ui keeps the tap from starting a reel -->
+    <button id="tasklist-btn" type="button" data-ui aria-label="Takenlijst: welke vissen moet ik nog vangen?" hidden>&#128203;</button>
     <div id="instruction"></div>
 
     <!-- the intro level's animated scenes (src/intro/): on land, then under water -->

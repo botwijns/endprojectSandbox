@@ -1,5 +1,5 @@
 import type {Howl} from "howler";
-import type {InstrumentDef} from "../audio/InstrumentManager.ts";
+import type {FishDef} from "../audio/InstrumentManager.ts";
 import {createLakesideScene, type LakesideScene} from "./lakesideScene.ts";
 import {createHookReelScene, type HookReelScene} from "./hookReelScene.ts";
 import {playLine, preloadLines, stopLine} from "./speech.ts";
@@ -27,8 +27,8 @@ export interface IntroDeps {
     water: HTMLElement;    // layer for the hook-and-reel scene
     caption: HTMLElement;  // short on-screen hint during the player's turns
     sounds: IntroSounds;
-    demoFish: InstrumentDef;
-    playMelody(def: InstrumentDef): number; // returns the duration in seconds
+    demoFish: FishDef;
+    playMelody(def: FishDef): number; // returns the duration in seconds
     /** Let the game's phase machine run (the player's turn). */
     resume(): void;
     /** Hold the game's phase machine (while the intro explains). */
