@@ -6,6 +6,19 @@ import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts
 import { speak, earcon, setSpeechEnabled } from "./speech.ts";
 import "webaudiofont";
 import { enterFullscreen } from "../../src/fullscreen.ts";
+import { getEmbed, setupEmbedStart, embedDone, num, bool, strList } from "../../src/embed.ts";
+
+// set when the combined/ shell runs this page as one segment of a longer flow
+const embed = getEmbed();
+// how many briefs make up the mixtape, and (optionally) which ones in which order
+const SONG_COUNT = num(embed, "songCount", BRIEFS.length, 1, 20);
+const BRIEF_ORDER: Brief[] = (strList(embed, "briefs") ?? [])
+    .map(id => BRIEFS.find(b => b.id === id))
+    .filter((b): b is Brief => b !== undefined);
+
+function briefFor(index: number): Brief {
+    return BRIEF_ORDER.length ? BRIEF_ORDER[index % BRIEF_ORDER.length] : briefAt(index);
+}
 declare const WebAudioFontPlayer: any;
 // Each WebAudioFont file assigns one global var (loaded via a <script> tag in
 // index.html) — this table maps our instrument keys to those var names, so
@@ -460,7 +473,7 @@ function switchInstrument(): void {
 // ── Briefs / mixtape ─────────────────────────────────────────────────────────
 function loadBrief(index: number): void {
     briefIndex = index;
-    currentBrief = briefAt(index);
+    currentBrief = briefFor(index);
     currentScale = currentBrief.scale;
     currentVolume = currentBrief.volume;
     currentInstrument = currentBrief.instruments[0];
@@ -496,7 +509,7 @@ function finishTrack(): void {
     for (const id of MELODIC_INSTRUMENTS) pattern[id] = Array(STEPS).fill(null);
 
     window.setTimeout(() => {
-        if (mixtape.length >= BRIEFS.length) {
+        if (mixtape.length >= SONG_COUNT) {
             endSession();
         } else {
             loadBrief(briefIndex + 1);
@@ -510,7 +523,9 @@ function endSession(): void {
     updateHud();
     renderGrid();
     speak(`Je mixtape is klaar, met ${mixtape.length} nummers. Luister maar.`);
-    playMedley();
+    const medleySeconds = playMedley();
+    // hand back to the combined/ shell once the medley has played out
+    if (embed) window.setTimeout(() => embedDone({ tracks: mixtape.length }), (medleySeconds + 1.5) * 1000);
 }
 
 // Play every saved track back to back, each looped MEDLEY_REPEATS times so
@@ -518,8 +533,10 @@ function endSession(): void {
 // each at the loudness the brief asked for.
 const MEDLEY_REPEATS = 2;
 
-function playMedley(): void {
-    let when = ctx.currentTime + 0.6;
+/** Schedules the medley; returns how long it takes, in seconds. */
+function playMedley(): number {
+    const start = ctx.currentTime;
+    let when = start + 0.6;
     const stepDur = stepDurationMs / 1000;
     for (const track of mixtape) {
         const scale = BRIEFS.find(b => b.id === track.brief)?.scale ?? currentScale;
@@ -542,6 +559,7 @@ function playMedley(): void {
         }
         when += MEDLEY_REPEATS * STEPS * stepDur + stepDur; // a beat of space before the next track
     }
+    return when - start;
 }
 
 function persistMixtape(): void {
@@ -716,8 +734,16 @@ tutNextBtn.addEventListener("click", () => {
 function finishIntro(): void {
     stopSequencer();
     earcon(ctx, "done");
-    speak("Goed gedaan! Je kent nu alle knoppen. Terug naar het startscherm.");
+    speak(embed ? "Goed gedaan! Je kent nu alle knoppen." : "Goed gedaan! Je kent nu alle knoppen. Terug naar het startscherm.");
     window.setTimeout(() => {
+        if (embed) {
+            phase = "idle";
+            introMode = false;
+            hideTutorial();
+            inp.stop();
+            embedDone();
+            return;
+        }
         phase = "idle";
         introMode = false;
         hideTutorial();
@@ -766,6 +792,11 @@ try {
     const savedSpeech = localStorage.getItem(SPEECH_KEY);
     if (savedSpeech !== null) speechToggleEl.checked = savedSpeech === "1";
 } catch { /* ignore */ }
+// the combined/ shell sets these per segment instead of the checkboxes
+if (embed) {
+    speechToggleEl.checked = bool(embed, "speech", speechToggleEl.checked);
+    randomNoteToggleEl.checked = bool(embed, "randomNote", false);
+}
 setSpeechEnabled(speechToggleEl.checked);
 
 // The tutorial starts straight away at the first brief's tempo — no 3-tap
@@ -777,7 +808,7 @@ introBtn.addEventListener("click", () => {
     pendingIntro = true;
     startNoteEl.classList.add("hidden");
     showGameScreen();
-    startGame(BRIEFS[0].tempo, true);
+    startGame(briefFor(0).tempo, true);
 });
 gameBtn.addEventListener("click", () => {
     void enterFullscreen();
@@ -793,7 +824,7 @@ stopBtn.addEventListener("click", stopGame);
 // ── Start ─────────────────────────────────────────────────────────────────────
 function startGame(tappedBpm: number, asIntro: boolean): void {
     // blend the player's tapped tempo with the brief's target so it stays on-vibe
-    bpm = Math.round((tappedBpm + BRIEFS[0].tempo) / 2);
+    bpm = Math.round((tappedBpm + briefFor(0).tempo) / 2);
     stepDurationMs = (60000 / bpm) / 2;
 
     phase = "composing";
@@ -845,3 +876,9 @@ inp.onAction((action) => {
 
 updateHud();
 renderGrid();
+
+// run by the combined/ shell: skip the menu, start straight into the requested mode
+if (embed) {
+    stopBtn.hidden = true;
+    setupEmbedStart(embed, () => (embed.mode === "intro" ? introBtn : gameBtn).click());
+}

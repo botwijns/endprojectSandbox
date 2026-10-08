@@ -10,6 +10,10 @@ import {
     DRUMS_SVG, EAR_SVG, PHONE_ZONES_2_SVG, PHONE_ZONES_4_SVG, TAP_SVG, DOUBLE_TAP_SVG, SHAKE_SVG,
 } from "./introIcons.ts";
 import { enterFullscreen } from "../../src/fullscreen.ts";
+import { getEmbed, setupEmbedStart, embedDone, num } from "../../src/embed.ts";
+
+// set when the combined/ shell runs this page as one segment of a longer flow
+const embed = getEmbed();
 
 // ── Eyes-free "wat hoor je?" music quiz ──────────────────────────────────────
 // Every question generates a brand-new song from a real music-theory engine and
@@ -23,7 +27,7 @@ import { enterFullscreen } from "../../src/fullscreen.ts";
 // quiz - see the introduction section below. Tapping 3× anywhere outside the
 // buttons still starts the quiz, so it stays playable without looking.
 
-const QUIZ_LENGTH = 8;
+const QUIZ_LENGTH = num(embed, "questions", 8, 1, 30); // the combined/ shell can override it
 const PROMPT_READ_MS = 2600; // rough time to speak the question before the piece plays
 const OPTION_READ_GAP_MS = 1900; // spacing when reading the four options in a row
 const RESULT_ADVANCE_MS = 3200; // delay before the next question after an answer
@@ -449,10 +453,11 @@ function finishIntro(): void {
     input.setActive(false);
     setIntroStep("done");
     cue("done");
-    later(() => speak("Goed gedaan! Je kent nu de quiz. Terug naar het startscherm."), 400);
+    later(() => speak(embed ? "Goed gedaan! Je kent nu de quiz." : "Goed gedaan! Je kent nu de quiz. Terug naar het startscherm."), 400);
     later(() => {
         if (myRun !== runId) return;
         stopGame();
+        if (embed) { embedDone(); return; }
         startNoteEl.hidden = false;
         startNoteEl.textContent = "✅ Oefenlevel voltooid! Druk op ‘Start quiz’ voor de echte quiz.";
         introBtn.textContent = "Oefenlevel opnieuw";
@@ -673,6 +678,15 @@ function endQuiz(): void {
         const names = lastResultsSummary.slice(0, 3).map(s => s.category).join(", ");
         later(() => speak(`Je scoorde het best op: ${names}.`), 3200);
     }
+    // hand back to the combined/ shell once the results have been read out
+    if (embed) {
+        const myRun = runId;
+        later(() => {
+            if (myRun !== runId) return;
+            stopGame();
+            embedDone({ score, total });
+        }, lastResultsSummary.length > 0 ? 7500 : 4000);
+    }
 }
 
 // ── Wire input ──────────────────────────────────────────────────────────────
@@ -712,3 +726,10 @@ readOptionsBtn.addEventListener("click", () => {
 input.start();
 updateIntroUI();
 renderHud();
+
+// run by the combined/ shell: skip the menu, start straight into the requested mode
+if (embed) {
+    songPicker.hidden = true;
+    stopBtn.hidden = true;
+    setupEmbedStart(embed, () => (embed.mode === "intro" ? introBtn : gameBtn).click());
+}

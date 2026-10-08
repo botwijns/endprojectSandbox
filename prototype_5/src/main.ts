@@ -5,6 +5,10 @@ import {SynthManager} from "./audio/SynthManager.ts";
 import {InstrumentManager, INSTRUMENTS, type InstrumentDef} from "./audio/InstrumentManager.ts";
 import {Howl, Howler} from "howler";
 import { enterFullscreen } from "../../src/fullscreen.ts";
+import { getEmbed, setupEmbedStart, embedDone, num, str } from "../../src/embed.ts";
+
+// set when the combined/ shell runs this page as one segment of a longer flow
+const embed = getEmbed();
 import {createIntroLevel, type IntroLevel} from "./intro/introLevel.ts";
 
 const debug= !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
@@ -29,7 +33,11 @@ const introCaptionEl = document.getElementById("intro-caption")!;
 
 // total instruments the player must collect (everything except the drums)
 const CATCHABLE = INSTRUMENTS.filter(i => !i.isDrum);
-const MAX_STRIKES = 3;
+// the combined/ shell can ask for fewer distinct fish and a different strike limit
+const FISH_TO_CATCH = num(embed, "fishToCatch", CATCHABLE.length, 1, CATCHABLE.length);
+const MAX_STRIKES = num(embed, "maxStrikes", 3, 1, 10);
+// embedded only: strike out -> "retry" the round (standalone behaviour) or "continue" to the next segment
+const ON_FAIL = str(embed, "onFail", "retry", ["retry", "continue"] as const);
 
 // --- introduction level -----------------------------------------------------
 // The intro is a guided, spoken tutorial in two animated scenes (see
@@ -104,6 +112,7 @@ function finishIntro(): void {
     soundFishingBackground.fade(soundFishingBackground.volume() as number, 0, 1600);
     introEndTimer = setTimeout(() => {
         stopGame();
+        if (embed) { embedDone(); return; }
         startNoteEl.hidden = false;
         startNoteEl.textContent = "✅ Oefenlevel voltooid! Druk op ‘Start spel’ voor het hele spel.";
         introBtn.textContent = "Oefenlevel opnieuw";
@@ -474,6 +483,19 @@ const loop = new GameLoop((dt) => {
         }
     }
     if (state.phase === "success" || state.phase =="failure") {
+        if (embed && (state.phase === "success" || ON_FAIL === "continue")) {
+            // freeze play, let the catch / fail sound ring out, then hand back to the shell
+            const result = { score: state.score, strikes: state.strikes, failed: state.phase === "failure" };
+            state.running = false;
+            log(result.failed ? "Te vaak de drums — door naar het volgende spel." : `Klaar! ${FISH_TO_CATCH} vissen gevangen.`);
+            const myRun = runId;
+            setTimeout(() => {
+                if (myRun !== runId) return;
+                stopGame();
+                embedDone(result);
+            }, 2200);
+            return;
+        }
         state.currentStep = state.currentStep + 1;
         // create new target locations
         if (state.currentStep>2) {
@@ -595,7 +617,7 @@ function resolveReel(): void {
         if (introMode) {
             // one fish is all the tutorial asks for
             finishIntro();
-        } else if (state.collectedInstruments.length >= CATCHABLE.length) {
+        } else if (state.collectedInstruments.length >= FISH_TO_CATCH) {
             setPhase("success");
         }
     }
@@ -640,7 +662,8 @@ function updateUI(): void {
         .map(i => `${state.collectedInstruments.includes(i.id) ? "✅" : "⬜"} ${i.label}`)
         .join("   ");
     collectionEl.textContent =
-        `${caught}   |   drums: ${state.strikes}/${MAX_STRIKES}`;
+        `${caught}   |   drums: ${state.strikes}/${MAX_STRIKES}` +
+        (FISH_TO_CATCH < CATCHABLE.length ? `   |   doel: ${state.collectedInstruments.length}/${FISH_TO_CATCH}` : "");
 
     // the tutorial only asks for one fish — the full collection tracker would
     // just be noise, so hide it and the score until the real game starts
@@ -653,3 +676,13 @@ function updateUI(): void {
 introBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(true); });
 gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(false); });
 stopBtn.addEventListener("click", () => stopGame());
+previewRepeatBtn.addEventListener("click", () => repeatExplain(runId));
+previewNextBtn.addEventListener("click", () => advanceSegment(runId));
+repeatSoundBtn.addEventListener("click", () => repeatListeningSound());
+forceBiteBtn.addEventListener("click", () => forceBite());
+
+// run by the combined/ shell: skip the menu, start straight into the requested mode
+if (embed) {
+    stopBtn.hidden = true;
+    setupEmbedStart(embed, () => startGame(embed.mode === "intro"));
+}
