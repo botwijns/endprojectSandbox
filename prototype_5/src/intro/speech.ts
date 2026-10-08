@@ -36,30 +36,92 @@ export const INTRO_LINES = {
 
 export type LineId = keyof typeof INTRO_LINES;
 
+// --- the full game: the day's task list --------------------------------------
+export const GAME_LINES = {
+    // TODO(speech): "Een nieuwe dag! Vandaag moet je deze vissen vangen:" (the list follows)
+    dayStart:      { src: null, placeholderMs: 3000 },
+    // TODO(speech): "Je moet nog vangen:" (played when the top-left corner is tapped; the list follows)
+    taskListIntro: { src: null, placeholderMs: 1500 },
+    // TODO(speech): "Die stond op je lijstje!"
+    onList:        { src: null, placeholderMs: 1500 },
+    // TODO(speech): "Die staat niet op je lijstje, terug het water in."
+    notOnList:     { src: null, placeholderMs: 2500 },
+    // TODO(speech): "Die heb je vandaag al gevangen, terug het water in."
+    alreadyCaught: { src: null, placeholderMs: 2500 },
+    // TODO(speech): "Je lijstje is af! Tijd om naar huis te gaan."
+    dayDone:       { src: null, placeholderMs: 2500 },
+    // TODO(speech): "Alle dagen voltooid! Goed gevist."
+    gameDone:      { src: null, placeholderMs: 2500 },
+} satisfies Record<string, SpeechLine>;
+
+export type GameLineId = keyof typeof GAME_LINES;
+
+// The name of every fish, said before its sound when the task list is read out.
+// Keyed by the fish id in audio/InstrumentManager.ts.
+export const FISH_NAME_LINES: Record<string, SpeechLine> = {
+    // TODO(speech): "Trompetvis"
+    trumpetfish: { src: null, placeholderMs: 1000 },
+    // TODO(speech): "Gitaarvis"
+    guitarfish:  { src: null, placeholderMs: 1000 },
+    // TODO(speech): "Vioolrog"
+    fiddlerray:  { src: null, placeholderMs: 1000 },
+    // TODO(speech): "Zeebaars"
+    seabass:     { src: null, placeholderMs: 1000 },
+    // TODO(speech): "Trommelvis"
+    drumfish:    { src: null, placeholderMs: 1000 },
+    // TODO(speech): "Hamerhaai"
+    hammerhead:  { src: null, placeholderMs: 1000 },
+    // TODO(speech): "Zaagvis"
+    sawfish:     { src: null, placeholderMs: 1000 },
+    // TODO(speech): "Zwaardvis"
+    swordfish:   { src: null, placeholderMs: 1000 },
+    // TODO(speech): "Kogelvis"
+    pufferfish:  { src: null, placeholderMs: 1000 },
+    // TODO(speech): "Papegaaivis"
+    parrotfish:  { src: null, placeholderMs: 1000 },
+    // TODO(speech): "Zeepaardje"
+    seahorse:    { src: null, placeholderMs: 1000 },
+    // TODO(speech): "Kikvorsvis"
+    frogfish:    { src: null, placeholderMs: 1000 },
+};
+
 /** Anything with a mouth to animate while a line plays (the lakeside fisherman). */
 export interface Talker {
     talk(ms: number): Promise<void>;
     stopTalking(): void;
 }
 
-const howls = new Map<LineId, Howl>();
+const howls = new Map<SpeechLine, Howl>();
 let current: Howl | null = null;
 let cancelCurrent: (() => void) | null = null;
 
 /** Start loading every recorded line so the first playback isn't delayed. */
 export function preloadLines(): void {
-    for (const id of Object.keys(INTRO_LINES) as LineId[]) getHowl(id);
+    for (const line of [
+        ...Object.values(INTRO_LINES),
+        ...Object.values(GAME_LINES),
+        ...Object.values(FISH_NAME_LINES),
+    ] as SpeechLine[]) getHowl(line);
 }
 
-function getHowl(id: LineId): Howl | null {
-    const line: SpeechLine = INTRO_LINES[id];
+function getHowl(line: SpeechLine): Howl | null {
     if (!line.src) return null;
-    let h = howls.get(id);
+    let h = howls.get(line);
     if (!h) {
         h = new Howl({src: line.src, preload: true});
-        howls.set(id, h);
+        howls.set(line, h);
     }
     return h;
+}
+
+/** Play one intro line — see playSpeech(). */
+export function playLine(id: LineId, mouth?: Talker): Promise<void> {
+    return playSpeech(INTRO_LINES[id], mouth);
+}
+
+/** Play one game line — see playSpeech(). */
+export function playGameLine(id: GameLineId): Promise<void> {
+    return playSpeech(GAME_LINES[id]);
 }
 
 /**
@@ -67,7 +129,7 @@ function getHowl(id: LineId): Howl | null {
  * Pass the fisherman as `mouth` to move his mouth for the length of the line;
  * the under-water lines are a voice-over and pass nothing.
  */
-export function playLine(id: LineId, mouth?: Talker): Promise<void> {
+export function playSpeech(line: SpeechLine, mouth?: Talker): Promise<void> {
     stopLine();
     return new Promise<void>(resolve => {
         let done = false;
@@ -81,11 +143,11 @@ export function playLine(id: LineId, mouth?: Talker): Promise<void> {
         };
         cancelCurrent = () => { current?.stop(); finish(); };
 
-        const howl = getHowl(id);
+        const howl = getHowl(line);
         if (!howl) {
             // placeholder until the recording exists
-            void mouth?.talk(INTRO_LINES[id].placeholderMs);
-            const timer = setTimeout(finish, INTRO_LINES[id].placeholderMs);
+            void mouth?.talk(line.placeholderMs);
+            const timer = setTimeout(finish, line.placeholderMs);
             cancelCurrent = () => { clearTimeout(timer); finish(); };
             return;
         }

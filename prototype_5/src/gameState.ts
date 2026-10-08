@@ -21,10 +21,11 @@ export interface State {
     drawnStage: number;
     armed: boolean;
     // catch-by-ear mechanic
-    collectedInstruments: string[];   // ids of instruments unlocked this round (award a point once)
-    activeInstrument: string | null;  // instrument whose melody is currently audible (the catch window)
-    pendingInstrument: string | null; // instrument hooked and currently being reeled in
-    strikes: number;                  // wrong taps on the drums
+    day: number;                      // 1-based day of the full game (0 = intro / not started)
+    taskList: string[];               // fish ids the player has to catch today
+    caughtToday: string[];            // fish ids from today's list already landed
+    activeFish: string | null;        // fish whose sound is currently audible (the catch window)
+    pendingFish: string | null;       // fish hooked and currently being reeled in
 }
 export function createEntity(id: string, x: number, y:number, soundId:string) : Entity {
     return { id, x, y , soundId}
@@ -44,10 +45,11 @@ export function createInitialState(): State {
         randomDistances: [],
         drawnStage: 0,
         armed: false,
-        collectedInstruments: [],
-        activeInstrument: null,
-        pendingInstrument: null,
-        strikes: 0,
+        day: 0,
+        taskList: [],
+        caughtToday: [],
+        activeFish: null,
+        pendingFish: null,
     };
 }
 export function generateNumberSequence(length:number, start: number, end:number): number[] {

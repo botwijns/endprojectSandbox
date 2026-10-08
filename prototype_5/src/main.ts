@@ -2,10 +2,11 @@ import {GameLoop} from "./gameLoop.ts";
 import {InputHandler} from "./inputHandler.ts";
 import {createInitialState, generateNumberSequence, generateSequence, type State} from "./gameState.ts";
 import {SynthManager} from "./audio/SynthManager.ts";
-import {InstrumentManager, INSTRUMENTS, type InstrumentDef} from "./audio/InstrumentManager.ts";
+import {InstrumentManager, FISH, fishById, type FishDef} from "./audio/InstrumentManager.ts";
 import {Howl, Howler} from "howler";
 import { enterFullscreen } from "../../src/fullscreen.ts";
 import {createIntroLevel, type IntroLevel} from "./intro/introLevel.ts";
+import {FISH_NAME_LINES, playGameLine, playSpeech, stopLine} from "./intro/speech.ts";
 
 const debug= !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
 const synth = new SynthManager();
@@ -26,10 +27,19 @@ const introStageEl = document.getElementById("intro-stage")!;
 const introLandEl = document.getElementById("intro-land")!;
 const introWaterEl = document.getElementById("intro-water")!;
 const introCaptionEl = document.getElementById("intro-caption")!;
+const taskListBtn = document.getElementById("tasklist-btn") as HTMLButtonElement;
 
-// total instruments the player must collect (everything except the drums)
-const CATCHABLE = INSTRUMENTS.filter(i => !i.isDrum);
-const MAX_STRIKES = 3;
+// --- days and the task list ---------------------------------------------------
+// The full game is split into days. Every day gets a random task list of fish to
+// catch; tapping the top-left corner reads out the fish still on it. Fish that
+// aren't on the list can bite too — catching one just releases it again.
+// TODO(combined): expose as embed params fishFirstDay / days / maxExtraPerDay
+const DAY_CONFIG = {
+    fishFirstDay: 3,   // fish on the list on day 1
+    days: 3,           // the game ends after this many days
+    maxExtraPerDay: 1, // each next day adds 0..this many fish (capped at the number of fish)
+};
+const LIST_BITE_CHANCE = 0.6; // share of bites that are a fish still on today's list
 
 // --- introduction level -----------------------------------------------------
 // The intro is a guided, spoken tutorial in two animated scenes (see
@@ -37,14 +47,14 @@ const MAX_STRIKES = 3;
 // then the player casts for real; under water a voice explains the fish sound
 // and reeling, then the player catches one fish for real. The real detection is
 // the phase machine below — the intro just pauses/resumes it (state.running)
-// and is told about every phase change so the scenes can follow along. Drums
-// never bite during the intro and landing a single fish completes it.
+// and is told about every phase change so the scenes can follow along. Landing
+// a single fish completes it.
 let gameRunning = false;   // a round (intro or full game) is currently active
 let introMode = false;     // currently playing the guided tutorial
 let introComplete = false; // the tutorial fish has been landed — freeze play
 let intro: IntroLevel | null = null;
 let runId = 0;             // bumped on every start/stop so async work can bail out
-let introEndTimer: ReturnType<typeof setTimeout> | null = null;
+let endTimer: ReturnType<typeof setTimeout> | null = null; // the end of the intro or the last day
 
 const INTRO_DONE_TEXT =
     "🎉 Goed gedaan! Je hebt je eerste vis gevangen. Terug naar het startscherm...";
@@ -52,7 +62,7 @@ const INTRO_DONE_TEXT =
 const PHASE_HINTS: Record<string, string> = {
     idle:      "Trek je telefoon naar achteren om de hengel terug te halen.",
     throwing:  "Gooi je telefoon naar voren om uit te werpen.",
-    listening: "Luister. Melodie? Raak het scherm aan. Drums of stilte? Doe niks.",
+    listening: "Luister. Hoor je een vis van je lijstje? Raak het scherm aan.",
     reeling:   "Draai met je duim rondjes op het scherm om binnen te halen.",
     success:   "Gevangen! 🎣",
     failure:   "Ontsnapt...",
@@ -102,7 +112,7 @@ function finishIntro(): void {
     introComplete = true;
     intro?.finish(INTRO_DONE_TEXT);
     soundFishingBackground.fade(soundFishingBackground.volume() as number, 0, 1600);
-    introEndTimer = setTimeout(() => {
+    endTimer = setTimeout(() => {
         stopGame();
         startNoteEl.hidden = false;
         startNoteEl.textContent = "✅ Oefenlevel voltooid! Druk op ‘Start spel’ voor het hele spel.";
@@ -127,7 +137,11 @@ function stopGame(): void {
     intro?.destroy();              // stops the intro script, its speech and both scenes
     intro = null;
     introStageEl.hidden = true;
-    if (introEndTimer !== null) { clearTimeout(introEndTimer); introEndTimer = null; }
+    if (endTimer !== null) { clearTimeout(endTimer); endTimer = null; }
+    speechToken++;                 // cancel any task-list / feedback speech
+    announcing = false;
+    stopLine();
+    taskListBtn.hidden = true;
     state.running = false;
     input.stop();
     loop.stop();
@@ -174,7 +188,9 @@ async function startGame(asIntro: boolean): Promise<void> {
     introMode = asIntro;
     introComplete = false;
     state.score = 0;
-    state.collectedInstruments = [];
+    state.day = 0;
+    state.taskList = [];
+    state.caughtToday = [];
 
     showGameScreen();
     input.start();
@@ -198,7 +214,7 @@ async function startGame(asIntro: boolean): Promise<void> {
                 reel: soundFishingReel,
                 catching: soundCatching,
             },
-            demoFish: INSTRUMENTS.find(i => i.id === "guitar")!,
+            demoFish: fishById("trumpetfish")!,
             playMelody: def => instruments.playMelody(def),
             resume: () => { state.running = true; updateUI(); },
             pause: () => { state.running = false; },
@@ -209,7 +225,101 @@ async function startGame(asIntro: boolean): Promise<void> {
     }
 
     state.running = true;
+    startDay(1);
+}
+
+function shuffle<T>(arr: T[]): T[] {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+/** Fish on today's list that haven't been caught yet. */
+function remainingFish(): FishDef[] {
+    return state.taskList
+        .filter(id => !state.caughtToday.includes(id))
+        .map(id => fishById(id)!);
+}
+
+/** Draw a fresh task list for `day` and read it out. */
+function startDay(day: number): void {
+    const count = day === 1
+        ? DAY_CONFIG.fishFirstDay
+        : state.taskList.length + Math.floor(Math.random() * (DAY_CONFIG.maxExtraPerDay + 1));
+    state.day = day;
+    state.taskList = shuffle(FISH).slice(0, Math.max(1, Math.min(count, FISH.length))).map(f => f.id);
+    state.caughtToday = [];
+    log(`Dag ${day}`);
     updateUI();
+    void announceTaskList("dayStart");
+}
+
+// --- spoken sequences ----------------------------------------------------------
+// The task list and the catch feedback are spoken (recorded lines, see
+// intro/speech.ts). While a sequence plays no fish bites, so the player can
+// listen without missing one. A newer sequence or stopGame() cancels it.
+let announcing = false;
+let speechToken = 0;
+
+function wait(ms: number): Promise<void> {
+    return new Promise(res => setTimeout(res, ms));
+}
+
+async function speak(steps: (alive: () => boolean) => Promise<void>): Promise<void> {
+    const token = ++speechToken;
+    const myRun = runId;
+    const alive = () => token === speechToken && myRun === runId;
+    announcing = true;
+    // whatever was biting swims off while we talk
+    instruments.stopAll();
+    state.activeFish = null;
+    try {
+        await steps(alive);
+    } finally {
+        if (token === speechToken) {
+            announcing = false;
+            biteTimer = 0;
+            nextBiteDelay = 2 + Math.random() * 1.5;
+            updateUI();
+        }
+    }
+}
+
+/** Read out the fish still on today's list: each fish's name, then its sound. */
+function announceTaskList(opening: "dayStart" | "taskListIntro"): Promise<void> {
+    return speak(async alive => {
+        await playGameLine(opening);
+        for (const fish of remainingFish()) {
+            if (!alive()) return;
+            await playSpeech(FISH_NAME_LINES[fish.id]);
+            if (!alive()) return;
+            const sec = instruments.playMelody(fish);
+            await wait(sec * 1000 + 700);
+        }
+    });
+}
+
+/** The top-left corner: repeat the remaining fish. Tapping again starts over. */
+function onTaskListTap(): void {
+    if (!gameRunning || introMode || !state.running) return;
+    if (state.phase === "reeling") return;            // hands are busy reeling
+    if (remainingFish().length === 0) return;         // the day is wrapping up
+    void announceTaskList("taskListIntro");
+}
+
+/** Last day done: let the final line ring out, then back to the start screen. */
+function finishGame(): void {
+    state.running = false;
+    soundFishingBackground.fade(soundFishingBackground.volume() as number, 0, 1600);
+    endTimer = setTimeout(() => {
+        const score = state.score;
+        stopGame();
+        startNoteEl.hidden = false;
+        startNoteEl.textContent = `✅ Alle ${DAY_CONFIG.days} dagen voltooid! Je ving ${score} vissen.`;
+    }, 2200);
 }
 
 // catch-by-ear timing (seconds unless noted)
@@ -292,10 +402,8 @@ var nextSound: boolean = true;
 var nextSoundTimeout: ReturnType<typeof setTimeout> | null = null; // add this
 // var armTime: number = 0;
 function resetRoundState(): void {
-    state.collectedInstruments = [];
-    state.activeInstrument = null;
-    state.pendingInstrument = null;
-    state.strikes = 0;
+    state.activeFish = null;
+    state.pendingFish = null;
     biteTimer = 0;
     nextBiteDelay = 2;
     catchWindowUntil = 0;
@@ -401,19 +509,20 @@ const loop = new GameLoop((dt) => {
         }
     }
     else if (state.phase == "listening"){
-        // A fish = an instrument. Every so often one "bites" by playing its
-        // melody. The player must tap while they hear a non-drum instrument to
-        // catch it. Drums are a trap. Collect every catchable instrument to win.
-        biteTimer += dt;
+        // Every so often a fish "bites" by playing its sound. The player taps
+        // while they hear one from today's list to catch it. Other fish can be
+        // reeled in too, but they're released again. Bites hold off while the
+        // task list (or other feedback) is being spoken.
+        if (!announcing) biteTimer += dt;
 
         // close the catch window once the melody (+ grace) is over
-        if (state.activeInstrument !== null && performance.now() > catchWindowUntil) {
-            state.activeInstrument = null;
+        if (state.activeFish !== null && performance.now() > catchWindowUntil) {
+            state.activeFish = null;
             intro?.onBiteMissed();
             log("...weg. luister opnieuw");
         }
 
-        if (state.activeInstrument === null && biteTimer >= nextBiteDelay) {
+        if (!announcing && state.activeFish === null && biteTimer >= nextBiteDelay) {
             biteTimer = 0;
             nextBiteDelay = 4 + Math.random() * 2.6;
             spawnBite();
@@ -461,7 +570,7 @@ const loop = new GameLoop((dt) => {
             isSoundPlaying = false;
             // soundFailure.play();
             soundCatching.play("escaped")
-            state.pendingInstrument = null;
+            state.pendingFish = null;
             resetCrank();
             intro?.onReelAbandoned();
             setPhase("listening");
@@ -473,75 +582,47 @@ const loop = new GameLoop((dt) => {
             log("binnenhalen: " + Math.round(Math.abs(crankAngle)) + "°");
         }
     }
-    if (state.phase === "success" || state.phase =="failure") {
-        state.currentStep = state.currentStep + 1;
-        // create new target locations
-        if (state.currentStep>2) {
-            state.currentStep = 0
-            state.randomAngles = generateNumberSequence(3,-45,45)
-            state.randomDistances= generateNumberSequence(3,1,3)
-        }
-
-        resetRoundState()
-        setPhase("idle")
-        updateUI()
-    }
 });
 
 function pick<T>(arr: T[]): T {
     return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/** Pick an instrument to "bite" and play its melody, opening the catch window. */
+/** Pick a fish to "bite" and play its sound, opening the catch window. */
 function spawnBite(): void {
-    const drum = INSTRUMENTS.find(i => i.isDrum)!;
-    const needed = CATCHABLE.filter(i => !state.collectedInstruments.includes(i.id));
-
-    // the tutorial never uses the drum trap — a catchable fish always bites
+    let def: FishDef;
     if (introMode) {
-        const def = pick(needed.length ? needed : CATCHABLE);
-        const dobberId = soundDobber.play("caught");
-        soundDobber.volume(0.8, dobberId);
-        const melodyDur = instruments.playMelody(def);
-        state.activeInstrument = def.id;
-        catchWindowUntil = performance.now() + melodyDur * 1000 + 600;
-        intro?.onBite();
-        log("🎣 er bijt iets — raak het scherm aan!");
-        return;
-    }
-
-    // ~25% drum trap; otherwise prefer a not-yet-unlocked instrument, but an
-    // already-unlocked one can still bite (it just won't award a point).
-    const roll = Math.random();
-    let def: InstrumentDef;
-    if (roll < 0.25 || needed.length === 0) {
-        def = roll < 0.25 ? drum : pick(CATCHABLE);
-    } else if (roll < 0.75) {
-        def = pick(needed);
+        def = pick(FISH);
     } else {
-        def = pick(CATCHABLE);
+        // mostly a fish that's still on the list, otherwise one that isn't
+        const remaining = remainingFish();
+        const others = FISH.filter(f => !remaining.includes(f));
+        def = remaining.length > 0 && (others.length === 0 || Math.random() < LIST_BITE_CHANCE)
+            ? pick(remaining)
+            : pick(others);
     }
 
-    // the bobber dips — an audible "something's there" cue alongside the melody
+    // the bobber dips — an audible "something's there" cue alongside the sound
     const dobberId = soundDobber.play("caught");
     soundDobber.volume(0.8, dobberId);
 
     const melodyDur = instruments.playMelody(def);
-    state.activeInstrument = def.id;
-    // window stays open for the melody plus a short grace period to react
+    state.activeFish = def.id;
+    // window stays open for the sound plus a short grace period to react
     catchWindowUntil = performance.now() + melodyDur * 1000 + 600;
-    log("🎣 er bijt iets...");
+    intro?.onBite();
+    log(introMode ? "🎣 er bijt iets — raak het scherm aan!" : "🎣 er bijt iets...");
 }
 
 /**
  * The player commits by touching the screen: whatever is on the hook right now
- * (a melody they heard, the drums, or nothing) gets reeled in. Whether it was
+ * (a fish they heard, or nothing) gets reeled in. Whether it was
  * the right call is only revealed once the reel-in finishes.
  */
 function startReeling(): void {
-    if (!state.running || state.phase !== "listening") return;
-    state.pendingInstrument = state.activeInstrument; // may be null (touched during silence)
-    state.activeInstrument = null;
+    if (!state.running || state.phase !== "listening" || announcing) return;
+    state.pendingFish = state.activeFish; // may be null (touched during silence)
+    state.activeFish = null;
     instruments.stopAll();
     resetCrank();
     stepTimer = 0;
@@ -560,9 +641,8 @@ function resolveReel(): void {
     soundFishingBackground.play()
     soundFishingBackground.volume(0.3)
     soundFishingBackground.loop(true)
-    const id = state.pendingInstrument;
-    const def = id ? INSTRUMENTS.find(i => i.id === id) ?? null : null;
-    state.pendingInstrument = null;
+    const def = state.pendingFish ? fishById(state.pendingFish) ?? null : null;
+    state.pendingFish = null;
     resetCrank();
 
     intro?.onLanded();
@@ -572,32 +652,45 @@ function resolveReel(): void {
 
     if (!def) {
         // reeled in an empty hook — the miss lands now, not when you touched
-        // soundFailure.volume(0.5);
-        // soundFailure.play();
-        // soundFailure.volume(1);
         soundCatching.play("escaped")
         log("niks aan de haak...");
-    } else if (def.isDrum) {
-        // the drums were the wrong call — the strike lands now
-        state.strikes++;
-        soundCatching.play("failure");
-        log(`fout ${state.strikes}/${MAX_STRIKES} — dat waren de drums!`);
-        if (state.strikes >= MAX_STRIKES) setPhase("failure");
-    } else {
-        const firstTime = !state.collectedInstruments.includes(def.id);
-        if (firstTime) {
-            state.collectedInstruments.push(def.id);
-            state.score++;
-        }
+    } else if (introMode) {
+        // one fish is all the tutorial asks for
         soundCaught.stop()
         soundCatching.play("success")
-        log(firstTime ? `${def.label} gevangen!` : `${def.label} — al vrij, geen punt`);
-        if (introMode) {
-            // one fish is all the tutorial asks for
-            finishIntro();
-        } else if (state.collectedInstruments.length >= CATCHABLE.length) {
-            setPhase("success");
-        }
+        log(`${def.label} gevangen!`);
+        finishIntro();
+    } else if (state.taskList.includes(def.id) && !state.caughtToday.includes(def.id)) {
+        state.caughtToday.push(def.id);
+        state.score++;
+        soundCaught.stop()
+        soundCatching.play("success")
+        log(`${def.label} gevangen! Die stond op je lijstje.`);
+        const dayDone = remainingFish().length === 0;
+        void speak(async alive => {
+            await wait(1200); // let the catch sound land first
+            if (!alive()) return;
+            await playGameLine("onList");
+            if (!alive() || !dayDone) return;
+            await playGameLine("dayDone");
+            if (!alive()) return;
+            if (state.day >= DAY_CONFIG.days) {
+                await playGameLine("gameDone");
+                if (alive()) finishGame();
+            } else {
+                await wait(800);
+                if (alive()) startDay(state.day + 1);
+            }
+        });
+    } else {
+        // not on today's list (or already caught) — it goes back in the water
+        const already = state.caughtToday.includes(def.id);
+        soundCatching.play("escaped")
+        log(`${def.label} — ${already ? "die had je al" : "staat niet op je lijstje"}, terug het water in`);
+        void speak(async alive => {
+            await wait(1000);
+            if (alive()) await playGameLine(already ? "alreadyCaught" : "notOnList");
+        });
     }
     updateUI();
 }
@@ -606,13 +699,16 @@ input.onPress(startReeling);
 
 if (debug) {
     (window as any).__game = {
-        state, INSTRUMENTS,
+        state, FISH, DAY_CONFIG,
+        playFish: (id: string) => { const f = fishById(id); return f ? instruments.playMelody(f) : 0; },
         crank: () => ({ crankAngle, crankVelocity, center: input.getCrankCenter() }),
     };
     // keyboard shortcuts so the mechanic can be tested on desktop
     window.addEventListener("keydown", (e) => {
         // n: skip the intro's current speech line (handy while they're placeholders)
-        if (e.key === "n") { intro?.skipLine(); return; }
+        if (e.key === "n") { intro?.skipLine(); stopLine(); return; }
+        // k: read out the task list, as if the top-left corner was tapped
+        if (e.key === "k") { onTaskListTap(); return; }
         if (!state.running) return;
         if (e.key === "t" && state.phase === "idle") {
             soundThrow.play();
@@ -635,12 +731,12 @@ if (debug) {
 function updateUI(): void {
     scoreEl.textContent = `Score: ${state.score}`;
 
-    // the instrument on the hook stays hidden until the reel-in resolves
-    const caught = CATCHABLE
-        .map(i => `${state.collectedInstruments.includes(i.id) ? "✅" : "⬜"} ${i.label}`)
+    // today's list; the fish on the hook stays hidden until the reel-in resolves
+    const list = state.taskList
+        .map(id => `${state.caughtToday.includes(id) ? "✅" : "⬜"} ${fishById(id)?.label ?? id}`)
         .join("   ");
-    collectionEl.textContent =
-        `${caught}   |   drums: ${state.strikes}/${MAX_STRIKES}`;
+    collectionEl.textContent = state.day > 0 ? `Dag ${state.day}/${DAY_CONFIG.days}   |   ${list}` : "";
+    taskListBtn.hidden = introMode || !gameRunning;
 
     // the tutorial only asks for one fish — the full collection tracker would
     // just be noise, so hide it and the score until the real game starts
@@ -653,3 +749,4 @@ function updateUI(): void {
 introBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(true); });
 gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(false); });
 stopBtn.addEventListener("click", () => stopGame());
+taskListBtn.addEventListener("click", () => onTaskListTap());
