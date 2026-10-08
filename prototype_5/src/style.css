@@ -47,284 +47,86 @@ body {
   width: 100%;
 }
 
-#preview-panel, #listening-assist {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-#preview-buttons, #listening-assist {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  justify-content: center;
-}
-
-#start-screen[hidden], #game-screen[hidden],
-#preview-panel[hidden], #listening-assist[hidden] {
+#start-screen[hidden], #game-screen[hidden] {
   display: none;
 }
 
-/* --- tutorial icons --------------------------------------------------- */
+/* --- intro level: two full-screen animated scenes ----------------------
+   The lakeside layer (an 800x450 SVG, letterboxed in the sky/water colour)
+   and the underwater canvas sit on top of each other and cross-fade. */
 
-#step-icon, #preview-icon-slot {
-  width: clamp(72px, 22vmin, 120px);
-  height: clamp(72px, 22vmin, 120px);
-  margin: 0.25rem 0;
+#intro-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: #14323c;
 }
-
-#step-icon, #preview-icon-slot {
-  /* lets the phone's rotateX tilt read as leaning toward/away from the
-     player instead of flattening in place */
-  perspective: 500px;
-}
-
-#step-icon:empty, #preview-icon-slot:empty {
-  margin: 0;
+#intro-stage[hidden] {
+  display: none;
 }
 
-#step-icon svg, #preview-icon-slot svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.icon-fish .fish-body, .icon-fish .fish-tail {
-  transform-box: fill-box;
-  transform-origin: 70% 50%;
-}
-.icon-fish.playing .fish-body, .icon-fish.playing .fish-tail {
-  animation: fish-wiggle 0.5s ease-in-out infinite;
-}
-.icon-fish .note {
+.intro-layer {
+  position: absolute;
+  inset: 0;
   opacity: 0;
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
+  transition: opacity 0.8s ease;
+  pointer-events: none;
 }
-.icon-fish.playing .note {
-  animation: note-float 1.4s ease-out infinite;
-}
-.icon-fish.playing .note:nth-of-type(2) { animation-delay: 0.35s; }
-.icon-fish.playing .note:nth-of-type(3) { animation-delay: 0.7s; }
-
-.icon-drums .drum-body {
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
-}
-.icon-drums.playing .drum-body {
-  animation: drum-shake 0.25s ease-in-out infinite;
-}
-.icon-drums .no-overlay {
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-.icon-drums.playing .no-overlay {
-  opacity: 0.85;
+.intro-layer.active {
+  opacity: 1;
 }
 
-.icon-ear .wave {
-  transform-box: fill-box;
-  transform-origin: 0% 50%;
-  opacity: 0.35;
-}
-.icon-ear.listening .wave {
-  animation: wave-pulse 1.6s ease-in-out infinite;
-}
-.icon-ear.listening .wave:nth-of-type(2) { animation-delay: 0.3s; }
-.icon-ear.listening .wave:nth-of-type(3) { animation-delay: 0.6s; }
-
-/* the transform lives on the <svg> child, not #step-icon itself — perspective
-   has to be established by an ancestor of the element it foreshortens */
-.icon-phone .phone-body {
-  transform-origin: 50% 50%;
-}
-.icon-phone.tilt-back .phone-body {
-  animation: phone-tilt-back 1.6s ease-in-out infinite;
-}
-.icon-phone.tilt-forward .phone-body {
-  animation: phone-tilt-forward 0.6s ease-out 1;
-}
-.icon-phone.swing-demo .phone-body {
-  animation: phone-swing-demo 2.4s ease-in-out infinite;
-}
-
-/* the phone icon is bigger than the other icons: the phone sits centred with a
-   ring around it (like an orbit around the phone's horizontal axis); the
-   ring's front half crosses over the screen, its back half hides behind the
-   phone, and an arrowhead on the front half shows which way it turns.
-   The box matches the ring SVGs' 200x130 viewBox so they overlay 1:1. */
-#step-icon.icon-phone, #preview-icon-slot.icon-phone {
-  position: relative;
+#intro-land {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: clamp(170px, 52vw, 230px);
-  height: auto;
-  aspect-ratio: 200 / 130;
-  /* room for the "naar achteren / naar voren" label under the phone */
-  margin-bottom: 1.9em;
+  background: linear-gradient(#6ea6c4 0%, #6ea6c4 50%, #31514d 50%, #31514d 100%);
 }
-#step-icon.icon-phone .phone-body, #preview-icon-slot.icon-phone .phone-body {
-  position: relative;
-  z-index: 1;
-  width: 55%;
-  height: auto;
-  flex: none;
-}
-#step-icon.icon-phone .ring, #preview-icon-slot.icon-phone .ring {
-  position: absolute;
-  inset: 0;
+#intro-land .lakeside-svg {
+  display: block;
   width: 100%;
   height: 100%;
-  overflow: visible;
-  pointer-events: none;
 }
-.icon-phone .ring-back  { z-index: 0; }  /* behind the phone */
-.icon-phone .ring-front { z-index: 2; }  /* in front of the phone */
-/* arrowheads on the front half: hidden until the mode class turns one on */
-.icon-phone .dir-back, .icon-phone .dir-forward {
-  opacity: 0;
+
+#intro-water {
+  background: #041b30;
 }
-.icon-phone .dir-label {
+#intro-water .hook-reel-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#intro-caption {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1.5em;
+  left: 1rem;
+  right: 1rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  margin: 0 auto;
+  max-width: 36rem;
+  padding: 0.6rem 1rem;
+  border-radius: 0.75rem;
+  background: rgba(4, 27, 48, 0.72);
+  color: #e8fbff;
   text-align: center;
-  font-size: clamp(0.85rem, 3.6vw, 1.05rem);
   font-weight: 700;
-  color: #d35400;
-  opacity: 0;
+  font-size: clamp(0.95rem, 4.2vmin, 1.4rem);
+  line-height: 1.35;
   pointer-events: none;
 }
-
-/* idle: the "back" cue pulses in time with the tilt-back loop */
-.icon-phone.tilt-back .dir-back,
-.icon-phone.tilt-back .dir-label-back {
-  animation: dir-pulse 1.6s ease-in-out infinite;
-}
-/* throwing: the "forward" cue stays on for the one-shot forward tilt */
-.icon-phone.tilt-forward .dir-forward,
-.icon-phone.tilt-forward .dir-label-forward {
-  opacity: 1;
-}
-/* throw demo: back cue during the swing back, then the forward cue */
-.icon-phone.swing-demo .dir-back,
-.icon-phone.swing-demo .dir-label-back {
-  animation: dir-swing-back 2.4s ease-in-out infinite;
-}
-.icon-phone.swing-demo .dir-forward,
-.icon-phone.swing-demo .dir-label-forward {
-  animation: dir-swing-forward 2.4s ease-in-out infinite;
+#intro-caption[hidden] {
+  display: none;
 }
 
-.icon-reel {
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
-}
-.icon-reel.spinning .reel-arc {
-  animation: reel-spin 2.2s linear infinite;
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
-}
-.icon-reel.demo-spin .reel-arc {
-  animation: reel-spin 4s linear infinite;
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
-}
-.icon-reel .reel-progress {
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
-  transform: rotate(-90deg);
-  stroke-dasharray: 220;
-  stroke-dashoffset: calc(220 * (1 - var(--reel-progress, 0)));
-  transition: stroke-dashoffset 0.1s linear;
-}
-
-@keyframes fish-wiggle {
-  0%, 100% { transform: rotate(0deg); }
-  50%      { transform: rotate(8deg); }
-}
-
-@keyframes note-float {
-  0%   { opacity: 0; transform: translateY(0) scale(0.8); }
-  15%  { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-22px) scale(1.1); }
-}
-
-@keyframes drum-shake {
-  0%, 100% { transform: translateX(0) rotate(0deg); }
-  50%      { transform: translateX(2px) rotate(-3deg); }
-}
-
-@keyframes wave-pulse {
-  0%   { opacity: 0.15; transform: scale(0.85); }
-  50%  { opacity: 0.7;  transform: scale(1.1); }
-  100% { opacity: 0.15; transform: scale(0.85); }
-}
-
-/* idle: the phone leans gently back and returns, as if being pulled back
-   like a fishing rod (top edge tips away from the player) */
-@keyframes phone-tilt-back {
-  0%, 100% { transform: rotateX(0deg); }
-  50%      { transform: rotateX(-35deg); }
-}
-
-/* throwing: the phone tilts forward, top edge leaning toward the player */
-@keyframes phone-tilt-forward {
-  0%   { transform: rotateX(-35deg); }
-  100% { transform: rotateX(32deg); }
-}
-
-/* throw explanation: a full, repeatable back-then-forward cast so the player
-   can watch the whole motion as many times as they like before trying it */
-@keyframes phone-swing-demo {
-  0%   { transform: rotateX(0deg); }
-  35%  { transform: rotateX(-35deg); }
-  65%  { transform: rotateX(32deg); }
-  100% { transform: rotateX(0deg); }
-}
-
-/* direction cues: opacity only, so they never fight the layout */
-@keyframes dir-pulse {
-  0%, 100% { opacity: 0.25; }
-  50%      { opacity: 1; }
-}
-@keyframes dir-swing-back {
-  0%        { opacity: 0.2; }
-  15%, 35%  { opacity: 1; }
-  45%, 100% { opacity: 0; }
-}
-@keyframes dir-swing-forward {
-  0%, 35%   { opacity: 0; }
-  50%, 65%  { opacity: 1; }
-  80%, 100% { opacity: 0; }
-}
-
-@keyframes reel-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .icon-fish .fish-body, .icon-fish .fish-tail, .icon-fish .note,
-  .icon-drums .drum-body, .icon-ear .wave,
-  .icon-phone .phone-body, .icon-reel .reel-arc {
-    animation: none !important;
-  }
-  /* no pulsing/sweeping cues either — show the cue(s) for the current mode
-     statically (the swing demo shows both arrowheads, one above and one below
-     the middle, but no label, since the two labels would sit on top of each
-     other) */
-  .icon-phone .dir-back, .icon-phone .dir-forward, .icon-phone .dir-label {
-    animation: none !important;
-  }
-  .icon-phone.tilt-back .dir-back, .icon-phone.tilt-back .dir-label-back,
-  .icon-phone.tilt-forward .dir-forward, .icon-phone.tilt-forward .dir-label-forward,
-  .icon-phone.swing-demo .dir-back, .icon-phone.swing-demo .dir-forward {
-    opacity: 0.9;
-  }
+/* while the intro is on screen the stop button floats in a corner above it */
+#intro-stage:not([hidden]) ~ #stop-btn {
+  position: fixed;
+  top: calc(0.5rem + env(safe-area-inset-top, 0px));
+  left: 0.5rem; /* the fullscreen toggle owns the top-right corner */
+  z-index: 11;
+  margin: 0;
+  font-size: clamp(0.75rem, 3vmin, 0.95rem);
+  padding: 0.4rem 0.8rem;
 }
 
 #start-note {
@@ -405,10 +207,6 @@ h3 {
   }
   #intro-blurb, #info {
     line-height: 1.4;
-  }
-  #step-icon, #preview-icon-slot {
-    width: 64px;
-    height: 64px;
   }
   #home-link, #stop-btn {
     margin-top: 0.5rem;
