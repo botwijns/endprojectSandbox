@@ -24,14 +24,18 @@
       ]
     },
     {
-      "id": "gorrilla_noticed",
-      "type": "single",
-      "label": "Heb je een geluid gehoord dat niet op zn plek hoorde?",
+      "id": "length",
+      "type": "text",
+      "label": "Hoeveel minuten denk je dat je gespeeld hebt?",
       "required": true,
-      "options": [
-        "ja",
-        "nee"
-      ]
+      "placeholder": "Typ hier je antwoord"
+    },
+    {
+      "id": "gorrilla_noticed",
+      "type": "boolean",
+      "label": "Heb je een geluid gehoord dat niet op zn plek hoorde?",
+      "required": true
+
     },
     {
       "id": "gorrilla_which",
@@ -64,7 +68,7 @@
     {
       "id": "comments",
       "type": "text",
-      "label": "Overige opmerkingen (optioneel)",
+      "label": "zijn er nog dingen die verbeterd kunnen worden(optioneel)",
       "required": false,
       "maxLength": 2000,
       "placeholder": "Wat viel je op? Wat kon beter?"
