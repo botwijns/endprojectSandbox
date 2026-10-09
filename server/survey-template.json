@@ -24,14 +24,26 @@
       ]
     },
     {
-      "id": "communication",
-      "type": "scale",
-      "label": "Hoe goed kon je communiceren met de tandarts?",
+      "id": "gorrilla_noticed",
+      "type": "single",
+      "label": "Heb je een geluid gehoord dat niet op zn plek hoorde?",
       "required": true,
-      "min": 1,
-      "max": 10,
-      "minLabel": "Niet goed",
-      "maxLabel": "Heel goed"
+      "options": [
+        "ja",
+        "nee"
+      ]
+    },
+    {
+      "id": "gorrilla_which",
+      "type": "single",
+      "label": "Welke van deze geluiden heb je gehoord?",
+      "required": true,
+      "options": [
+        "Een miauw van een kat",
+        "Een flits van een camera",
+        "Een rubber eendje dat piept",
+        "Ik heb geen geluid gehoord"
+      ]
     },
     {
       "id": "rating",
@@ -46,7 +58,7 @@
     {
       "id": "would_recommend",
       "type": "boolean",
-      "label": "Zou je dit vaker willen spelen bij de tandarts?",
+      "label": "Zou je dit willen spelen bij de tandarts?",
       "required": true
     },
     {
