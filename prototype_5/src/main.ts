@@ -142,6 +142,7 @@ function stopGame(): void {
     announcing = false;
     stopLine();
     taskListBtn.hidden = true;
+    taskListBtn.classList.remove("lit");
     state.running = false;
     input.stop();
     loop.stop();
@@ -218,6 +219,7 @@ async function startGame(asIntro: boolean): Promise<void> {
             playMelody: def => instruments.playMelody(def),
             resume: () => { state.running = true; updateUI(); },
             pause: () => { state.running = false; },
+            highlightTaskList: on => taskListBtn.classList.toggle("lit", on),
         });
         intro.start();
         updateUI();
@@ -736,7 +738,8 @@ function updateUI(): void {
         .map(id => `${state.caughtToday.includes(id) ? "✅" : "⬜"} ${fishById(id)?.label ?? id}`)
         .join("   ");
     collectionEl.textContent = state.day > 0 ? `Dag ${state.day}/${DAY_CONFIG.days}   |   ${list}` : "";
-    taskListBtn.hidden = introMode || !gameRunning;
+    // shown in the intro too, so the fisherman can point it out (it lights up)
+    taskListBtn.hidden = !gameRunning;
 
     // the tutorial only asks for one fish — the full collection tracker would
     // just be noise, so hide it and the score until the real game starts

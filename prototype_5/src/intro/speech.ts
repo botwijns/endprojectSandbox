@@ -10,7 +10,7 @@ import {Howl} from "howler";
 // `placeholderMs` is only used while `src` is null.
 
 export interface SpeechLine {
-    src: string[] | null;
+    src: string | string[] | null;
     placeholderMs: number;
 }
 
