@@ -55,6 +55,77 @@ export function speak(text: string): void {
     }
 }
 
+/** Anything with a mouth to animate while a line is spoken (the campfire fisherman). */
+export interface Talker {
+    talk(ms: number): Promise<void>;
+    stopTalking(): void;
+}
+
+// Rough length of a spoken line, used to move the mouth and as the wait when
+// speech is off or unsupported, so the intro still runs at a natural pace.
+const MS_PER_CHAR = 65;
+
+let cancelLine: (() => void) | null = null;
+
+/**
+ * Speak one intro line and resolve when it has been said (or cut off by
+ * stopSpeech() / another speak()). Pass the fisherman as `mouth` to move his
+ * mouth for the length of the line.
+ */
+export function speakLine(text: string, mouth?: Talker): Promise<void> {
+    cancelLine?.();
+    return new Promise<void>(resolve => {
+        const estimate = Math.max(800, text.length * MS_PER_CHAR);
+        let done = false;
+        let timer = 0;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            window.clearTimeout(timer);
+            if (cancelLine === cancel) cancelLine = null;
+            mouth?.stopTalking();
+            resolve();
+        };
+        const cancel = () => finish();
+        cancelLine = cancel;
+        void mouth?.talk(estimate);
+
+        if (!enabled || typeof speechSynthesis === "undefined") {
+            timer = window.setTimeout(finish, estimate);
+            return;
+        }
+        try {
+            speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = "nl-NL";
+            if (voice) u.voice = voice;
+            u.rate = 1.05;
+            u.pitch = 1;
+            const startedAt = performance.now();
+            u.onend = finish;
+            u.onerror = e => {
+                // Cut off on purpose (stopSpeech / a newer line): done now.
+                // Refused by the engine (no voice, not allowed yet, ...): still
+                // give the line its natural length, so the intro keeps its pace.
+                if (e.error === "interrupted" || e.error === "canceled") { finish(); return; }
+                window.clearTimeout(timer);
+                timer = window.setTimeout(finish, Math.max(0, estimate - (performance.now() - startedAt)));
+            };
+            speechSynthesis.speak(u);
+            // Some browsers drop `onend` now and then — never let the intro stall on it.
+            timer = window.setTimeout(finish, estimate * 2 + 2000);
+        } catch {
+            timer = window.setTimeout(finish, estimate);
+        }
+    });
+}
+
+/** Cut off whatever is being said; a pending speakLine() resolves. */
+export function stopSpeech(): void {
+    cancelLine?.();
+    if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+}
+
 export type Earcon = "place" | "preview" | "erase" | "step" | "mode" | "instrument" | "done" | "start";
 
 // Each earcon is one or more quick sine blips. Kept deliberately distinct in
