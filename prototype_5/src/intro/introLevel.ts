@@ -109,8 +109,10 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         await fisherman.windUp();
         await windLine;
         if (destroyed) return;
+        deps.resume();
 
-        // TODO(speech): castSwing — "and swing it forward", then he casts
+    }
+    async function explainCast_2(): Promise<void> {
         await playLine("castSwing", fisherman);
         if (destroyed) return;
         // same sounds as the game's real cast (see the "throwing" phase in main.ts)
@@ -123,16 +125,12 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         sounds.dobber.play("land");
         await sleep(1500);
         if (destroyed) return;
+        deps.resume();
 
-        // reel the bobber back in, so the player can cast it themselves
-        sounds.reel.loop(true);
-        sounds.reel.play();
-        await fisherman.reelIn();
-        sounds.reel.loop(false);
-        sounds.reel.stop();
-        if (destroyed) return;
 
-        // TODO(speech): castYourTurn — "now you try"
+
+    }
+    async function explainCast_3(): Promise<void> {
         // the task-list button lights up for as long as this line plays
         deps.highlightTaskList(true);
         await playLine("castYourTurn", fisherman);
@@ -143,7 +141,6 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         setCaption(CAST_TURN_CAPTION);
         deps.resume(); // the game's idle/throwing detection takes over
     }
-
     // --- 2. under water: explain the fish sound and reeling -------------------
     async function explainWater(): Promise<void> {
         stage = "explain-water";
@@ -197,8 +194,17 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
             if (destroyed) return;
             if (stage === "player-cast" || stage === "player-catch") {
                 // the fisherman copies the player's cast
-                if (phase === "throwing") void fisherman.windUp();
-                else if (phase === "waiting") void fisherman.swing();
+                if (phase === "throwing") {
+                    fisherman.windUp();
+                    deps.pause();
+                    void explainCast_2();
+                }
+
+                else if (phase === "waiting") {
+                    void fisherman.swing();
+                    deps.pause();
+                    void explainCast_3();
+                }
             }
             if (phase === "listening") {
                 if (stage === "player-cast") {

@@ -60,29 +60,18 @@ export type GameLineId = keyof typeof GAME_LINES;
 // The name of every fish, said before its sound when the task list is read out.
 // Keyed by the fish id in audio/InstrumentManager.ts.
 export const FISH_NAME_LINES: Record<string, SpeechLine> = {
-    // TODO(speech): "Trompetvis"
     trumpetfish: { src: "sounds/vissen_namen_1.mp3", placeholderMs: 1000 },
-    // TODO(speech): "Gitaarvis"
     guitarfish:  { src: "sounds/vissen_namen_2.mp3", placeholderMs: 1000 },
-    // TODO(speech): "Vioolrog"
     fiddlerray:  { src: "sounds/vissen_namen_3.mp3", placeholderMs: 1000 },
-    // TODO(speech): "Zeebaars"
     seabass:     { src: "sounds/vissen_namen_4.mp3", placeholderMs: 1000 },
-    // TODO(speech): "Trommelvis"
     drumfish:    { src: "sounds/vissen_namen_5.mp3", placeholderMs: 1000 },
-    // TODO(speech): "Hamerhaai"
     hammerhead:  { src: "sounds/vissen_namen_6.mp3", placeholderMs: 1000 },
-    // TODO(speech): "Zaagvis"
     sawfish:     { src: "sounds/vissen_namen_7.mp3", placeholderMs: 1000 },
-    // TODO(speech): "Kogelvis"
     pufferfish:  { src: "sounds/vissen_namen_8.mp3", placeholderMs: 1000 },
-    // TODO(speech): "Papegaaivis"
     parrotfish:  { src: "sounds/vissen_namen_9.mp3", placeholderMs: 1000 },
-    // TODO(speech): "Zeepaardje"
     seahorse:    { src: "sounds/vissen_namen_10.mp3", placeholderMs: 1000 },
     // TODO(speech): "Kikvorsvis"
     frogfish:    { src: "sounds/vissen_namen_11.mp3", placeholderMs: 1000 },
-    // TODO(speech): "Zwaardvis"
     swordfish:   { src: "sounds/vissen_namen_12.mp3", placeholderMs: 1000 },
 };
 
