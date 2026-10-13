@@ -33,6 +33,8 @@ export interface IntroDeps {
     resume(): void;
     /** Hold the game's phase machine (while the intro explains). */
     pause(): void;
+    /** Light up (or switch off) the task-list button in the top-left corner. */
+    highlightTaskList(on: boolean): void;
 }
 
 export interface IntroLevel {
@@ -131,7 +133,10 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         if (destroyed) return;
 
         // TODO(speech): castYourTurn — "now you try"
+        // the task-list button lights up for as long as this line plays
+        deps.highlightTaskList(true);
         await playLine("castYourTurn", fisherman);
+        deps.highlightTaskList(false);
         if (destroyed) return;
 
         stage = "player-cast";
@@ -236,6 +241,7 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         destroy() {
             destroyed = true;
             stopLine();
+            deps.highlightTaskList(false);
             for (const t of timers) clearTimeout(t);
             timers.clear();
             fisherman.destroy();
