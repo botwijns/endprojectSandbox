@@ -177,6 +177,7 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
 
         // TODO(speech): catchYourTurn — "now catch one yourself"
         await playLine("catchYourTurn");
+        await playLine("endTutorial")
         if (destroyed) return;
 
         stage = "player-catch";
