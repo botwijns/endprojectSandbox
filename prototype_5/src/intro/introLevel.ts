@@ -134,7 +134,7 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
 
         // show: he pulls the rod back while explaining it
         const windLine = playLine("castWindUp", fisherman);
-        await sleep(1000);
+        await sleep(2000);
         if (destroyed) return;
         sounds.throw.play();
         await castWithSounds();
@@ -225,7 +225,7 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         sounds.reel.loop(false);
         sounds.reel.stop();
         if (destroyed) return;
-        sounds.catching.play("success");
+        // sounds.catching.play("success");
         await sleep(3000); // the hook comes back down with fresh bait
         if (destroyed) return;
 
