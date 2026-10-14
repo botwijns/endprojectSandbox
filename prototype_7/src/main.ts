@@ -98,7 +98,7 @@ function renderHud(): void {
         hud.progress.textContent = phase === "done" ? `${total} / ${total}` : `vraag ${shown} / ${total}`;
         hud.score.textContent = `score ${session.score}`;
         if (session.current) {
-            const rating = Math.round(session.ratingFor(session.current.traitId));
+            const rating = Math.round(session.ratingFor(session.current.category));
             const songRating = Math.round(session.current.songRating);
             hud.tier.textContent = `rating ${rating} vs song ${songRating}`;
         } else {

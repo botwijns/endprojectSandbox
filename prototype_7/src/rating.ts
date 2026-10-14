@@ -2,7 +2,8 @@
 // No knowledge of songs or traits here - just the standard chess-Elo formulas,
 // reused for "player's per-trait rating" vs. "this question's song rating".
 
-export const BASE_RATING = 1000;
+// A fresh player's rating - deliberately low, so the first questions are the easy ones.
+export const BASE_RATING = 850;
 export const K_FACTOR = 32;
 
 /** a's expected score (win probability) against b, from the rating difference alone. */
