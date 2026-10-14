@@ -15,13 +15,15 @@ const KNOWN_SONG_CHANCE = 0.25;
 // concepts. A few traits (specific notes/chords) are new and only possible
 // because we now have real note-level data instead of an opaque audio file.
 //
-// Question generation now picks the trait FIRST, then generates a song for
+// Question generation picks a CATEGORY first, then - using the player's
+// rating for that category - a trait within it (traits centered nearer the
+// rating, via their `ratingOffset`, are likelier), then generates a song for
 // it: each trait carries a `difficultyWeights` vector saying how much each
 // song parameter (length, which layers are audible) shifts *that specific
 // trait's* difficulty - e.g. a longer song makes counting the melody's notes
 // harder, but makes recognizing an instrument's timbre easier. The song's
 // params are then chosen (see pickSongParamsForTrait below) to land that
-// trait's difficulty rating close to the player's current rating for it.
+// trait's difficulty rating close to the player's category rating.
 // ---------------------------------------------------------------------------
 
 /** How much each song parameter (booleans as 0/1) shifts a trait's difficulty rating away from BASE_RATING. */
@@ -53,6 +55,8 @@ interface TraitDefinition {
   requiresChords?: boolean;
   /** Custom song builder for traits the regular generator can't answer reliably - also skips known songs. */
   buildSong?: (genre: GenreDefinition, params: SongParams) => GeneratedSong;
+  /** Where this trait's rating range is centered, relative to BASE_RATING (the player's starting rating) - negative = easier than a fresh player, positive = harder. */
+  ratingOffset: number;
   difficultyWeights: DifficultyWeights;
 }
 
@@ -99,7 +103,8 @@ export const TRAITS: TraitDefinition[] = [
     numOptions: 2,
     getValue: (s) => bool(!!s.drums, "ja", "nee"),
     optionPool: ["ja", "nee"],
-    difficultyWeights: { bars: -8, bass: 0, chords: 0, drums: 0, density: 0 }, // longer clip -> more chances to notice drums
+    ratingOffset: 0,
+    difficultyWeights: { bars: -64, bass: 0, chords: 0, drums: 0, density: 0 }, // longer clip -> more chances to notice drums
   },
   {
     id: "motif-repeats",
@@ -112,7 +117,8 @@ export const TRAITS: TraitDefinition[] = [
     buildSong: (genre, params) =>
       generateMotifSong(genre, params, Math.random() < 0.5 ? 1 : 2 + Math.floor(Math.random() * (Math.min(4, params.bars) - 1))),
     // a longer stukje and more layers make the repeat harder to notice
-    difficultyWeights: { bars: 0, bass: 15, chords: 10, drums: 15, density: 30 },
+    ratingOffset: 0,
+    difficultyWeights: { bars: 0, bass: 105, chords: 70, drums: 105, density: 210 },
   },
 
   // ---- Gemiddeld ------------------------------------------------------------
@@ -125,7 +131,8 @@ export const TRAITS: TraitDefinition[] = [
     getValue: (s) => INSTRUMENT_FAMILY[GENRES.find((g) => g.id === s.config.genre)!.instruments.melody],
     optionPool: Array.from(new Set(Object.values(INSTRUMENT_FAMILY))),
     // longer clip -> more timbral exposure -> easier; busier mix -> harder to isolate the melody instrument
-    difficultyWeights: { bars: -15, bass: 0, chords: 0, drums: 0, density: 35 },
+    ratingOffset: 150,
+    difficultyWeights: { bars: -60, bass: 0, chords: 0, drums: 0, density: 140 },
   },
   {
     id: "chords-instrument-family",
@@ -137,7 +144,8 @@ export const TRAITS: TraitDefinition[] = [
     optionPool: Array.from(new Set(Object.values(INSTRUMENT_FAMILY))),
     requiresChords: true,
     // same as melody-instrument-family, plus an inherent bump from chords always being on, plus drums adding clutter
-    difficultyWeights: { bars: -15, bass: 0, chords: 130, drums: 20, density: 35 },
+    ratingOffset: 150,
+    difficultyWeights: { bars: -45, bass: 0, chords: 390, drums: 60, density: 105 },
   },
   // {
   //   id: "density",
@@ -157,7 +165,10 @@ export const TRAITS: TraitDefinition[] = [
     numOptions: 4,
     getValue: (s) => String(s.config.bpb),
     optionPool: ["2", "3", "4", "5", "6"],
-    difficultyWeights: { bars: 0, bass: 0, chords: 0, drums: 0, density: 0 }, // independent of length/instrumentation
+    ratingOffset: 150,
+    // longer clip -> more bars to feel the metre in; chords change and the drums' kick
+    // and bass root land on every downbeat, so each marks the bar lines; a busier melody blurs them
+    difficultyWeights: { bars: -40, bass: -40, chords: -80, drums: -80, density: 30 },
   },
   {
     id: "melody-note-count",
@@ -169,7 +180,8 @@ export const TRAITS: TraitDefinition[] = [
     optionPool: noteCountDistractors,
     isApplicable: (s) => s.melody.length > 0,
     // longer/busier/more layers -> harder to keep an exact count
-    difficultyWeights: { bars: 35, bass: 25, chords: 20, drums: 30, density: 45 },
+    ratingOffset: 150,
+    difficultyWeights: { bars: 44, bass: 31, chords: 25, drums: 38, density: 56 },
   },
   {
     id: "melody-direction-start",
@@ -181,7 +193,8 @@ export const TRAITS: TraitDefinition[] = [
     optionPool: ["omhoog", "omlaag"],
     isApplicable: (s) => s.melody.length >= 2 && s.melody[0].pitch !== s.melody[1].pitch,
     // only the first two notes matter, but more layers make isolating the melody line harder
-    difficultyWeights: { bars: 2, bass: 15, chords: 15, drums: 15, density: 10 },
+    ratingOffset: 150,
+    difficultyWeights: { bars: 12, bass: 90, chords: 90, drums: 90, density: 60 },
   },
   {
     id: "melody-direction-end",
@@ -192,7 +205,8 @@ export const TRAITS: TraitDefinition[] = [
     getValue: (s) => melodyDirection(s.melody[s.melody.length - 2].pitch, s.melody[s.melody.length - 1].pitch),
     optionPool: ["omhoog", "omlaag"],
     isApplicable: (s) => s.melody.length >= 2 && s.melody[s.melody.length - 2].pitch !== s.melody[s.melody.length - 1].pitch,
-    difficultyWeights: { bars: 2, bass: 15, chords: 15, drums: 15, density: 10 },
+    ratingOffset: 150,
+    difficultyWeights: { bars: 12, bass: 90, chords: 90, drums: 90, density: 60 },
   },
   {
     id: "motif-count",
@@ -205,7 +219,8 @@ export const TRAITS: TraitDefinition[] = [
     buildSong: (genre, params) =>
       generateMotifSong(genre, params, 2 + Math.floor(Math.random() * (Math.min(5, params.bars) - 1))),
     // more (different) bars around the stukje and more layers make it harder to keep count
-    difficultyWeights: { bars: 20, bass: 15, chords: 10, drums: 20, density: 30 },
+    ratingOffset: 150,
+    difficultyWeights: { bars: 40, bass: 30, chords: 20, drums: 40, density: 60 },
   },
 
   // ---- Moeilijk: specifieke noten/akkoorden - vraagt echt geoefend luisteren ----
@@ -223,6 +238,7 @@ export const TRAITS: TraitDefinition[] = [
   //     pitchFor: (s, label) => pitchForLabelNearOctave(label, s.melody[0].pitch),
   //   },
   //   // isolating one pitch is harder with more going on around it
+  //   ratingOffset: 300,
   //   difficultyWeights: { bars: 5, bass: 10, chords: 10, drums: 10, density: 10 },
   // },
 ];
@@ -240,8 +256,8 @@ function pickRandom<T>(arr: T[]): T {
 }
 
 // ---------------------------------------------------------------------------
-// Difficulty rating: BASE_RATING, plus a starting-point offset from the
-// trait's own declared difficulty label, plus each of this trait's weights
+// Difficulty rating: BASE_RATING, plus the trait's own ratingOffset (where
+// its range is centered relative to a fresh player's rating), plus each of this trait's weights
 // dotted against how far the song's params deviate from their *neutral*
 // value (the middle of the bars range, 50/50 for each layer toggle, the
 // middle density bucket) - so a song with exactly neutral params always
@@ -250,8 +266,6 @@ function pickRandom<T>(arr: T[]): T {
 // Used both to compute a specific song's rating (the Elo "opponent") and,
 // via the search below, to choose the params that land closest to a target.
 // ---------------------------------------------------------------------------
-const DIFFICULTY_BASE_OFFSET: Record<Difficulty, number> = { easy: -150, medium: 0, hard: 150 };
-
 const BARS_CANDIDATES = [2, 3, 4, 5, 6, 7, 8];
 const DENSITY_CANDIDATES = [0.2, 0.5, 0.8]; // thin / medium / busy, symmetric around DENSITY_MID
 const BARS_MID = 5; // middle of BARS_CANDIDATES
@@ -266,7 +280,7 @@ function ratingForTrait(trait: TraitDefinition, params: SongParams): number {
   const chordsRef = trait.requiresChords ? 1 : 0.5;
   return (
     BASE_RATING +
-    DIFFICULTY_BASE_OFFSET[trait.difficulty] +
+    trait.ratingOffset +
     w.bars * (params.bars - BARS_MID) +
     w.bass * ((params.bass ? 1 : 0) - 0.5) +
     w.chords * ((params.chords ? 1 : 0) - chordsRef) +
@@ -328,10 +342,31 @@ function pickKnownSongLayers(
   return best!;
 }
 
-function pickTrait(recentTraitIds: string[]): TraitDefinition {
-  let candidates = TRAITS.filter((t) => !recentTraitIds.includes(t.id));
-  if (candidates.length === 0) candidates = TRAITS;
-  return pickRandom(candidates);
+export const CATEGORIES: string[] = Array.from(new Set(TRAITS.map((t) => t.category)));
+
+/** A random category, never the previous question's one (unless it's the only one). */
+function pickCategory(lastCategory?: string): string {
+  const candidates = CATEGORIES.filter((c) => c !== lastCategory);
+  return pickRandom(candidates.length > 0 ? candidates : CATEGORIES);
+}
+
+// How sharply the trait pick favours traits centered near the player's
+// rating: the standard deviation of the gaussian weight, in rating points.
+const QUESTION_PICK_SPREAD = 150;
+
+/** Weighted random trait from `category` - the closer its center (BASE_RATING + ratingOffset) is to `rating`, the likelier. */
+function pickTraitForRating(category: string, rating: number): TraitDefinition {
+  const candidates = TRAITS.filter((t) => t.category === category);
+  const weights = candidates.map((t) => {
+    const d = rating - (BASE_RATING + t.ratingOffset);
+    return Math.exp(-(d * d) / (2 * QUESTION_PICK_SPREAD * QUESTION_PICK_SPREAD));
+  });
+  let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < candidates.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return candidates[i];
+  }
+  return candidates[candidates.length - 1];
 }
 
 // A trait's isApplicable can depend on the melody's actual (randomly
@@ -406,28 +441,32 @@ function buildQuestionFromTrait(trait: TraitDefinition, song: GeneratedSong, son
 }
 
 export interface GeneratorOptions {
-  /** Current Elo rating per trait id - looked up for whichever trait gets picked, to target that question's song difficulty. */
+  /** Current Elo rating per category - picks the trait within the chosen category and targets that question's song difficulty. */
   playerRatings: Record<string, number>;
-  recentTraitIds?: string[];
+  /** The previous question's category - never picked twice in a row. */
+  lastCategory?: string;
   /** When set, always use this KNOWN_SONGS entry instead of a random/generated song - for auditioning a specific song against the quiz. */
   forcedSongId?: string;
   /** When set, always ask this trait instead of picking one - used by the intro's practice questions. */
   forcedTraitId?: string;
-  /** When set, aim the song's difficulty at this rating instead of the player's rating for the trait. */
+  /** When set, aim the song's difficulty at this rating instead of the player's rating for the category. */
   targetRating?: number;
   /** When set, never generate a song longer than this many bars (and skip known songs) - keeps the intro's practice songs short. */
   maxBars?: number;
 }
 
 /**
- * Picks a trait/question type first, then generates a song shaped for it:
- * its params are chosen so that trait's difficulty rating lands close to the
- * player's current rating for that trait (an Elo match between the two).
+ * Picks a category first, then a trait/question type within it that suits
+ * the player's rating for that category, then generates a song shaped for
+ * it: its params are chosen so that trait's difficulty rating lands close to
+ * that same rating (an Elo match between the two).
  */
 export function generateQuestion(options: GeneratorOptions): Question {
-  const { playerRatings, recentTraitIds = [], forcedSongId, forcedTraitId, maxBars } = options;
-  const trait = (forcedTraitId && TRAITS.find((t) => t.id === forcedTraitId)) || pickTrait(recentTraitIds);
-  const targetRating = options.targetRating ?? playerRatings[trait.id] ?? BASE_RATING;
+  const { playerRatings, lastCategory, forcedSongId, forcedTraitId, maxBars } = options;
+  const forcedTrait = forcedTraitId ? TRAITS.find((t) => t.id === forcedTraitId) : undefined;
+  const category = forcedTrait?.category ?? pickCategory(lastCategory);
+  const targetRating = options.targetRating ?? playerRatings[category] ?? BASE_RATING;
+  const trait = forcedTrait ?? pickTraitForRating(category, targetRating);
   const { song, songRating } = generateSongForTrait(trait, targetRating, forcedSongId, maxBars);
   return buildQuestionFromTrait(trait, song, songRating);
 }
