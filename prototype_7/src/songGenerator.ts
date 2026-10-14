@@ -493,7 +493,10 @@ export function generateSong(cfg: SongConfig, fixedMelody?: MelodyNote[], progre
 }
 
 /** The song-generation knobs that difficulty is allowed to tune (see questionGenerator.ts's per-trait weight vectors). */
-export type SongParams = Pick<SongConfig, "bars" | "bass" | "chords" | "drums" | "density">;
+export type SongParams = Pick<SongConfig, "bars" | "bass" | "chords" | "drums" | "density"> & {
+  /** Left out when the trait's difficulty doesn't depend on tempo - the builder then picks a random one. */
+  bpm?: number;
+};
 
 /** Builds a full config for `genre` from already-chosen difficulty params and generates a song from it. */
 export function generateSongFromParams(genre: GenreDefinition, params: SongParams): GeneratedSong {
@@ -502,7 +505,7 @@ export function generateSongFromParams(genre: GenreDefinition, params: SongParam
     ...resolved,
     ...params,
     bpb: 2 + Math.floor(Math.random() * 5), // 2-6 beats per bar - not part of the difficulty model
-    bpm: 70 + Math.floor(Math.random() * 120),
+    bpm: params.bpm ?? 70 + Math.floor(Math.random() * 120),
     genre: genre.id,
   };
   return generateSong(cfg);
@@ -553,7 +556,7 @@ export function generateMotifSong(genre: GenreDefinition, params: SongParams, re
     ...params,
     swing: 0,
     bpb: MOTIF_BPB,
-    bpm: 80 + Math.floor(Math.random() * 51), // 80-130: calm enough to follow bar by bar
+    bpm: params.bpm ?? 80 + Math.floor(Math.random() * 51), // 80-130: calm enough to follow bar by bar
     genre: genre.id,
   };
 

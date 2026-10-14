@@ -2,7 +2,6 @@ import { QuizSession } from "./quizEngine.ts";
 import { initAudio, getAudioContext, playSong, playNote, stopAudio, fontsReady } from "./audioPlayback.ts";
 import { speak, speakFrom, earcon, positionalCue } from "./speech.ts";
 import { InputHandler, zonesFor, type QuizAction, type AnswerIndex, type AnswerZone } from "./inputHandler.ts";
-import { KNOWN_SONGS } from "./knownSongs.ts";
 import { generateQuestion, generatePreviewSong } from "./questionGenerator.ts";
 import { BASE_RATING } from "./rating.ts";
 import type { GeneratedSong, Question } from "./types.ts";
@@ -65,15 +64,6 @@ const hud = {
     tier: document.getElementById("hud-tier")!,
     results: document.getElementById("hud-results")!,
 };
-
-// Dev-only song picker: force every question in the next round to use one
-// specific known song, to audition it against the quiz's trait questions
-// before leaving it in the random rotation. "Willekeurig" = normal random mix.
-const songPicker = document.getElementById("hud-song-picker") as HTMLSelectElement;
-songPicker.appendChild(new Option("Willekeurig", ""));
-for (const song of KNOWN_SONGS) {
-    songPicker.appendChild(new Option(`${song.title} (${song.composer})`, song.id));
-}
 
 function renderHud(): void {
     if (introMode) {
@@ -652,7 +642,7 @@ function commitOption(index: AnswerIndex): void {
 
 function beginQuiz(): void {
     lastResultsSummary = [];
-    session = new QuizSession(QUIZ_LENGTH, songPicker.value || undefined);
+    session = new QuizSession(QUIZ_LENGTH);
     input.setQuizEnabled(true);
     speak("Daar gaan we. Luister goed.");
     later(presentQuestion, 1600);

@@ -11,15 +11,13 @@ export interface QuizState {
 export class QuizSession {
   private state: QuizState;
   private length: number;
-  private forcedSongId?: string;
   private lastCategory?: string;
   // One Elo rating per category, in-memory for this round only - starts at
   // BASE_RATING and only fills in once a category has actually been played.
   private playerRatings: Record<string, number> = {};
 
-  constructor(length: number, forcedSongId?: string) {
+  constructor(length: number) {
     this.length = length;
-    this.forcedSongId = forcedSongId;
     this.state = { questions: [], currentIndex: 0, answered: [] };
     this.state.questions.push(this.nextQuestion());
   }
@@ -28,7 +26,6 @@ export class QuizSession {
     const q = generateQuestion({
       playerRatings: this.playerRatings,
       lastCategory: this.lastCategory,
-      forcedSongId: this.forcedSongId,
     });
     this.lastCategory = q.category;
     return q;
