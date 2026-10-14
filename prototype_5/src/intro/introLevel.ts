@@ -64,7 +64,7 @@ export interface IntroLevel {
 
 const TILT_CAPTION = "Jouw beurt! Trek je telefoon rustig naar achteren.";
 const SWING_CAPTION = "Jouw beurt! Zwaai je telefoon nu naar voren.";
-const TAP_CAPTION = "Jouw beurt! Raak het scherm aan zodra je de vis hoort.";
+// const TAP_CAPTION = "Jouw beurt! Raak het scherm aan zodra je de vis hoort.";
 const CRANK_CAPTION = "Jouw beurt! Draai rondjes met je duim om de vis binnen te halen.";
 
 export function createIntroLevel(deps: IntroDeps): IntroLevel {
@@ -94,13 +94,13 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
     }
 
     /** The bobber's out: reel it back to the rod tip, with the reel sound. */
-    async function reelBackIn(): Promise<void> {
-        sounds.reel.loop(true);
-        sounds.reel.play();
-        await fisherman.reelIn();
-        sounds.reel.loop(false);
-        sounds.reel.stop();
-    }
+    // async function reelBackIn(): Promise<void> {
+    //     sounds.reel.loop(true);
+    //     sounds.reel.play();
+    //     await fisherman.reelIn();
+    //     sounds.reel.loop(false);
+    //     sounds.reel.stop();
+    // }
 
     /** The fisherman casts, with the same sounds as the game's real cast
      *  (see the "throwing" phase in main.ts). Resolves when the bobber lands. */
@@ -134,10 +134,10 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
 
         // show: he pulls the rod back while explaining it
         const windLine = playLine("castWindUp", fisherman);
-        await sleep(700);
+        await sleep(1000);
         if (destroyed) return;
         sounds.throw.play();
-        await fisherman.windUp();
+        await castWithSounds();
         await windLine;
         if (destroyed) return;
         await fisherman.lower();
@@ -156,15 +156,15 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         // show: the swing forward (the rod is still held back)
         await playLine("castSwing", fisherman);
         if (destroyed) return;
-        await castWithSounds();
-        await sleep(1500);
-        if (destroyed) return;
+        // await castWithSounds();
+        // await sleep(1500);
+        // if (destroyed) return;
 
         // practise: get the rod back up, then the player swings forward
-        await reelBackIn();
-        if (destroyed) return;
-        await fisherman.windUp();
-        if (destroyed) return;
+        // await reelBackIn();
+        // if (destroyed) return;
+        // await fisherman.windUp();
+        // if (destroyed) return;
         setCaption(SWING_CAPTION);
         await deps.waitForGesture("swingForward");
         if (destroyed) return;
@@ -176,6 +176,7 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         deps.highlightTaskList(true);
         await playLine("castYourTurn", fisherman);
         deps.highlightTaskList(false);
+        await sleep(500);
         if (destroyed) return;
 
         void explainWater();
@@ -197,22 +198,22 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         await sleep(2000);
         if (destroyed) return;
 
-        // practise: tap while a fish bites; a missed one swims off and another comes
-        setCaption(TAP_CAPTION);
-        let biting = false, hooked = false;
-        const tapped = deps.waitForGesture("tap", {accept: () => biting}).then(() => { hooked = true; });
-        while (!destroyed && !hooked) {
-            const ms = bite();
-            biting = true;
-            await Promise.race([tapped, sleep(ms + 600)]);
-            biting = false;
-            if (hooked || destroyed) break;
-            water.showEscape();
-            await sleep(2500);
-        }
-        if (destroyed) return;
-        deps.stopMelody();
-        setCaption("");
+        // // practise: tap while a fish bites; a missed one swims off and another comes
+        // setCaption(TAP_CAPTION);
+        // let biting = false, hooked = false;
+        // const tapped = deps.waitForGesture("tap", {accept: () => biting}).then(() => { hooked = true; });
+        // while (!destroyed && !hooked) {
+        //     const ms = bite();
+        //     biting = true;
+        //     await Promise.race([tapped, sleep(ms + 600)]);
+        //     biting = false;
+        //     if (hooked || destroyed) break;
+        //     water.showEscape();
+        //     await sleep(2500);
+        // }
+        // if (destroyed) return;
+        // deps.stopMelody();
+        // setCaption("");
 
         // show: reeling in — the reel spins and the hooked fish is pulled up and out
         await playLine("reelExplain");
