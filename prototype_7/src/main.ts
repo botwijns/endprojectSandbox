@@ -1,6 +1,6 @@
 import { QuizSession } from "./quizEngine.ts";
 import { initAudio, getAudioContext, playSong, playNote, stopAudio, fontsReady } from "./audioPlayback.ts";
-import { speak, speakFrom, earcon, positionalCue } from "./speech.ts";
+import { speak, earcon } from "./speech.ts";
 import { InputHandler, zonesFor, type QuizAction, type AnswerIndex, type AnswerZone } from "./inputHandler.ts";
 import { KNOWN_SONGS } from "./knownSongs.ts";
 import { generateQuestion, generatePreviewSong } from "./questionGenerator.ts";
@@ -15,9 +15,8 @@ import { enterFullscreen } from "../../src/fullscreen.ts";
 // Every question generates a brand-new song from a real music-theory engine and
 // asks about something audible in it. Played entirely by ear: the question is
 // spoken, the piece plays, and the answers sit either in the four screen
-// corners or split left/right (matching the question's option count), read
-// out with a positional cue (left/right pan, high/low pitch). Shaking the
-// phone repeats the current question.
+// corners or split left/right (matching the question's option count), each
+// read out by its position name. Shaking the phone repeats the current question.
 //
 // A start screen offers a guided "oefenlevel" (introduction) next to the real
 // quiz - see the introduction section below. Tapping 3× anywhere outside the
@@ -168,20 +167,17 @@ function playPiece(): number {
     return ms;
 }
 
-// Announces one answer option: a positional cue, then either the spoken text
-// or - for "hear the note" questions - the letter followed by the actual tone.
+// Announces one answer option: either the spoken text or - for "hear the
+// note" questions - the position name followed by the actual tone.
 function announceOption(index: AnswerIndex, zone: AnswerZone): void {
     const q = currentQuestion();
     if (!q) return;
-    const ctx = getAudioContext();
-    if (ctx) positionalCue(ctx, zone);
     const audio = q.audioOptions?.[index];
     if (audio) {
-        later(() => speakFrom(`${zone.letter}.`, zone.pan), 180);
-        later(() => playNote(audio.instrument, audio.pitch), 650);
+        speak(`${zone.letter}.`);
+        later(() => playNote(audio.instrument, audio.pitch), 470);
     } else {
-        const opt = q.options[index];
-        later(() => speakFrom(`${zone.letter}. ${opt}`, zone.pan), 180);
+        speak(`${zone.letter}. ${q.options[index]}`);
     }
 }
 
@@ -208,7 +204,7 @@ function setAnswerLayoutClass(count: number): void {
 // ── Introduction level ──────────────────────────────────────────────────────
 // A guided tutorial, in the same shape as prototype 5's: first a player-paced
 // preview (Herhaal / Volgende) that lets the player hear a piece with and
-// without drums and learn where the answers sit by their beeps, then two real
+// without drums and learn where the answers sit, then two real
 // practice questions - one with two answers (left/right), one with four
 // (corners) - with a "Stap X van 4" instruction and icon for each step. A
 // wrong answer is explained and asked again with a fresh song; answering both
@@ -243,7 +239,7 @@ const PRACTICE: { traitId: string; leadIn: string }[] = [
     { traitId: "has-drums", leadIn: "Eerste oefenvraag." },
     {
         traitId: "melody-instrument-family",
-        leadIn: "Nu zijn er vier antwoorden, één in elke hoek. Hoog piepje is boven, laag piepje is onder. " +
+        leadIn: "Nu zijn er vier antwoorden, één in elke hoek. " +
             "Wil je de vraag nog eens horen? Schud dan je telefoon.",
     },
 ];
@@ -266,25 +262,23 @@ const PREVIEW_STEPS: PreviewStep[] = [
     },
     {
         icon: "zones-2",
-        caption: "Soms zijn er twee antwoorden: links en rechts. Elke kant heeft een eigen piepje.",
+        caption: "Soms zijn er twee antwoorden: links en rechts.",
         play: () => playZoneCues(2),
     },
     {
         icon: "zones-4",
-        caption: "Soms zijn er vier antwoorden, één in elke hoek. Boven piept hoog, onder piept laag.",
+        caption: "Soms zijn er vier antwoorden, één in elke hoek.",
         play: () => playZoneCues(4),
     },
 ];
 
-/** Plays every zone's positional cue + name in turn, lighting it up on the icon. Returns the duration in ms. */
+/** Speaks every zone's name in turn, lighting it up on the icon. Returns the duration in ms. */
 function playZoneCues(count: number): number {
     const zones = zonesFor(count);
     zones.forEach((zone, i) => {
         later(() => {
-            const ctx = getAudioContext();
-            if (ctx) positionalCue(ctx, zone);
             setLitZone(i);
-            later(() => speakFrom(zone.letter, zone.pan), 180);
+            speak(zone.letter);
         }, i * ZONE_CUE_GAP_MS);
     });
     later(() => setLitZone(null), zones.length * ZONE_CUE_GAP_MS);
