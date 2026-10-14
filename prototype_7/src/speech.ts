@@ -1,12 +1,10 @@
 // ── Audio-first feedback ─────────────────────────────────────────────────────
 // This prototype is meant to be played without looking at the screen, so every
-// state change is announced. Three channels:
+// state change is announced. Two channels:
 //   • speak()        — spoken Dutch via the Web Speech API (skipped silently if
 //                      the browser has no speechSynthesis).
 //   • earcon()       — short non-verbal tones for fast, frequent events / result
 //                      feedback where speech alone would be slow.
-//   • positionalCue() — a panned, pitched blip that tells you WHERE on screen an
-//                      answer sits (left/right = stereo pan, top/bottom = pitch).
 
 let voice: SpeechSynthesisVoice | null = null;
 
@@ -47,18 +45,6 @@ export function speak(text: string): SpeechSynthesisUtterance | null {
     }
 }
 
-/**
- * Speak, and try to place the voice on one side of the stereo field. The Web
- * Speech API on most platforms cannot be routed through a StereoPannerNode, so
- * this usually behaves exactly like speak(); positionalCue() is the reliable
- * spatial channel. `pan` is -1 (left) .. 1 (right).
- */
-export function speakFrom(text: string, _pan: number): SpeechSynthesisUtterance | null {
-    // No portable way to pan speechSynthesis output today — kept as a seam so a
-    // future platform (or a pre-rendered-TTS approach) can honour the position.
-    return speak(text);
-}
-
 export type Earcon =
     | "start" | "done" | "listen" | "select" | "correct" | "wrong";
 
@@ -90,30 +76,4 @@ export function earcon(ctx: AudioContext, kind: Earcon, volume = 0.18): void {
         osc.start(start);
         osc.stop(end + 0.02);
     }
-}
-
-/**
- * A short blip that encodes a screen position: stereo pan for left/right, pitch
- * for top/bottom. Played right before each answer is spoken so you can learn the
- * layout by ear.
- */
-export function positionalCue(
-    ctx: AudioContext,
-    pos: { pan: number; pitch: "high" | "low" },
-    volume = 0.16,
-): void {
-    const now = ctx.currentTime + 0.01;
-    const dur = 0.14;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const panner = ctx.createStereoPanner();
-    panner.pan.value = Math.max(-1, Math.min(1, pos.pan));
-    osc.type = "triangle";
-    osc.frequency.value = pos.pitch === "high" ? 880 : 300;
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(volume, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-    osc.connect(gain).connect(panner).connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + dur + 0.02);
 }
