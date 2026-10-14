@@ -5,7 +5,7 @@ import {SynthManager} from "./audio/SynthManager.ts";
 import {InstrumentManager, FISH, fishById, type FishDef} from "./audio/InstrumentManager.ts";
 import {Howl, Howler} from "howler";
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import {createIntroLevel, type IntroLevel} from "./intro/introLevel.ts";
+import {createIntroLevel, type IntroLevel, type Gesture, type GestureOptions} from "./intro/introLevel.ts";
 import {FISH_NAME_LINES, playGameLine, playSpeech, stopLine} from "./intro/speech.ts";
 
 const debug= !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
@@ -43,12 +43,9 @@ const LIST_BITE_CHANCE = 0.6; // share of bites that are a fish still on today's
 
 // --- introduction level -----------------------------------------------------
 // The intro is a guided, spoken tutorial in two animated scenes (see
-// src/intro/introLevel.ts): on land the fisherman explains and shows the cast,
-// then the player casts for real; under water a voice explains the fish sound
-// and reeling, then the player catches one fish for real. The real detection is
-// the phase machine below — the intro just pauses/resumes it (state.running)
-// and is told about every phase change so the scenes can follow along. Landing
-// a single fish completes it.
+// src/intro/introLevel.ts). Each step is explained and shown, then the player
+// practises just that movement (tilt back, swing forward, tap, reel), detected
+// by waitForGesture() below. The game's phase machine stays paused throughout.
 let gameRunning = false;   // a round (intro or full game) is currently active
 let introMode = false;     // currently playing the guided tutorial
 let introComplete = false; // the tutorial fish has been landed — freeze play
@@ -73,10 +70,8 @@ function updateInstruction(): void {
     instructionEl.textContent = introMode ? "" : PHASE_HINTS[state.phase] ?? "";
 }
 
-/** Every phase change goes through here so the intro scenes can follow along. */
 function setPhase(phase: State["phase"]): void {
     state.phase = phase;
-    intro?.onPhase(phase);
 }
 
 /** The sensor's beta wraps from 180 to -180 when the phone is tilted far back
@@ -107,11 +102,11 @@ function createBetaUnwrapper() {
 }
 
 function finishIntro(): void {
-    // land the tutorial fish, then drop back to the start screen once the catch
-    // sound and the congratulations have had a moment to register.
+    // the intro's last line has played: drop back to the start screen once the
+    // congratulations have had a moment to register.
     introComplete = true;
     intro?.finish(INTRO_DONE_TEXT);
-    soundFishingBackground.fade(soundFishingBackground.volume() as number, 0, 1600);
+    soundFishingUnderwater.fade(soundFishingUnderwater.volume() as number, 0, 1600);
     endTimer = setTimeout(() => {
         stopGame();
         startNoteEl.hidden = false;
@@ -136,6 +131,7 @@ function stopGame(): void {
     introComplete = false;
     intro?.destroy();              // stops the intro script, its speech and both scenes
     intro = null;
+    cancelGesture();
     introStageEl.hidden = true;
     if (endTimer !== null) { clearTimeout(endTimer); endTimer = null; }
     speechToken++;                 // cancel any task-list / feedback speech
@@ -198,11 +194,11 @@ async function startGame(asIntro: boolean): Promise<void> {
     startRound();                  // phase -> idle, background music on
     gameRunning = true;
     loop.start();                  // safe to start immediately: the loop no-ops
-                                    // while state.running is false — exactly the
-                                    // case while the intro is explaining
+                                    // while state.running is false — it stays false
+                                    // for the whole intro (only practice gestures run)
 
     if (asIntro) {
-        // the intro script pauses/resumes the phase machine (state.running) from here on
+        // the intro script drives everything from here on
         introStageEl.hidden = false;
         intro = createIntroLevel({
             land: introLandEl,
@@ -217,9 +213,17 @@ async function startGame(asIntro: boolean): Promise<void> {
             },
             demoFish: fishById("trumpetfish")!,
             playMelody: def => instruments.playMelody(def),
-            resume: () => { state.running = true; updateUI(); },
-            pause: () => { state.running = false; },
+            stopMelody: () => instruments.stopAll(),
+            goUnderwater: () => {
+                // the same ambience switch as when the bobber lands in the game
+                soundFishingBackground.stop();
+                soundFishingUnderwater.play();
+                soundFishingUnderwater.volume(0.3);
+                soundFishingUnderwater.loop(true);
+            },
+            waitForGesture,
             highlightTaskList: on => taskListBtn.classList.toggle("lit", on),
+            onFinished: () => finishIntro(),
         });
         intro.start();
         updateUI();
@@ -445,8 +449,77 @@ function startRound(): void {
 
 
 
+// --- intro practice gestures ---------------------------------------------------
+// Between its explanations the intro asks the player to do one movement at a
+// time (tilt back, swing forward, tap, reel). Those are detected here, on their
+// own, while the real phase machine stays paused — so a practice move never
+// leaves the game half-way through a cast.
+const PRACTICE_TILT = 10;      // degrees, same threshold as the real cast
+interface Practice {
+    gesture: Gesture;
+    opts: GestureOptions;
+    resolve: () => void;
+    base: number | null;       // tiltBack: where the phone started
+    peak: number | null;       // swingForward: furthest-back tilt seen
+    lastCrank: number;
+}
+let practice: Practice | null = null;
+const practiceBeta = createBetaUnwrapper();
+
+function waitForGesture(gesture: Gesture, opts: GestureOptions = {}): Promise<void> {
+    cancelGesture();
+    practiceBeta.reset();
+    if (gesture === "crank") resetCrank();
+    return new Promise(resolve => {
+        practice = {gesture, opts, resolve, base: null, peak: null, lastCrank: 0};
+    });
+}
+
+/** Drop a pending gesture without resolving it (stopGame / a newer gesture). */
+function cancelGesture(): void {
+    practice = null;
+}
+
+function completeGesture(): void {
+    const p = practice;
+    practice = null;
+    p?.resolve();
+}
+
+function tickPractice(): void {
+    const p = practice;
+    if (!p) return;
+    if (p.gesture === "crank") {
+        const total = Math.abs(input.getCrankDegrees());
+        const target = p.opts.crankDegrees ?? 720;
+        p.opts.onCrank?.(Math.min(1, total / target), total - p.lastCrank, input.getPointer() !== null);
+        p.lastCrank = total;
+        if (total >= target) completeGesture();
+        return;
+    }
+    if (p.gesture === "tap") return; // handled by onPracticePress
+    const beta = practiceBeta.read(input.getOrientation().beta);
+    if (beta === null) return;
+    if (p.gesture === "tiltBack") {
+        if (p.base === null) p.base = beta;
+        if (beta - p.base > PRACTICE_TILT) completeGesture();
+    } else {
+        // swingForward: a forward swing from the furthest-back point, so it
+        // works whether the phone is still tilted back or held level
+        if (p.peak === null || beta > p.peak) p.peak = beta;
+        if (p.peak - beta > PRACTICE_TILT) completeGesture();
+    }
+}
+
+function onPracticePress(): void {
+    if (practice?.gesture !== "tap") return;
+    if (practice.opts.accept && !practice.opts.accept()) return; // tapped during silence
+    completeGesture();
+}
+
 const loop = new GameLoop((dt) => {
     if (introComplete) return; // tutorial fish landed — hold everything still
+    if (practice) { tickPractice(); return; } // an intro practice move is being detected
     if (!state.running) return;
 
     const orientation = input.getOrientation();
@@ -520,7 +593,6 @@ const loop = new GameLoop((dt) => {
         // close the catch window once the melody (+ grace) is over
         if (state.activeFish !== null && performance.now() > catchWindowUntil) {
             state.activeFish = null;
-            intro?.onBiteMissed();
             log("...weg. luister opnieuw");
         }
 
@@ -560,8 +632,6 @@ const loop = new GameLoop((dt) => {
             soundFishingReel.rate(Math.min(2, Math.max(0.7, 0.7 + Math.abs(crankVelocity) / 8)));
         }
 
-        intro?.onReel(Math.min(1, Math.abs(crankAngle) / REEL_TARGET), crankVelocity);
-
         // reeled in — two full turns — the outcome is revealed now
         if (Math.abs(crankAngle) >= REEL_TARGET) {
             resolveReel();
@@ -574,7 +644,6 @@ const loop = new GameLoop((dt) => {
             soundCatching.play("escaped")
             state.pendingFish = null;
             resetCrank();
-            intro?.onReelAbandoned();
             setPhase("listening");
             biteTimer = 0;
             nextBiteDelay = 2;
@@ -592,17 +661,12 @@ function pick<T>(arr: T[]): T {
 
 /** Pick a fish to "bite" and play its sound, opening the catch window. */
 function spawnBite(): void {
-    let def: FishDef;
-    if (introMode) {
-        def = pick(FISH);
-    } else {
-        // mostly a fish that's still on the list, otherwise one that isn't
-        const remaining = remainingFish();
-        const others = FISH.filter(f => !remaining.includes(f));
-        def = remaining.length > 0 && (others.length === 0 || Math.random() < LIST_BITE_CHANCE)
-            ? pick(remaining)
-            : pick(others);
-    }
+    // mostly a fish that's still on the list, otherwise one that isn't
+    const remaining = remainingFish();
+    const others = FISH.filter(f => !remaining.includes(f));
+    const def = remaining.length > 0 && (others.length === 0 || Math.random() < LIST_BITE_CHANCE)
+        ? pick(remaining)
+        : pick(others);
 
     // the bobber dips — an audible "something's there" cue alongside the sound
     const dobberId = soundDobber.play("caught");
@@ -612,8 +676,7 @@ function spawnBite(): void {
     state.activeFish = def.id;
     // window stays open for the sound plus a short grace period to react
     catchWindowUntil = performance.now() + melodyDur * 1000 + 600;
-    intro?.onBite();
-    log(introMode ? "🎣 er bijt iets — raak het scherm aan!" : "🎣 er bijt iets...");
+    log("🎣 er bijt iets...");
 }
 
 /**
@@ -647,7 +710,6 @@ function resolveReel(): void {
     state.pendingFish = null;
     resetCrank();
 
-    intro?.onLanded();
     setPhase("idle");
     biteTimer = 0;
     nextBiteDelay = 1.5 + Math.random() * 2;
@@ -656,12 +718,6 @@ function resolveReel(): void {
         // reeled in an empty hook — the miss lands now, not when you touched
         soundCatching.play("escaped")
         log("niks aan de haak...");
-    } else if (introMode) {
-        // one fish is all the tutorial asks for
-        soundCaught.stop()
-        soundCatching.play("success")
-        log(`${def.label} gevangen!`);
-        finishIntro();
     } else if (state.taskList.includes(def.id) && !state.caughtToday.includes(def.id)) {
         state.caughtToday.push(def.id);
         state.score++;
@@ -698,6 +754,7 @@ function resolveReel(): void {
 }
 
 input.onPress(startReeling);
+input.onPress(onPracticePress);
 
 if (debug) {
     (window as any).__game = {
@@ -711,6 +768,17 @@ if (debug) {
         if (e.key === "n") { intro?.skipLine(); stopLine(); return; }
         // k: read out the task list, as if the top-left corner was tapped
         if (e.key === "k") { onTaskListTap(); return; }
+        // an intro practice move: t = the tilt/swing, l or space = the tap/reel
+        if (practice) {
+            if (e.key === " ") e.preventDefault();
+            if (e.key === "t" && (practice.gesture === "tiltBack" || practice.gesture === "swingForward")) completeGesture();
+            else if ((e.key === "l" || e.key === " ") && practice.gesture === "tap") onPracticePress();
+            else if (e.key === " " && practice.gesture === "crank") {
+                practice.opts.onCrank?.(1, 30, false);
+                completeGesture();
+            }
+            return;
+        }
         if (!state.running) return;
         if (e.key === "t" && state.phase === "idle") {
             soundThrow.play();

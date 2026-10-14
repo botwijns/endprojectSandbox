@@ -9,6 +9,8 @@ export type FishermanEvent =
 
 export interface LakesideScene {
     windUp(): Promise<void>;
+    /** From a held wind-up, bring the rod calmly back down to rest (no cast). */
+    lower(): Promise<void>;
     swing(): Promise<void>;
     cast(): Promise<void>;
     reelIn(): Promise<void>;
@@ -193,6 +195,7 @@ export function createLakesideScene(host: HTMLElement): LakesideScene {
     const SH = { x: 182, y: 268 }, SH2 = { x: 176, y: 265 }; // shoulders
     const T = { x: 612, y: 344 };                    // where the bobber settles on the water
     const WIND = 0.85;                               // wind-up duration
+    const LOWER = 0.7;                               // lowering the rod back to rest
     const SWING = 0.36, REL = 0.26;                  // forward stroke length, and when the line lets go
     const FLY = 1.3;                                 // flight time
     const REEL = 1.9;                                // reel-in time
@@ -241,7 +244,7 @@ export function createLakesideScene(host: HTMLElement): LakesideScene {
        machine driven by one clock. */
     let clock = 0, running = true, destroyed = false;
     const rod = { mode: "idle", t0: 0, aFrom: -52, a: -52, w: 0 };
-    //   rod.mode: idle | windup | held | swing | settle
+    //   rod.mode: idle | windup | held | lower | swing | settle
     const flt = { mode: "hang", t0: 0, from: { x: 0, y: 0 } as Pt, C: { x: 0, y: 0 } as Pt, tilt: 0, tiltLand: 0, sag: 3 };
     //   flt.mode: hang | flight | landed | reel
     let nibbles: number[] = [], splashT = -99, nextIdle = 0, reelRot = 0;
@@ -279,6 +282,10 @@ export function createLakesideScene(host: HTMLElement): LakesideScene {
             if (u >= 1) { rod.mode = "held"; rod.t0 = clock; a = -130; }
         } else if (rod.mode === "held") {
             a = -130;
+        } else if (rod.mode === "lower") {
+            const ul = t / LOWER;
+            a = lerp(rod.aFrom, idleBase(), smooth(ul));
+            if (ul >= 1) { rod.mode = "idle"; rod.t0 = clock; }
         } else if (rod.mode === "swing") {
             const us = t / SWING;
             a = lerp(-130, -28, smooth(us));
@@ -347,6 +354,9 @@ export function createLakesideScene(host: HTMLElement): LakesideScene {
             return { x: lerp(REST.x, BACK.x, s), y: lerp(REST.y, BACK.y, s) };
         } else if (rod.mode === "held") {
             return { x: BACK.x, y: BACK.y };
+        } else if (rod.mode === "lower") {
+            const sl = smooth((clock - rod.t0) / LOWER);
+            return { x: lerp(BACK.x, REST.x, sl), y: lerp(BACK.y, REST.y, sl) };
         } else if (rod.mode === "swing") {
             const s2 = smooth((clock - rod.t0) / REL);
             return { x: lerp(BACK.x, FWD.x, s2), y: lerp(BACK.y, FWD.y, s2) };
@@ -616,6 +626,12 @@ export function createLakesideScene(host: HTMLElement): LakesideScene {
         await waitFor(() => rod.mode === "held");
         emit("windup");
     }
+    async function doLower() {
+        if (rod.mode !== "held" && rod.mode !== "windup") return;
+        await waitFor(() => rod.mode === "held");
+        setRod("lower");
+        await waitFor(() => rod.mode === "idle");
+    }
     async function doSwing() {
         if (rod.mode !== "held") { await doWindUp(); await sleep(0.25); }
         setRod("swing");
@@ -666,6 +682,7 @@ export function createLakesideScene(host: HTMLElement): LakesideScene {
 
     const api: LakesideScene = {
         windUp: () => enqueue(doWindUp),
+        lower: () => enqueue(doLower),
         swing: () => enqueue(doSwing),
         cast: () => enqueue(doCast),
         reelIn: () => enqueue(doReelIn),

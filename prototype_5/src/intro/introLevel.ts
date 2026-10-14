@@ -4,15 +4,16 @@ import {createLakesideScene, type LakesideScene} from "./lakesideScene.ts";
 import {createHookReelScene, type HookReelScene} from "./hookReelScene.ts";
 import {playLine, preloadLines, stopLine} from "./speech.ts";
 
-// The intro level ("oefenlevel"), told in two scenes:
-//  1. On land (Lakeside Cast): the fisherman explains casting and shows it,
-//     then the player casts for real with the phone. He mirrors their moves.
+// The intro level ("oefenlevel"), told in two scenes. Every step is explained
+// and shown, then practised by the player before the next one:
+//  1. On land (Lakeside Cast): the fisherman explains and shows pulling the rod
+//     back -> the player tilts back; he explains and shows the swing -> the
+//     player swings forward.
 //  2. Under water (Hook and Reel): a voice explains what a biting fish sounds
-//     like and how reeling works, with a demo of each, then the player catches
-//     one fish for real. The hook and reel follow the player's thumb.
-// The real cast/listen/reel detection is the game's own phase machine in
-// main.ts. This script only pauses/resumes it and is told about every phase
-// change, bite and reel tick, so the scenes can follow along.
+//     like, with a demo bite -> the player taps on a practice bite; it explains
+//     reeling, with a demo reel-in -> the player reels a fish in.
+// The practice moves are single gestures detected by main.ts (waitForGesture).
+// The game's own phase machine never runs during the intro.
 
 export interface IntroSounds {
     throw: Howl;
@@ -22,6 +23,18 @@ export interface IntroSounds {
     catching: Howl;   // sprites: success, repeat, failure, escaped
 }
 
+/** One practice move the intro waits for (see waitForGesture in main.ts). */
+export type Gesture = "tiltBack" | "swingForward" | "tap" | "crank";
+
+export interface GestureOptions {
+    /** tap: only count a tap while this returns true (e.g. while a fish bites). */
+    accept?: () => boolean;
+    /** crank: degrees to turn before it counts (default 720, two turns). */
+    crankDegrees?: number;
+    /** crank: every tick, progress 0..1, degrees turned this tick, and whether a finger is down. */
+    onCrank?: (progress: number, velocity: number, touching: boolean) => void;
+}
+
 export interface IntroDeps {
     land: HTMLElement;     // layer for the lakeside scene
     water: HTMLElement;    // layer for the hook-and-reel scene
@@ -29,43 +42,33 @@ export interface IntroDeps {
     sounds: IntroSounds;
     demoFish: FishDef;
     playMelody(def: FishDef): number; // returns the duration in seconds
-    /** Let the game's phase machine run (the player's turn). */
-    resume(): void;
-    /** Hold the game's phase machine (while the intro explains). */
-    pause(): void;
+    stopMelody(): void;
+    /** Swap the lakeside ambience for the under-water one. */
+    goUnderwater(): void;
+    /** Resolve once the player has done `gesture`. */
+    waitForGesture(gesture: Gesture, opts?: GestureOptions): Promise<void>;
     /** Light up (or switch off) the task-list button in the top-left corner. */
     highlightTaskList(on: boolean): void;
+    /** The intro is over: wrap up and go back to the start screen. */
+    onFinished(): void;
 }
 
 export interface IntroLevel {
     start(): void;
-    /** The game's phase changed (idle/throwing/waiting/listening/reeling/...). */
-    onPhase(phase: string): void;
-    /** A fish bit (its melody started). */
-    onBite(): void;
-    /** The catch window closed without a tap. */
-    onBiteMissed(): void;
-    /** Reeling tick: progress 0..1 and crank degrees turned this tick. */
-    onReel(progress: number, velocity: number): void;
-    /** Reeled too slowly: the fish shook loose. */
-    onReelAbandoned(): void;
-    /** The reel-in finished (with or without a fish). */
-    onLanded(): void;
-    /** The tutorial fish was landed: freeze the script and show `text`. */
+    /** Freeze the script and show `text` (the intro is done). */
     finish(text: string): void;
-    setCaption(text: string): void;
     /** Debug: cut the current speech line short. */
     skipLine(): void;
     destroy(): void;
 }
 
-const CAST_TURN_CAPTION = "Jouw beurt! Trek je telefoon naar achteren en zwaai hem dan naar voren.";
-const CATCH_TURN_CAPTION = "Jouw beurt! Hoor je een melodie? Raak het scherm aan en draai rondjes met je duim.";
+const TILT_CAPTION = "Jouw beurt! Trek je telefoon rustig naar achteren.";
+const SWING_CAPTION = "Jouw beurt! Zwaai je telefoon nu naar voren.";
+const TAP_CAPTION = "Jouw beurt! Raak het scherm aan zodra je de vis hoort.";
+const CRANK_CAPTION = "Jouw beurt! Draai rondjes met je duim om de vis binnen te halen.";
 
 export function createIntroLevel(deps: IntroDeps): IntroLevel {
     const {sounds} = deps;
-    // "explain-cast" -> "player-cast" -> "explain-water" -> "player-catch"
-    let stage: "explain-cast" | "player-cast" | "explain-water" | "player-catch" | "done" = "explain-cast";
     let destroyed = false;
     const timers = new Set<ReturnType<typeof setTimeout>>();
 
@@ -90,18 +93,46 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         deps.caption.hidden = text === "";
     }
 
-    // --- 1. on land: explain and show the cast --------------------------------
+    /** The bobber's out: reel it back to the rod tip, with the reel sound. */
+    async function reelBackIn(): Promise<void> {
+        sounds.reel.loop(true);
+        sounds.reel.play();
+        await fisherman.reelIn();
+        sounds.reel.loop(false);
+        sounds.reel.stop();
+    }
+
+    /** The fisherman casts, with the same sounds as the game's real cast
+     *  (see the "throwing" phase in main.ts). Resolves when the bobber lands. */
+    async function castWithSounds(): Promise<void> {
+        sounds.throw.stop();
+        sounds.throw.play();
+        const throwId = sounds.reelThrow.play("throw");
+        await fisherman.swing();
+        sounds.reelThrow.stop(throwId);
+        sounds.dobber.play("land");
+    }
+
+    /** A fish bites: the same cue as in the game (dobber + the fish's melody).
+     *  Returns the melody's length in ms. */
+    function bite(): number {
+        water.showBite(true);
+        const id = sounds.dobber.play("caught");
+        sounds.dobber.volume(0.8, id);
+        return deps.playMelody(deps.demoFish) * 1000;
+    }
+
+    // --- 1. on land: explain, show and practise the cast ----------------------
     async function explainCast(): Promise<void> {
         showLayer("land");
         setCaption("");
         await sleep(900); // let the scene fade in
         if (destroyed) return;
 
-        // TODO(speech): castIntro — greeting + introduce casting
         await playLine("castIntro", fisherman);
         if (destroyed) return;
 
-        // TODO(speech): castWindUp — he pulls the rod back while explaining it
+        // show: he pulls the rod back while explaining it
         const windLine = playLine("castWindUp", fisherman);
         await sleep(700);
         if (destroyed) return;
@@ -109,63 +140,83 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         await fisherman.windUp();
         await windLine;
         if (destroyed) return;
-        deps.resume();
+        await fisherman.lower();
+        if (destroyed) return;
 
-    }
-    async function explainCast_2(): Promise<void> {
+        // practise: the player tilts back, he copies it
+        setCaption(TILT_CAPTION);
+        await deps.waitForGesture("tiltBack");
+        if (destroyed) return;
+        setCaption("");
+        sounds.throw.play();
+        await fisherman.windUp();
+        await sleep(600);
+        if (destroyed) return;
+
+        // show: the swing forward (the rod is still held back)
         await playLine("castSwing", fisherman);
         if (destroyed) return;
-        // same sounds as the game's real cast (see the "throwing" phase in main.ts)
-        sounds.throw.stop();
-        sounds.throw.play();
-        const throwId = sounds.reelThrow.play("throw");
-        await fisherman.swing(); // resolves when the bobber lands
-        if (destroyed) return;
-        sounds.reelThrow.stop(throwId);
-        sounds.dobber.play("land");
+        await castWithSounds();
         await sleep(1500);
         if (destroyed) return;
-        deps.resume();
 
+        // practise: get the rod back up, then the player swings forward
+        await reelBackIn();
+        if (destroyed) return;
+        await fisherman.windUp();
+        if (destroyed) return;
+        setCaption(SWING_CAPTION);
+        await deps.waitForGesture("swingForward");
+        if (destroyed) return;
+        setCaption("");
+        await castWithSounds();
+        if (destroyed) return;
 
-
-    }
-    async function explainCast_3(): Promise<void> {
-        // the task-list button lights up for as long as this line plays
+        // the task-list button lights up during this line
         deps.highlightTaskList(true);
         await playLine("castYourTurn", fisherman);
         deps.highlightTaskList(false);
         if (destroyed) return;
 
-        stage = "player-cast";
-        setCaption(CAST_TURN_CAPTION);
-        deps.resume(); // the game's idle/throwing detection takes over
+        void explainWater();
     }
-    // --- 2. under water: explain the fish sound and reeling -------------------
+
+    // --- 2. under water: explain, show and practise the bite and the reeling --
     async function explainWater(): Promise<void> {
-        stage = "explain-water";
-        setCaption("");
-        await sleep(1400); // let the splash play out on land first
-        if (destroyed) return;
+        deps.goUnderwater();
         showLayer("water");
         await sleep(1000);
         if (destroyed) return;
 
-        // TODO(speech): fishSounds — explain what a biting fish sounds like
+        // show: what a biting fish sounds like
         await playLine("fishSounds");
         if (destroyed) return;
-        // demo bite: the same cue as a real bite (dobber + the fish's melody)
-        water.showBite(true);
-        const dobberId = sounds.dobber.play("caught");
-        sounds.dobber.volume(0.8, dobberId);
-        const melodySec = deps.playMelody(deps.demoFish);
-        await sleep(melodySec * 1000 + 1200);
+        await sleep(bite() + 1200);
+        if (destroyed) return;
+        water.showEscape(); // this one gets away, so the player can hook the next
+        await sleep(2000);
         if (destroyed) return;
 
-        // TODO(speech): reelExplain — explain tapping + reeling with your thumb
+        // practise: tap while a fish bites; a missed one swims off and another comes
+        setCaption(TAP_CAPTION);
+        let biting = false, hooked = false;
+        const tapped = deps.waitForGesture("tap", {accept: () => biting}).then(() => { hooked = true; });
+        while (!destroyed && !hooked) {
+            const ms = bite();
+            biting = true;
+            await Promise.race([tapped, sleep(ms + 600)]);
+            biting = false;
+            if (hooked || destroyed) break;
+            water.showEscape();
+            await sleep(2500);
+        }
+        if (destroyed) return;
+        deps.stopMelody();
+        setCaption("");
+
+        // show: reeling in — the reel spins and the hooked fish is pulled up and out
         await playLine("reelExplain");
         if (destroyed) return;
-        // demo reel-in: the reel spins and the fish is pulled up and out
         water.showReel();
         sounds.reel.loop(true);
         sounds.reel.play();
@@ -177,71 +228,49 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         await sleep(3000); // the hook comes back down with fresh bait
         if (destroyed) return;
 
-        // TODO(speech): catchYourTurn — "now catch one yourself"
+        // practise: another fish bites and gets hooked, the player reels it in
         await playLine("catchYourTurn");
-        await playLine("endTutorial")
+        if (destroyed) return;
+        await sleep(bite() + 400);
+        if (destroyed) return;
+        setCaption(CRANK_CAPTION);
+        let reeling = false;
+        const stopReelSound = () => {
+            sounds.reel.loop(false);
+            sounds.reel.stop();
+            sounds.reel.rate(1);
+            reeling = false;
+        };
+        await deps.waitForGesture("crank", {
+            crankDegrees: 720,
+            onCrank: (progress, velocity, touching) => {
+                water.driveReel(progress, velocity);
+                // same reel sound as the game: on while touching, faster when cranking faster
+                if (touching && !reeling) {
+                    sounds.reel.loop(true);
+                    sounds.reel.play();
+                    reeling = true;
+                } else if (!touching && reeling) stopReelSound();
+                if (reeling) sounds.reel.rate(Math.min(2, Math.max(0.7, 0.7 + Math.abs(velocity) / 8)));
+            },
+        });
+        stopReelSound();
+        if (destroyed) return;
+        setCaption("");
+        water.land();
+        sounds.catching.play("success");
+        await sleep(2500);
         if (destroyed) return;
 
-        stage = "player-catch";
-        setCaption(CATCH_TURN_CAPTION);
-        deps.resume(); // the game's listening/reeling takes over
+        await playLine("endTutorial");
+        if (destroyed) return;
+        deps.onFinished();
     }
 
     return {
         start() { void explainCast(); },
 
-        onPhase(phase) {
-            if (destroyed) return;
-            if (stage === "player-cast" || stage === "player-catch") {
-                // the fisherman copies the player's cast
-                if (phase === "throwing") {
-                    fisherman.windUp();
-                    deps.pause();
-                    void explainCast_2();
-                }
-
-                else if (phase === "waiting") {
-                    void fisherman.swing();
-                    deps.pause();
-                    void explainCast_3();
-                }
-            }
-            if (phase === "listening") {
-                if (stage === "player-cast") {
-                    // first real cast landed: hold the game and explain the water part
-                    deps.pause();
-                    void explainWater();
-                } else if (stage === "player-catch") {
-                    // a re-cast after an empty reel-in: straight back under water
-                    void sleep(1400).then(() => { if (!destroyed) showLayer("water"); });
-                    setCaption(CATCH_TURN_CAPTION);
-                }
-            } else if (phase === "idle" && stage === "player-catch") {
-                // reeled in an empty hook: the line is back on land, cast again
-                void sleep(2500).then(() => {
-                    if (destroyed || stage !== "player-catch") return;
-                    void fisherman.reelIn(); // ready for the next cast
-                    showLayer("land");
-                    setCaption(CAST_TURN_CAPTION);
-                });
-            }
-        },
-
-        onBite() { if (stage === "player-catch") water.showBite(true); },
-        onBiteMissed() { if (stage === "player-catch") water.showEscape(); },
-        onReel(progress, velocity) { if (stage === "player-catch") water.driveReel(progress, velocity); },
-        onReelAbandoned() {
-            if (stage !== "player-catch") return;
-            water.showEscape();
-            water.dropHook();
-        },
-        onLanded() { if (stage === "player-catch") water.land(); },
-
-        finish(text) {
-            stage = "done";
-            setCaption(text);
-        },
-        setCaption,
+        finish(text) { setCaption(text); },
         skipLine: stopLine,
 
         destroy() {
