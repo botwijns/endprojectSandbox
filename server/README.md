@@ -158,6 +158,8 @@ npm run export -- --out full-dump.json
     { "id": "enjoyment", "type": "scale", "required": true,
       "min": 1, "max": 5, "minLabel": "Niet leuk", "maxLabel": "Heel leuk" },
     { "id": "would_recommend", "type": "boolean", "required": true },
+    { "id": "why", "type": "text", "required": true,   // only asked after "Ja"
+      "showIf": { "question": "would_recommend", "equals": true } },
     { "id": "comments", "type": "text", "required": false,
       "maxLength": 2000, "placeholder": "…" }
   ]

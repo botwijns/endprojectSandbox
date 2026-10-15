@@ -37,9 +37,23 @@ export function loadTemplate() {
         throw new Error(`survey question "${q.id}" needs integer "min" < "max"`);
       }
     }
+    if (q.showIf !== undefined) {
+      // `seen` only holds earlier ids here, so this also enforces ordering.
+      if (!isPlainObject(q.showIf) || !seen.has(q.showIf.question) || q.showIf.question === q.id
+          || !('equals' in q.showIf)) {
+        throw new Error(
+          `survey question "${q.id}" needs "showIf": { "question": <earlier id>, "equals": <value> }`,
+        );
+      }
+    }
   }
   cached = raw;
   return cached;
+}
+
+// A question with "showIf" only applies when an earlier answer matches.
+export function isApplicable(q, answers) {
+  return !q.showIf || answers[q.showIf.question] === q.showIf.equals;
 }
 
 // Validate a submitted answers object against the template.
@@ -58,6 +72,8 @@ export function validateAnswers(template, answers) {
   }
 
   for (const q of template.questions) {
+    // Skipped by branching: not required, and any stale answer is dropped.
+    if (!isApplicable(q, answers)) continue;
     const raw = answers[q.id];
     const empty =
       raw === undefined ||

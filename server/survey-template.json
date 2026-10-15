@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-09",
+  "version": "2026-10-15",
   "title": "Vragenlijst",
   "intro": "Bedankt voor het spelen! Een paar vragen na afloop, dit duurt ongeveer een minuut.",
   "submitLabel": "Versturen",
@@ -42,6 +42,7 @@
       "type": "single",
       "label": "Welke van deze geluiden heb je gehoord?",
       "required": true,
+      "showIf": { "question": "gorrilla_noticed", "equals": true },
       "options": [
         "Een miauw van een kat",
         "Een flits van een camera",
