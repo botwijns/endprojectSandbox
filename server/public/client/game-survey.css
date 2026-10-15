@@ -143,3 +143,24 @@
 .game-survey .gs-loading,
 .game-survey .gs-error { color: var(--gs-muted); }
 .game-survey .gs-done { font-size: 1.05rem; }
+
+/* Session number badge (1, 2, 3, … from the server; -1 = offline) */
+.gs-session-number {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  color: #555;
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+@media (prefers-color-scheme: dark) {
+  .gs-session-number { background: rgba(255, 255, 255, 0.1); color: #a8a8a8; }
+}

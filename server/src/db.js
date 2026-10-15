@@ -18,8 +18,11 @@ db.exec(`
 
   -- One row per game session. The id is generated server-side and is the only
   -- identifier we keep: no IP address, no user agent, no cookies.
+  -- "number" is a short public counter (1, 2, 3, ...) for display only; it is
+  -- guessable, so the API never accepts it in place of the id.
   CREATE TABLE IF NOT EXISTS game_sessions (
     id         TEXT PRIMARY KEY,
+    number     INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     metadata   TEXT NOT NULL DEFAULT '{}'
@@ -54,6 +57,22 @@ db.exec(`
     updated_at       TEXT NOT NULL
   );
 `);
+
+// Migration for databases created before session numbers existed: add the
+// column and number the existing sessions in creation order.
+const hasNumber = db.prepare('PRAGMA table_info(game_sessions)').all().some((c) => c.name === 'number');
+if (!hasNumber) db.exec('ALTER TABLE game_sessions ADD COLUMN number INTEGER');
+const unnumbered = db
+  .prepare('SELECT rowid FROM game_sessions WHERE number IS NULL ORDER BY created_at, rowid')
+  .all();
+if (unnumbered.length) {
+  let next = db.prepare('SELECT COALESCE(MAX(number), 0) AS max FROM game_sessions').get().max;
+  const setNumber = db.prepare('UPDATE game_sessions SET number = ? WHERE rowid = ?');
+  db.exec('BEGIN');
+  for (const row of unnumbered) setNumber.run(++next, row.rowid);
+  db.exec('COMMIT');
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_number ON game_sessions(number)');
 
 export function nowIso() {
   return new Date().toISOString();
