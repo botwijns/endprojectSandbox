@@ -97,24 +97,6 @@
 
 .game-survey [hidden] { display: none !important; }
 
-.game-survey .gs-progress { margin-bottom: 12px; }
-.game-survey .gs-progress-text {
-  margin: 0 0 6px;
-  font-size: 0.85rem;
-  color: var(--gs-muted);
-}
-.game-survey .gs-progress-bar {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--gs-border);
-  overflow: hidden;
-}
-.game-survey .gs-progress-fill {
-  height: 100%;
-  background: var(--gs-accent);
-  transition: width 0.2s ease;
-}
-
 .game-survey .gs-nav-row {
   display: flex;
   gap: 10px;
