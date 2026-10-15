@@ -160,6 +160,21 @@
     return !firstBad;
   }
 
+  // Top-left badge with the session's natural-number form; -1 while the
+  // server can't be reached (no session to show).
+  function showSessionNumber(T) {
+    var badge = document.querySelector('.gs-session-number');
+    if (!badge) {
+      badge = h('div', { class: 'gs-session-number', title: 'Sessienummer' });
+      document.body.appendChild(badge);
+    }
+    badge.textContent = '-1';
+    return T.session().then(
+      function (s) { badge.textContent = T.sessionIdToNumber(s.id); },
+      function () { badge.textContent = '-1'; },
+    );
+  }
+
   function mount(target, options) {
     var opts = options || {};
     var root = typeof target === 'string' ? document.querySelector(target) : target;
@@ -167,6 +182,7 @@
     var T = global.GameTelemetry;
     if (!T) throw new Error('GameSurvey.mount: load game-telemetry.js first');
 
+    showSessionNumber(T);
     root.classList.add('game-survey');
     root.innerHTML = '';
     root.appendChild(h('p', { class: 'gs-loading', text: 'Vragenlijst laden…' }));
@@ -293,6 +309,7 @@
 
         T.submitSurvey(answers).then(
           function (result) {
+            showSessionNumber(T);
             root.innerHTML = '';
             root.appendChild(
               h('p', { class: 'gs-done', text: template.thankYou || 'Bedankt, je antwoorden zijn opgeslagen.' }),
@@ -300,6 +317,7 @@
             if (typeof opts.onComplete === 'function') opts.onComplete(result, answers);
           },
           function (err) {
+            showSessionNumber(T);
             submit.disabled = false;
             prev.disabled = false;
             submit.textContent = template.submitLabel || 'Versturen';
