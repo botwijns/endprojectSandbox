@@ -1,6 +1,6 @@
 import { InputHandler, SCALE_DEGREES } from "./inputHandler.ts";
 import { ShakeDetector } from "./shake.ts";
-import { Howler } from "howler";
+import { Howl, Howler } from "howler";
 import { generateDrumPattern, type DrumPattern } from "./music.ts";
 import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts";
 import { speak, earcon, setSpeechEnabled, stopSpeech } from "./speech.ts";
@@ -105,6 +105,19 @@ window.addEventListener("pointerdown", () => {
     Howler.ctx?.resume();
 }, { once: true });
 
+// ── Gorilla experiment ───────────────────────────────────────────────────────
+// Like prototype 5: an unexpected sound slipped into the game. `experiment`
+// picks which one (0 = off, 1 = meow, 2 = bark, 3 = boing). It replaces one
+// background drum hit during the second melody — not on its first loop and not
+// on the bar's first drum hit — once per game.
+let experiment = 1;
+const gorillaSounds: Howl[] = [
+    new Howl({ src: "sounds/meow.mp3" }),
+    new Howl({ src: "sounds/bark.mp3" }),
+    new Howl({ src: "sounds/boing.mp3" }),
+];
+let gorillaPlayed = false;
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 const STEPS = 8;                      // one 8-step bar (eighth notes)
 const ROOT_MIDI = 60;                 // middle C
@@ -202,6 +215,7 @@ let stepIntervalId: number | null = null;
 let briefIndex = 0;
 let currentBrief: Brief = BRIEFS[0];
 let drumPattern: DrumPattern | null = null;
+let briefLoop = 0;                    // full bars played in the current brief (1 = first loop)
 
 interface MixtapeTrack {
     brief: string;
@@ -310,11 +324,32 @@ function stopSequencer(): void {
     if (stepIntervalId !== null) { window.clearInterval(stepIntervalId); stepIntervalId = null; }
 }
 
+function hasDrumHit(step: number): boolean {
+    return !!(pattern.kick[step] || pattern.snare[step] || pattern.highHat[step]);
+}
+
+// The gorilla takes the place of a drum hit on the second loop (or later) of
+// the second melody, and never the bar's first drum hit.
+function gorillaReplacesDrums(step: number): boolean {
+    if (experiment <= 0 || gorillaPlayed || introMode || briefIndex !== 1 || briefLoop < 2) return false;
+    if (!hasDrumHit(step)) return false;
+    for (let s = 0; s < step; s++) if (hasDrumHit(s)) return true;
+    return false;
+}
+
 function playStep(step: number): void {
     const destination = STEP_PANNERS[step];
+    const gorillaStep = gorillaReplacesDrums(step);
+    if (gorillaStep) {
+        const gorilla = gorillaSounds[experiment - 1];
+        gorilla.volume(0.5);
+        gorilla.play();
+        gorillaPlayed = true;
+    }
     for (const instrument of INSTRUMENTS) {
         const slot = pattern[instrument][step];
         if (!slot) continue;
+        if (gorillaStep && !isMelodic(slot.instrument)) continue;
         scheduleNote(
             slot.instrument,
             pitchForSlot(slot),
@@ -328,6 +363,7 @@ function playStep(step: number): void {
 
 function tick(): void {
     currentStep = (currentStep + 1) % STEPS;
+    if (currentStep === 0) briefLoop++;
     // A held pad press paints the same note onto each new step — but only
     // once the hold has lasted past HOLD_THRESHOLD_MS, so a quick tap that
     // happens to straddle a tick never gets an accidental second note.
@@ -447,6 +483,7 @@ function loadBrief(index: number): void {
     currentVolume = currentBrief.volume;
     currentInstrument = currentBrief.instruments[0];
     placedNoteStack.length = 0; // the previous brief's pattern is about to be cleared
+    briefLoop = 0;
 
     // fresh groove for the new vibe; the player's melody is kept
     drumPattern = generateDrumPattern(STEPS, currentBrief.grooveStyle);
@@ -682,6 +719,7 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
     currentStep = -1;
     pattern = emptyPattern();
     mixtape = [];
+    gorillaPlayed = false;
 
     void shake.start();
 
