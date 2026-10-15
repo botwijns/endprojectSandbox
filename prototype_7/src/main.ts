@@ -10,6 +10,7 @@ import {
     DRUMS_SVG, EAR_SVG, PHONE_ZONES_2_SVG, PHONE_ZONES_4_SVG, TAP_SVG, DOUBLE_TAP_SVG, SHAKE_SVG,
 } from "./introIcons.ts";
 import { enterFullscreen } from "../../src/fullscreen.ts";
+import { Howl } from "howler";
 
 // ── Eyes-free "wat hoor je?" music quiz ──────────────────────────────────────
 // Every question generates a brand-new song from a real music-theory engine and
@@ -38,6 +39,19 @@ let lastResultsSummary: { category: string; avgDelta: number }[] = [];
 let runId = 0;              // bumped on every start/stop so async work can bail out
 let loading = false;        // waiting for the instrument fonts before a start
 let fontPoll: number | null = null;
+
+// ── Gorilla experiment ───────────────────────────────────────────────────────
+// Like prototype 5: an unexpected sound slipped into the game. `experiment`
+// picks which one (0 = off, 1 = meow, 2 = bark, 3 = boing). It plays once, on
+// the second question, after the question is spoken and before the music.
+let experiment = 1;
+const gorillaSounds: Howl[] = [
+    new Howl({ src: "sounds/meow.mp3" }),
+    new Howl({ src: "sounds/bark.mp3" }),
+    new Howl({ src: "sounds/boing.mp3" }),
+];
+let gorillaPlayed = false;
+const GORILLA_GAP_MS = 400; // silence between the gorilla sound and the piece
 
 // ── Screens ─────────────────────────────────────────────────────────────────
 const startScreenEl = document.getElementById("start-screen")!;
@@ -126,6 +140,7 @@ function clearPending(): void {
 function silenceEverything(): void {
     clearPending();
     stopAudio();
+    gorillaSounds.forEach(s => s.stop());
     if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
 }
 
@@ -575,9 +590,21 @@ function presentQuestion(): void {
     // Speech is fire-and-forget status; fixed timers drive the flow so a missing
     // or slow speech-synthesis engine never stalls the quiz.
     speak(prompt);
-    later(() => {
+    const startPiece = () => {
         const ms = playPiece();
         later(readOptions, ms + 700);
+    };
+    later(() => {
+        if (experiment > 0 && !gorillaPlayed && !introMode && session?.progress.current === 2) {
+            gorillaPlayed = true;
+            const gorilla = gorillaSounds[experiment - 1];
+            gorilla.volume(0.5);
+            gorilla.play();
+            const gorillaMs = gorilla.duration() > 0 ? gorilla.duration() * 1000 : 1500;
+            later(startPiece, gorillaMs + GORILLA_GAP_MS);
+        } else {
+            startPiece();
+        }
     }, readMs);
 }
 
@@ -647,6 +674,7 @@ function commitOption(index: AnswerIndex): void {
 function beginQuiz(): void {
     lastResultsSummary = [];
     session = new QuizSession(QUIZ_LENGTH, songPicker.value || undefined);
+    gorillaPlayed = false;
     input.setQuizEnabled(true);
     speak("Daar gaan we. Luister goed.");
     later(presentQuestion, 1600);
