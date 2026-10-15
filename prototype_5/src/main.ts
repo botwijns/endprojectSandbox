@@ -186,6 +186,7 @@ async function startGame(asIntro: boolean): Promise<void> {
     introComplete = false;
     state.score = 0;
     state.day = 0;
+    gorillaPlayed = false;
     state.taskList = [];
     state.caughtToday = [];
 
@@ -369,6 +370,7 @@ var gorillaMeow = new Howl ({src: "sounds/meow.mp3"})
 var gorillaBark = new Howl ({src: "sounds/bark.mp3"})
 var gorillaBoing = new Howl ({src: "sounds/boing.mp3"})
 var gorillaSounds: Howl[] = [gorillaMeow, gorillaBark, gorillaBoing]
+let gorillaPlayed = false; // the gorilla sound plays only once per game
 var soundCatching = new Howl({
     src: ["sounds/vissen vangen_edited.mp3"],
     sprite: {
@@ -557,7 +559,8 @@ const loop = new GameLoop((dt) => {
             updateUI()
         }
         //play experiment sound when experiment is called
-        if (experiment>0&&state.day==2&&remainingFish().length==1){
+        if (experiment>0&&!gorillaPlayed&&state.day==2&&remainingFish().length==1){
+            gorillaPlayed = true
             var gorilla:Howl = gorillaSounds[experiment-1];
             gorilla.play()
             gorilla.volume(0.5)
