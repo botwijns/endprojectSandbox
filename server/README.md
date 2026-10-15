@@ -66,8 +66,16 @@ Create a session. **The id is generated server-side** (192 bits of entropy,
 // request (body optional)
 { "metadata": { "lang": "nl", "viewport": "390x844", "touch": true } }
 // response 201
-{ "id": "xXHlIucG2PWfU5gQTdzKQM1rhXyy54hv", "createdAt": "2026-09-07T12:10:45.698Z" }
+{ "id": "xXHlIucG2PWfU5gQTdzKQM1rhXyy54hv", "number": "<decimal>", "createdAt": "2026-09-07T12:10:45.698Z" }
 ```
+
+**Natural-number form.** The 32 base64url chars encode exactly 24 bytes, so
+reading those bytes as a big-endian integer is a bijection between ids and the
+natural numbers `0 … 2^192 − 1`. `number` is that integer as a decimal string
+(too big for a JSON number). Every `:id` route accepts either form; a 32-char
+value is always read as an id, so a number that is exactly 32 digits long must
+be sent with a leading zero. Codec: `sessionIdToNumber` / `numberToSessionId`
+in `src/ids.js`, and the same pair on `GameTelemetry` in the browser client.
 
 `metadata` must be a small (≤ 4 KB) plain object of non-identifying context.
 
@@ -77,7 +85,7 @@ Read a session — used by the client to validate/resume a stored id.
 ```jsonc
 // response 200
 {
-  "id": "...", "createdAt": "...", "updatedAt": "...",
+  "id": "...", "number": "...", "createdAt": "...", "updatedAt": "...",
   "metadata": { ... },
   "progress": { "prototype_5": { "completed": true, "bestScore": 9 } },
   "surveySubmitted": false

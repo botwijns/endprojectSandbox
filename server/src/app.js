@@ -5,7 +5,7 @@ import express from 'express';
 import cors from 'cors';
 
 import { db, nowIso } from './db.js';
-import { generateSessionId, isValidSessionId } from './ids.js';
+import { generateSessionId, resolveSessionRef, sessionIdToNumber } from './ids.js';
 import { deepMerge, isPlainObject } from './merge.js';
 import { loadTemplate, validateAnswers } from './survey.js';
 import { createRateLimiter } from './rateLimit.js';
@@ -44,8 +44,9 @@ function byteLength(value) {
 }
 
 function loadSession(req, res, next) {
-  const { id } = req.params;
-  if (!isValidSessionId(id)) {
+  // :id may be the base64url id or its natural-number form (decimal string).
+  const id = resolveSessionRef(req.params.id);
+  if (!id) {
     return res.status(400).json({ error: 'bad_session_id', message: 'Malformed session id.' });
   }
   const row = q.getSession.get(id);
@@ -117,7 +118,7 @@ export function createApp() {
     const ts = nowIso();
     q.insertSession.run(id, ts, ts, JSON.stringify(metadata));
 
-    res.status(201).json({ id, createdAt: ts });
+    res.status(201).json({ id, number: sessionIdToNumber(id).toString(), createdAt: ts });
   });
 
   // ── Read a session (used to resume / validate a stored id) ─────────────────
@@ -126,6 +127,7 @@ export function createApp() {
     const survey = q.getSurvey.get(req.session.id);
     res.json({
       id: req.session.id,
+      number: sessionIdToNumber(req.session.id).toString(),
       createdAt: req.session.created_at,
       updatedAt: req.session.updated_at,
       metadata: JSON.parse(req.session.metadata),
