@@ -40,7 +40,7 @@ const DAY_CONFIG = {
     maxExtraPerDay: 1, // each next day adds 0..this many fish (capped at the number of fish)
 };
 const LIST_BITE_CHANCE = 0.6; // share of bites that are a fish still on today's list
-
+let experiment = 1;
 // --- introduction level -----------------------------------------------------
 // The intro is a guided, spoken tutorial in two animated scenes (see
 // src/intro/introLevel.ts). Each step is explained and shown, then the player
@@ -364,6 +364,11 @@ function log(message: string): void {
 //     src: ["sounds/frogCroak.webm", "sounds/frogCroak.wav", "sounds/frogCroak.mp3"],
 //     loop: true
 // })
+// add gorrilla sounds to the game, it has three sounds: meow, bark, and boing
+var gorillaMeow = new Howl ({src: "sounds/meow.mp3"})
+var gorillaBark = new Howl ({src: "sounds/bark.mp3"})
+var gorillaBoing = new Howl ({src: "sounds/boing.mp3"})
+var gorillaSounds: Howl[] = [gorillaMeow, gorillaBark, gorillaBoing]
 var soundCatching = new Howl({
     src: ["sounds/vissen vangen_edited.mp3"],
     sprite: {
@@ -550,6 +555,12 @@ const loop = new GameLoop((dt) => {
             setPhase("throwing")
             throwPeakBeta = beta
             updateUI()
+        }
+        //play experiment sound when experiment is called
+        if (experiment>0&&state.day==2&&remainingFish().length==1){
+            var gorilla:Howl = gorillaSounds[experiment-1];
+            gorilla.play()
+            gorilla.volume(0.5)
         }
     }
     //wait a tick between phases
