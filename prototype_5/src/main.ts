@@ -557,7 +557,7 @@ const loop = new GameLoop((dt) => {
             updateUI()
         }
         //play experiment sound when experiment is called
-        if (experiment>0&&state.day==0&&remainingFish().length==1){
+        if (experiment>0&&state.day==2&&remainingFish().length==1){
             var gorilla:Howl = gorillaSounds[experiment-1];
             gorilla.play()
             gorilla.volume(0.5)
