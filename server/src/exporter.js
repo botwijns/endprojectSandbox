@@ -4,7 +4,7 @@ import { db } from './db.js';
 // survey answers. There is no PII to redact — only the random id is stored.
 export function exportAll() {
   const sessions = db
-    .prepare('SELECT id, created_at, updated_at, metadata FROM game_sessions ORDER BY created_at')
+    .prepare('SELECT id, number, created_at, updated_at, metadata FROM game_sessions ORDER BY number')
     .all();
 
   const stateBySession = new Map(
@@ -37,6 +37,7 @@ export function exportAll() {
       const survey = surveyBySession.get(s.id);
       return {
         id: s.id,
+        number: s.number,
         createdAt: s.created_at,
         updatedAt: s.updated_at,
         metadata: JSON.parse(s.metadata),
@@ -64,12 +65,13 @@ function csvCell(value) {
 // One row per session; one column per survey question id (unanswered -> blank).
 export function toCsv(data, template) {
   const questionIds = template.questions.map((q) => q.id);
-  const header = ['session_id', 'session_created_at', 'survey_submitted_at', 'template_version', ...questionIds];
+  const header = ['session_number', 'session_id', 'session_created_at', 'survey_submitted_at', 'template_version', ...questionIds];
   const lines = [header.join(',')];
 
   for (const s of data.sessions) {
     const answers = s.survey?.answers ?? {};
     const row = [
+      s.number,
       s.id,
       s.createdAt,
       s.survey?.submittedAt ?? '',

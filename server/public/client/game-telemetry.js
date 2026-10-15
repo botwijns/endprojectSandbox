@@ -22,13 +22,8 @@
  *
  * The session id is generated server-side and cached in localStorage, so a
  * returning player keeps the same id and their data is merged, not duplicated.
- *
- * Every id also has a natural-number form (a decimal string, 0 … 2^192 − 1):
- *
- *   var n  = GameTelemetry.getSessionNumber();        // "4126…"  (or null)
- *   var id = GameTelemetry.numberToSessionId(n);       // back to the 32-char id
- *
- * The API accepts either form wherever it takes a session id.
+ * session() also resolves with `number`: a short counter (1, 2, 3, …) the
+ * server hands out per session, for display only — the API never accepts it.
  */
 (function (global) {
   'use strict';
@@ -90,44 +85,6 @@
     });
   }
 
-  // ── Natural-number form of a session id ─────────────────────────────────
-  // 32 base64url chars = exactly 24 bytes = 192 bits, read big-endian. Mirrors
-  // server/src/ids.js; the number is a decimal string since it exceeds Number.
-  var ID_BYTES = 24;
-  var B64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-  var ID_RE = /^[A-Za-z0-9_-]{32}$/;
-  var NUMBER_RE = /^[0-9]{1,80}$/;
-
-  function sessionIdToNumber(id) {
-    if (typeof id !== 'string' || !ID_RE.test(id)) throw new TypeError('Malformed session id.');
-    var n = BigInt(0);
-    var six = BigInt(6);
-    for (var i = 0; i < id.length; i++) {
-      n = (n << six) | BigInt(B64URL.indexOf(id.charAt(i)));
-    }
-    return n.toString();
-  }
-
-  function numberToSessionId(value) {
-    var str = String(value);
-    if (!NUMBER_RE.test(str)) throw new RangeError('Session number out of range.');
-    var n = BigInt(str);
-    if (n >= (BigInt(1) << BigInt(ID_BYTES * 8))) throw new RangeError('Session number out of range.');
-    var mask = BigInt(63);
-    var six = BigInt(6);
-    var out = '';
-    for (var i = 0; i < 32; i++) {
-      out = B64URL.charAt(Number(n & mask)) + out;
-      n >>= six;
-    }
-    return out;
-  }
-
-  function getSessionNumber() {
-    var id = readId();
-    return id && ID_RE.test(id) ? sessionIdToNumber(id) : null;
-  }
-
   var sessionPromise = null;
 
   function createOrResume(metadata) {
@@ -136,7 +93,7 @@
 
     if (existing) {
       chain = request('/api/sessions/' + encodeURIComponent(existing))
-        .then(function (info) { return { id: existing, resumed: true, info: info }; })
+        .then(function (info) { return { id: existing, number: info.number, resumed: true, info: info }; })
         .catch(function (err) {
           if (err.status === 404 || err.status === 400) { forgetId(); return null; }
           throw err;
@@ -150,7 +107,7 @@
         body: { metadata: metadata || defaultMetadata() },
       }).then(function (created) {
         writeId(created.id);
-        return { id: created.id, resumed: false, info: created };
+        return { id: created.id, number: created.number, resumed: false, info: created };
       });
     });
   }
@@ -211,9 +168,6 @@
     loadSurveyTemplate: loadSurveyTemplate,
     submitSurvey: submitSurvey,
     getSessionId: readId,
-    getSessionNumber: getSessionNumber,
-    sessionIdToNumber: sessionIdToNumber,
-    numberToSessionId: numberToSessionId,
     resetSession: function () { forgetId(); sessionPromise = null; },
     setApiBase: function (base) { global.__GAME_API_BASE__ = base; },
     _apiBase: apiBase,

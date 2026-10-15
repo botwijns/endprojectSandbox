@@ -144,7 +144,7 @@
 .game-survey .gs-error { color: var(--gs-muted); }
 .game-survey .gs-done { font-size: 1.05rem; }
 
-/* Session number badge (natural-number form of the session id; -1 = offline) */
+/* Session number badge (1, 2, 3, … from the server; -1 = offline) */
 .gs-session-number {
   position: fixed;
   top: 8px;

@@ -160,7 +160,7 @@
     return !firstBad;
   }
 
-  // Top-left badge with the session's natural-number form; -1 while the
+  // Top-left badge with the session's number (1, 2, 3, …); -1 while the
   // server can't be reached (no session to show).
   function showSessionNumber(T) {
     var badge = document.querySelector('.gs-session-number');
@@ -170,7 +170,7 @@
     }
     badge.textContent = '-1';
     return T.session().then(
-      function (s) { badge.textContent = T.sessionIdToNumber(s.id); },
+      function (s) { badge.textContent = s.number == null ? '-1' : String(s.number); },
       function () { badge.textContent = '-1'; },
     );
   }

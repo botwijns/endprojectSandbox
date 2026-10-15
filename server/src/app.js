@@ -5,7 +5,7 @@ import express from 'express';
 import cors from 'cors';
 
 import { db, nowIso } from './db.js';
-import { generateSessionId, resolveSessionRef, sessionIdToNumber } from './ids.js';
+import { generateSessionId, isValidSessionId } from './ids.js';
 import { deepMerge, isPlainObject } from './merge.js';
 import { loadTemplate, validateAnswers } from './survey.js';
 import { createRateLimiter } from './rateLimit.js';
@@ -16,8 +16,13 @@ const MAX_MERGE_BYTES = 16_000;
 
 // ── Prepared statements ──────────────────────────────────────────────────────
 const q = {
-  getSession: db.prepare('SELECT id, created_at, updated_at, metadata FROM game_sessions WHERE id = ?'),
-  insertSession: db.prepare('INSERT INTO game_sessions (id, created_at, updated_at, metadata) VALUES (?, ?, ?, ?)'),
+  getSession: db.prepare('SELECT id, number, created_at, updated_at, metadata FROM game_sessions WHERE id = ?'),
+  // Next number is computed inside the INSERT, so it is atomic (SQLite has a single writer).
+  insertSession: db.prepare(`
+    INSERT INTO game_sessions (id, number, created_at, updated_at, metadata)
+    VALUES (?, (SELECT COALESCE(MAX(number), 0) + 1 FROM game_sessions), ?, ?, ?)
+    RETURNING number
+  `),
   touchSession: db.prepare('UPDATE game_sessions SET updated_at = ? WHERE id = ?'),
   getState: db.prepare('SELECT state FROM progress_state WHERE session_id = ?'),
   upsertState: db.prepare(`
@@ -44,9 +49,8 @@ function byteLength(value) {
 }
 
 function loadSession(req, res, next) {
-  // :id may be the base64url id or its natural-number form (decimal string).
-  const id = resolveSessionRef(req.params.id);
-  if (!id) {
+  const { id } = req.params;
+  if (!isValidSessionId(id)) {
     return res.status(400).json({ error: 'bad_session_id', message: 'Malformed session id.' });
   }
   const row = q.getSession.get(id);
@@ -116,9 +120,9 @@ export function createApp() {
 
     const id = generateSessionId();
     const ts = nowIso();
-    q.insertSession.run(id, ts, ts, JSON.stringify(metadata));
+    const { number } = q.insertSession.get(id, ts, ts, JSON.stringify(metadata));
 
-    res.status(201).json({ id, number: sessionIdToNumber(id).toString(), createdAt: ts });
+    res.status(201).json({ id, number, createdAt: ts });
   });
 
   // ── Read a session (used to resume / validate a stored id) ─────────────────
@@ -127,7 +131,7 @@ export function createApp() {
     const survey = q.getSurvey.get(req.session.id);
     res.json({
       id: req.session.id,
-      number: sessionIdToNumber(req.session.id).toString(),
+      number: req.session.number,
       createdAt: req.session.created_at,
       updatedAt: req.session.updated_at,
       metadata: JSON.parse(req.session.metadata),
