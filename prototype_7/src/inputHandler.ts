@@ -11,20 +11,18 @@ export type AnswerIndex = number;
 export interface AnswerZone {
   index: AnswerIndex;
   letter: string;
-  pan: number; // -1 (left) .. 1 (right)
-  pitch: "high" | "low";
 }
 
 const SIDES_2: AnswerZone[] = [
-  { index: 0, letter: "Links", pan: -0.8, pitch: "high" }, // links
-  { index: 1, letter: "Rechts", pan: 0.8, pitch: "high" }, // rechts
+  { index: 0, letter: "Links" }, // links
+  { index: 1, letter: "Rechts" }, // rechts
 ];
 
 const CORNERS_4: AnswerZone[] = [
-  { index: 0, letter: "Linksboven", pan: -0.8, pitch: "high" }, // linksboven
-  { index: 1, letter: "Rechtsboven", pan: 0.8, pitch: "high" }, // rechtsboven
-  { index: 2, letter: "Linksonder", pan: -0.8, pitch: "low" }, // linksonder
-  { index: 3, letter: "Rechtsonder", pan: 0.8, pitch: "low" }, // rechtsonder
+  { index: 0, letter: "Linksboven" }, // linksboven
+  { index: 1, letter: "Rechtsboven" }, // rechtsboven
+  { index: 2, letter: "Linksonder" }, // linksonder
+  { index: 3, letter: "Rechtsonder" }, // rechtsonder
 ];
 
 /** The active set of answer zones for a question with `count` options (2 or 4). */

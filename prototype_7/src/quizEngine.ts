@@ -12,14 +12,22 @@ export class QuizSession {
   private state: QuizState;
   private length: number;
   private forcedSongId?: string;
-  private recentTraitIds: string[] = [];
-  // One Elo rating per trait id, in-memory for this round only - starts
-  // neutral and only fills in once a trait has actually been played.
+  private lastCategory?: string;
+  // One Elo rating per category, in-memory for this round only - starts at
+  // BASE_RATING and only fills in once a category has actually been played.
+  // The combined/ shell can hand in the ratings a previous quiz part ended on,
+  // so a player's level carries over from one quiz part to the next.
   private playerRatings: Record<string, number> = {};
+  // where this round started, per category - the baseline for performanceSummary()
+  private startRatings: Record<string, number> = {};
 
-  constructor(length: number, forcedSongId?: string) {
+  constructor(length: number, forcedSongId?: string, initialRatings?: Record<string, number>) {
     this.length = length;
     this.forcedSongId = forcedSongId;
+    if (initialRatings) {
+      this.playerRatings = { ...initialRatings };
+      this.startRatings = { ...initialRatings };
+    }
     this.state = { questions: [], currentIndex: 0, answered: [] };
     this.state.questions.push(this.nextQuestion());
   }
@@ -27,11 +35,10 @@ export class QuizSession {
   private nextQuestion(): Question {
     const q = generateQuestion({
       playerRatings: this.playerRatings,
-      recentTraitIds: this.recentTraitIds,
+      lastCategory: this.lastCategory,
       forcedSongId: this.forcedSongId,
     });
-    this.recentTraitIds.push(q.traitId);
-    if (this.recentTraitIds.length > 3) this.recentTraitIds.shift();
+    this.lastCategory = q.category;
     return q;
   }
 
@@ -51,9 +58,9 @@ export class QuizSession {
     return this.state.currentIndex >= this.length;
   }
 
-  /** Current Elo rating for a trait - BASE_RATING if it hasn't been played yet this round. */
-  ratingFor(traitId: string): number {
-    return this.playerRatings[traitId] ?? BASE_RATING;
+  /** Current Elo rating for a category - BASE_RATING if it hasn't been played yet this round. */
+  ratingFor(category: string): number {
+    return this.playerRatings[category] ?? BASE_RATING;
   }
 
   submitAnswer(choice: string): AnsweredQuestion {
@@ -63,8 +70,8 @@ export class QuizSession {
     const answered: AnsweredQuestion = { ...q, chosenAnswer: choice, correct };
     this.state.answered.push(answered);
 
-    const current = this.ratingFor(q.traitId);
-    this.playerRatings[q.traitId] = updateRating(current, q.songRating, correct ? 1 : 0);
+    const current = this.ratingFor(q.category);
+    this.playerRatings[q.category] = updateRating(current, q.songRating, correct ? 1 : 0);
 
     this.state.currentIndex += 1;
     if (this.state.currentIndex < this.length) {
@@ -73,29 +80,23 @@ export class QuizSession {
     return answered;
   }
 
+  /** A copy of the per-category ratings as they stand now. */
+  get ratings(): Record<string, number> {
+    return { ...this.playerRatings };
+  }
+
   get history(): AnsweredQuestion[] {
     return this.state.answered;
   }
 
   /**
-   * Per-category performance for this round: for every trait actually
-   * answered, how far its final rating ended up from the neutral starting
-   * point (BASE_RATING, the same for every trait) - grouped by category and
-   * averaged, since a category can cover more than one trait. Sorted best
-   * first.
+   * Per-category performance for this round: for every category actually
+   * answered, how far its final rating ended up from where this round started
+   * (BASE_RATING, or the rating carried over from a previous quiz part). Sorted best first.
    */
   performanceSummary(): { category: string; avgDelta: number }[] {
-    const byCategory = new Map<string, { total: number; count: number }>();
-    for (const traitId of new Set(this.state.answered.map((a) => a.traitId))) {
-      const category = this.state.answered.find((a) => a.traitId === traitId)!.category;
-      const delta = this.ratingFor(traitId) - BASE_RATING;
-      const bucket = byCategory.get(category) ?? { total: 0, count: 0 };
-      bucket.total += delta;
-      bucket.count += 1;
-      byCategory.set(category, bucket);
-    }
-    return Array.from(byCategory.entries())
-      .map(([category, { total, count }]) => ({ category, avgDelta: total / count }))
+    return Array.from(new Set(this.state.answered.map((a) => a.category)))
+      .map((category) => ({ category, avgDelta: this.ratingFor(category) - (this.startRatings[category] ?? BASE_RATING) }))
       .sort((a, b) => b.avgDelta - a.avgDelta);
   }
 }

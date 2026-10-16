@@ -117,6 +117,8 @@ export class InputHandler {
     private crankPrevAngle: number | null = null;
     private crankTotal = 0;
     private static CRANK_WINDOW = 40;
+    // fraction of the screen width on each side where a fresh press is ignored
+    private static EDGE_DEAD_ZONE = 0.025;
 
     /** Start a fresh crank measurement. */
     beginCrank(): void {
@@ -216,6 +218,10 @@ export class InputHandler {
         // Let taps on real UI controls (buttons, links, inputs) behave normally —
         // capturing the pointer on <body> here would otherwise swallow their click.
         if ((e.target as Element | null)?.closest?.("button, a, input, select, textarea, [data-ui]")) return;
+        // Ignore presses in the thin strips along the left/right edges — players
+        // rest their thumbs there while holding the phone, which shouldn't start a reel.
+        const edge = window.innerWidth * InputHandler.EDGE_DEAD_ZONE;
+        if (e.clientX < edge || e.clientX > window.innerWidth - edge) return;
         // Only claim this pointer if no joystick is active yet
         if (this.joystickPointerId !== null) return;
         this.joystickPointerId = e.pointerId;

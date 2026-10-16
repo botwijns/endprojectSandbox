@@ -90,74 +90,52 @@
       border-radius: 6px; border: 1px solid rgb(0 0 0 / 0.3); background: rgba(255,255,255,0.85);
     }
 
-    /* ── Tutorial card (oefenlevel only) ─────────────────────────────────── */
-    /* The card lets taps fall through to the pad; only the Volgende button
-       (data-ui, see inputHandler.ts) takes its own clicks. */
-    #tutorial {
-      position: fixed; z-index: 10; top: 34px; left: 50%; transform: translateX(-50%);
-      width: min(92vw, 26rem); box-sizing: border-box;
-      display: flex; flex-direction: column; align-items: center; gap: 8px;
-      padding: 10px 14px 12px; text-align: center;
-      background: rgba(255,255,255,0.8); border: 1px solid rgb(0 0 0 / 0.18);
-      border-radius: 12px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
-      pointer-events: none;
+    /* ── Intro (oefenlevel only): the campfire scene ─────────────────────── */
+    /* Sits behind the zones and lets every tap fall through to the pad. */
+    #intro-stage {
+      position: fixed; inset: 0; z-index: 3; pointer-events: none;
+      background: linear-gradient(#070d22 0%, #070d22 50%, #16231b 50%, #16231b 100%);
     }
-    #tut-progress { font-size: 12px; color: rgb(0 0 0 / 0.55); font-weight: 600; }
-    #tut-text { margin: 0; font-size: clamp(0.9rem, 4vmin, 1.05rem); line-height: 1.4; }
-    #tut-visual:empty { display: none; }
-    #tut-visual svg { width: 72px; height: 72px; display: block; }
-    #tut-next {
-      pointer-events: auto; font-size: 1rem; padding: 0.5rem 1.4rem; cursor: pointer;
-      border-radius: 8px; border: 1px solid rgb(0 0 0 / 0.3); background: #4cafef; color: #fff;
-      font-weight: 600;
-    }
-    #tut-next:disabled { background: #e2e2e2; color: rgb(0 0 0 / 0.4); cursor: default; }
+    #intro-stage[hidden] { display: none; }
+    #intro-scene { position: absolute; inset: 0; }
+    #intro-scene .campfire-svg { display: block; width: 100%; height: 100%; }
 
-    .track-row { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; width: 100%; }
-    .track-row .tile {
-      height: 28px; border-radius: 5px; background: rgb(0 0 0 / 0.08);
-      transition: background 60ms, transform 60ms;
+    /* on the dark scene the zones and the log need light ink */
+    #intro-stage:not([hidden]) ~ #zone-strip > div {
+      border-color: rgb(255 255 255 / 0.3); color: rgb(255 255 255 / 0.65);
     }
-    .track-row .tile.on { background: #4cafef; transform: scale(1.08); }
-
-    /* Vertical hoog/laag key along the right edge, spanning the pad area
-       (0–86% of the height, matching STRIP_Y in inputHandler.ts). */
-    #pitch-guide {
-      position: fixed; z-index: 9; right: 4px; top: 52px; height: calc(85% - 52px); width: 34px;
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-      font-size: 11px; font-weight: 700; color: #1b6fa8; pointer-events: none;
-    }
-    #pitch-guide .shaft {
-      flex: 1; width: 4px; border-radius: 2px;
-      background: linear-gradient(#1b6fa8, rgb(76 175 239 / 0.25));
-    }
-
-    #zone-strip > div.zone-highlight {
-      border: 3px solid #4cafef; color: #1b6fa8; font-weight: 700;
+    #intro-stage:not([hidden]) ~ #log { color: rgb(255 255 255 / 0.8); }
+    #zone-strip > div.zone-highlight,
+    #intro-stage:not([hidden]) ~ #zone-strip > div.zone-highlight {
+      border: 3px solid #ffd35a; color: #ffe9a8; font-weight: 700;
       animation: zone-pulse 1s ease-in-out infinite;
     }
     @keyframes zone-pulse {
-      0%, 100% { background: rgb(76 175 239 / 0.08); }
-      50%      { background: rgb(76 175 239 / 0.35); }
+      0%, 100% { background: rgb(255 211 90 / 0.08); }
+      50%      { background: rgb(255 211 90 / 0.4); }
     }
 
-    .tut-notes .note { animation: note-float 1.6s ease-in-out infinite; }
-    .tut-notes .note:nth-child(2) { animation-delay: 0.3s; }
-    .tut-notes .note:nth-child(3) { animation-delay: 0.6s; }
-    @keyframes note-float {
-      0%, 100% { transform: translateY(0); }
-      50%      { transform: translateY(-6px); }
+    /* Glowing top ("hoog") and bottom ("laag") edges of the note pad, which
+       ends where the control strip starts (86%, STRIP_Y in inputHandler.ts). */
+    .pitch-edge {
+      position: fixed; left: 0; width: 100%; height: 12%; z-index: 6;
+      display: flex; justify-content: center; pointer-events: none;
+      font-size: 15px; font-weight: 700; letter-spacing: 0.08em; color: #fff3c4;
+      text-shadow: 0 0 8px rgb(255 160 60 / 0.9);
+      animation: edge-pulse 1.2s ease-in-out infinite;
     }
-    .tut-tap .ripple { transform-origin: 50px 30px; animation: tap-ripple 1.2s ease-out infinite; }
-    @keyframes tap-ripple {
-      0%   { transform: scale(0.4); opacity: 0.9; }
-      100% { transform: scale(1.4); opacity: 0; }
+    #pitch-edge-top {
+      top: 0; align-items: flex-start; padding-top: 34px; box-sizing: border-box;
+      background: linear-gradient(rgb(255 180 74 / 0.75), rgb(255 180 74 / 0));
     }
-    .tut-shake .phone { transform-origin: 50px 50px; animation: phone-shake 0.9s ease-in-out infinite; }
-    @keyframes phone-shake {
-      0%, 100% { transform: rotate(0); }
-      20% { transform: rotate(-14deg); } 40% { transform: rotate(12deg); }
-      60% { transform: rotate(-10deg); } 80% { transform: rotate(6deg); }
+    #pitch-edge-bottom {
+      bottom: 14%; align-items: flex-end; padding-bottom: 6px; box-sizing: border-box;
+      background: linear-gradient(rgb(255 180 74 / 0), rgb(255 180 74 / 0.75));
+    }
+    #pitch-edge-bottom { animation-delay: 0.6s; }
+    @keyframes edge-pulse {
+      0%, 100% { opacity: 0.45; }
+      50%      { opacity: 1; }
     }
 
     /* ── Phones in landscape ───────────────────────────────────────────── */
@@ -170,10 +148,6 @@
       }
       #start-screen p { line-height: 1.35; }
       #start-options { gap: 0.2rem; }
-      #tutorial { gap: 4px; padding: 6px 12px 8px; }
-      #tut-visual svg { width: 44px; height: 44px; }
-      #tut-text { line-height: 1.3; }
-      #tut-next { padding: 0.35rem 1.2rem; }
     }
   </style>
 </head>
@@ -182,8 +156,7 @@
 <div id="start-screen">
   <h1>Prototype 6 &mdash; Maak een sfeer</h1>
   <p id="intro-blurb">
-    Maak op je gehoor een muziekje bij een opdracht (bijvoorbeeld &ldquo;iets vrolijks&rdquo;).
-    In het <strong>oefenlevel</strong> leer je stap voor stap de bediening kennen.
+
   </p>
   <div id="start-options">
     <label><input type="checkbox" id="speech-toggle" checked> Spraak (voice-over)</label>
@@ -205,6 +178,12 @@
     <span id="hud-backing"></span>
   </div>
 
+  <!-- the intro level's campfire scene (src/intro/); must come before the
+       zone strip and log, whose intro colours are set with ~ selectors -->
+  <div id="intro-stage" hidden>
+    <div id="intro-scene"></div>
+  </div>
+
   <div id="grid"></div>
   <div id="zone-strip">
     <div>wis noot<br>laatst geplaatst</div>
@@ -213,15 +192,8 @@
   <div id="log"></div>
   <button id="stop-btn">Stop</button>
 
-  <div id="tutorial" class="hidden">
-    <div id="tut-progress"></div>
-    <div id="tut-visual" aria-hidden="true"></div>
-    <p id="tut-text"></p>
-    <button id="tut-next" data-ui>Volgende</button>
-  </div>
-  <div id="pitch-guide" class="hidden" aria-hidden="true">
-    <span>hoog</span><div class="shaft"></div><span>laag</span>
-  </div>
+  <div id="pitch-edge-top" class="pitch-edge hidden" aria-hidden="true">hoog</div>
+  <div id="pitch-edge-bottom" class="pitch-edge hidden" aria-hidden="true">laag</div>
 </div>
 
 <!-- WebAudioFont instrument banks live in the shared repo-root /public/fonts

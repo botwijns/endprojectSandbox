@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-09",
+  "version": "2026-10-15",
   "title": "Vragenlijst",
   "intro": "Bedankt voor het spelen! Een paar vragen na afloop, dit duurt ongeveer een minuut.",
   "submitLabel": "Versturen",
@@ -24,14 +24,31 @@
       ]
     },
     {
-      "id": "communication",
-      "type": "scale",
-      "label": "Hoe goed kon je communiceren met de tandarts?",
+      "id": "length",
+      "type": "text",
+      "label": "Hoeveel minuten denk je dat je gespeeld hebt?",
       "required": true,
-      "min": 1,
-      "max": 10,
-      "minLabel": "Niet goed",
-      "maxLabel": "Heel goed"
+      "placeholder": "Typ hier je antwoord"
+    },
+    {
+      "id": "gorrilla_noticed",
+      "type": "boolean",
+      "label": "Heb je een geluid gehoord dat niet op zn plek hoorde?",
+      "required": true
+
+    },
+    {
+      "id": "gorrilla_which",
+      "type": "single",
+      "label": "Welke van deze geluiden heb je gehoord?",
+      "required": true,
+      "showIf": { "question": "gorrilla_noticed", "equals": true },
+      "options": [
+        "Een miauw van een kat",
+        "Een flits van een camera",
+        "Een rubber eendje dat piept",
+        "Ik heb geen geluid gehoord"
+      ]
     },
     {
       "id": "rating",
@@ -46,13 +63,13 @@
     {
       "id": "would_recommend",
       "type": "boolean",
-      "label": "Zou je dit vaker willen spelen bij de tandarts?",
+      "label": "Zou je dit willen spelen bij de tandarts?",
       "required": true
     },
     {
       "id": "comments",
       "type": "text",
-      "label": "Overige opmerkingen (optioneel)",
+      "label": "zijn er nog dingen die verbeterd kunnen worden(optioneel)",
       "required": false,
       "maxLength": 2000,
       "placeholder": "Wat viel je op? Wat kon beter?"

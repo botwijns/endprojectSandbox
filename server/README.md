@@ -66,8 +66,15 @@ Create a session. **The id is generated server-side** (192 bits of entropy,
 // request (body optional)
 { "metadata": { "lang": "nl", "viewport": "390x844", "touch": true } }
 // response 201
-{ "id": "xXHlIucG2PWfU5gQTdzKQM1rhXyy54hv", "createdAt": "2026-09-07T12:10:45.698Z" }
+{ "id": "xXHlIucG2PWfU5gQTdzKQM1rhXyy54hv", "number": 42, "createdAt": "2026-09-07T12:10:45.698Z" }
 ```
+
+**Session number.** Each session also gets `number`, a counter that starts at
+1 and goes up by one per new session. It is short enough to read out or show on
+screen (the survey page shows it top-left, or `-1` when the server is
+unreachable) and appears in the export, so a number can be matched to its
+data. It is guessable, so it is display-only: every `:id` route still requires
+the random id.
 
 `metadata` must be a small (≤ 4 KB) plain object of non-identifying context.
 
@@ -77,7 +84,7 @@ Read a session — used by the client to validate/resume a stored id.
 ```jsonc
 // response 200
 {
-  "id": "...", "createdAt": "...", "updatedAt": "...",
+  "id": "...", "number": 42, "createdAt": "...", "updatedAt": "...",
   "metadata": { ... },
   "progress": { "prototype_5": { "completed": true, "bestScore": 9 } },
   "surveySubmitted": false
@@ -150,6 +157,8 @@ npm run export -- --out full-dump.json
     { "id": "enjoyment", "type": "scale", "required": true,
       "min": 1, "max": 5, "minLabel": "Niet leuk", "maxLabel": "Heel leuk" },
     { "id": "would_recommend", "type": "boolean", "required": true },
+    { "id": "why", "type": "text", "required": true,   // only asked after "Ja"
+      "showIf": { "question": "would_recommend", "equals": true } },
     { "id": "comments", "type": "text", "required": false,
       "maxLength": 2000, "placeholder": "…" }
   ]
@@ -186,7 +195,7 @@ this server consume them.
 
 | table              | purpose |
 |--------------------|---------|
-| `game_sessions`    | one row per session: `id`, timestamps, small `metadata` JSON |
+| `game_sessions`    | one row per session: `id`, display `number` (1, 2, 3, …), timestamps, small `metadata` JSON |
 | `progress_state`   | current deep-merged progress snapshot per session |
 | `progress_events`  | append-only event log per session |
 | `survey_responses` | one survey response per session (`UNIQUE(session_id)`) |

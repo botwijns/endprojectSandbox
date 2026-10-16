@@ -16,8 +16,13 @@ const MAX_MERGE_BYTES = 16_000;
 
 // ── Prepared statements ──────────────────────────────────────────────────────
 const q = {
-  getSession: db.prepare('SELECT id, created_at, updated_at, metadata FROM game_sessions WHERE id = ?'),
-  insertSession: db.prepare('INSERT INTO game_sessions (id, created_at, updated_at, metadata) VALUES (?, ?, ?, ?)'),
+  getSession: db.prepare('SELECT id, number, created_at, updated_at, metadata FROM game_sessions WHERE id = ?'),
+  // Next number is computed inside the INSERT, so it is atomic (SQLite has a single writer).
+  insertSession: db.prepare(`
+    INSERT INTO game_sessions (id, number, created_at, updated_at, metadata)
+    VALUES (?, (SELECT COALESCE(MAX(number), 0) + 1 FROM game_sessions), ?, ?, ?)
+    RETURNING number
+  `),
   touchSession: db.prepare('UPDATE game_sessions SET updated_at = ? WHERE id = ?'),
   getState: db.prepare('SELECT state FROM progress_state WHERE session_id = ?'),
   upsertState: db.prepare(`
@@ -115,9 +120,9 @@ export function createApp() {
 
     const id = generateSessionId();
     const ts = nowIso();
-    q.insertSession.run(id, ts, ts, JSON.stringify(metadata));
+    const { number } = q.insertSession.get(id, ts, ts, JSON.stringify(metadata));
 
-    res.status(201).json({ id, createdAt: ts });
+    res.status(201).json({ id, number, createdAt: ts });
   });
 
   // ── Read a session (used to resume / validate a stored id) ─────────────────
@@ -126,6 +131,7 @@ export function createApp() {
     const survey = q.getSurvey.get(req.session.id);
     res.json({
       id: req.session.id,
+      number: req.session.number,
       createdAt: req.session.created_at,
       updatedAt: req.session.updated_at,
       metadata: JSON.parse(req.session.metadata),

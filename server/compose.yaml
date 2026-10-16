@@ -1,0 +1,20 @@
+services:
+  game-server:
+    build: .
+    image: endproject-game-server
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    # Optional: copy .env.example to .env to set ALLOWED_ORIGINS, EXPORT_TOKEN, ...
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Fixed inside the container; change the host side via the ports mapping.
+      PORT: "3000"
+      DB_PATH: /app/data/game.db
+    volumes:
+      - game-data:/app/data
+
+volumes:
+  game-data:

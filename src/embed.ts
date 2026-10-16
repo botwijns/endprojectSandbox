@@ -1,8 +1,9 @@
 // Shared "embed mode" for prototypes that the combined/ shell strings together.
 //
 // The shell loads a prototype's real page in an <iframe> with
-//   ?embed=1&mode=intro|game&title=...&params=<json>
-// and waits for a "done" message. Opened without ?embed, getEmbed() returns
+//   ?embed=1&mode=intro|game&title=...&params=<json>&sid=<id>&snum=<number>
+// and waits for a "done" message. sid/snum are the game server's session id and
+// display number, both -1 when the shell couldn't reach the server. Opened without ?embed, getEmbed() returns
 // null and the prototype behaves exactly as it does standalone.
 //
 // The iframe is not granted fullscreen (the shell holds it), so the prototypes'
@@ -10,10 +11,17 @@
 
 export type EmbedMode = "intro" | "game";
 
+/** The game server's session for this player; both -1 when the server was unreachable. */
+export interface EmbedSession {
+    id: string | -1;
+    number: number | -1;
+}
+
 export interface Embed {
     mode: EmbedMode;
     title: string;
     params: Record<string, unknown>;
+    session: EmbedSession;
 }
 
 let cached: Embed | null | undefined;
@@ -27,11 +35,22 @@ export function getEmbed(): Embed | null {
         const parsed = JSON.parse(q.get("params") ?? "{}");
         if (parsed && typeof parsed === "object") params = parsed;
     } catch { /* bad params — fall back to defaults */ }
+    const sid = q.get("sid");
+    const snum = Number(q.get("snum"));
     return (cached = {
         mode: q.get("mode") === "intro" ? "intro" : "game",
         title: q.get("title") ?? "",
         params,
+        session: {
+            id: sid && sid !== "-1" ? sid : -1,
+            number: Number.isInteger(snum) && snum > 0 ? snum : -1,
+        },
     });
+}
+
+/** The server session handed down by the shell; -1 / -1 when not embedded or offline. */
+export function getSession(): EmbedSession {
+    return getEmbed()?.session ?? { id: -1, number: -1 };
 }
 
 // ── Param readers: always fall back to the prototype's own default ───────────
@@ -58,6 +77,15 @@ export function strList(embed: Embed | null, key: string): string[] | null {
     if (!Array.isArray(v)) return null;
     const list = v.filter((x): x is string => typeof x === "string");
     return list.length > 0 ? list : null;
+}
+
+/** An object of finite numbers (e.g. per-category ratings), or null. */
+export function numRecord(embed: Embed | null, key: string): Record<string, number> | null {
+    const v = embed?.params[key];
+    if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+    const out: Record<string, number> = {};
+    for (const [k, n] of Object.entries(v)) if (typeof n === "number" && Number.isFinite(n)) out[k] = n;
+    return Object.keys(out).length ? out : null;
 }
 
 // ── Messages to the shell ────────────────────────────────────────────────────
@@ -87,6 +115,11 @@ const STYLE = `
 }
 #embed-start .t { font-size: clamp(1.4rem, 7vmin, 2.6rem); font-weight: 700; }
 #embed-start .s { font-size: clamp(1rem, 4.5vmin, 1.5rem); color: #444; }
+#embed-session {
+  position: fixed; left: 50%; bottom: 4px; transform: translateX(-50%); z-index: 2001;
+  padding: 1px 8px; border-radius: 6px; font: 12px system-ui, sans-serif;
+  background: rgba(0, 0, 0, 0.06); color: #666; pointer-events: none;
+}
 `;
 
 export function setupEmbedStart(embed: Embed, onStart: () => void): void {
@@ -116,8 +149,15 @@ export function setupEmbedStart(embed: Embed, onStart: () => void): void {
         onStart();
     }, { once: true });
 
+    // session number, like the survey page's badge; never takes taps
+    const badge = document.createElement("div");
+    badge.id = "embed-session";
+    badge.title = "Sessienummer";
+    badge.textContent = `sessie ${embed.session.number}`;
+    console.info("[embed] session", embed.session);
+
     const mount = () => {
-        document.body.appendChild(btn);
+        document.body.append(btn, badge);
         btn.focus();
         post("ready");
     };

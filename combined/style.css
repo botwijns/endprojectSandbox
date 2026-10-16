@@ -82,3 +82,8 @@ body.playing #fullscreen-btn { display: none; }
   position: fixed; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 10;
   font-size: 0.85rem; padding: 4px 10px; opacity: 0.8; background: #fff;
 }
+.session-badge {
+  position: fixed; top: 8px; left: 8px; z-index: 5; pointer-events: none;
+  padding: 2px 8px; border-radius: 6px; font-size: 0.85rem;
+  background: rgba(0, 0, 0, 0.06); color: var(--muted);
+}

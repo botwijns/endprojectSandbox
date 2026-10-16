@@ -22,6 +22,8 @@
  *
  * The session id is generated server-side and cached in localStorage, so a
  * returning player keeps the same id and their data is merged, not duplicated.
+ * session() also resolves with `number`: a short counter (1, 2, 3, …) the
+ * server hands out per session, for display only — the API never accepts it.
  */
 (function (global) {
   'use strict';
@@ -91,7 +93,7 @@
 
     if (existing) {
       chain = request('/api/sessions/' + encodeURIComponent(existing))
-        .then(function (info) { return { id: existing, resumed: true, info: info }; })
+        .then(function (info) { return { id: existing, number: info.number, resumed: true, info: info }; })
         .catch(function (err) {
           if (err.status === 404 || err.status === 400) { forgetId(); return null; }
           throw err;
@@ -105,7 +107,7 @@
         body: { metadata: metadata || defaultMetadata() },
       }).then(function (created) {
         writeId(created.id);
-        return { id: created.id, resumed: false, info: created };
+        return { id: created.id, number: created.number, resumed: false, info: created };
       });
     });
   }

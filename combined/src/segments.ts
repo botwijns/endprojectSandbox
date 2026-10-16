@@ -3,7 +3,7 @@
 // parameters each one exposes. The editor form is generated from this list.
 //
 // Adding a parameter = one entry here + reading it in the prototype with the
-// helpers from src/embed.ts (num / bool / str / strList) under the same key.
+// helpers from src/embed.ts (num / bool / str / strList / numRecord) under the same key.
 
 import { BRIEFS } from "../../prototype_6/src/briefs.ts";
 
@@ -15,7 +15,8 @@ interface BaseParam { key: string; label: string; help?: string }
 export type ParamDef =
     | BaseParam & { type: "number"; default: number; min: number; max: number }
     | BaseParam & { type: "bool"; default: boolean }
-    | BaseParam & { type: "select"; default: string; options: { value: string; label: string }[] }
+    /** option values may be numbers, so the prototype can read them with num() */
+    | BaseParam & { type: "select"; default: string | number; options: { value: string | number; label: string }[] }
     /** an ordered list picked from `options`; empty = the prototype's own default */
     | BaseParam & { type: "list"; default: string[]; options: { value: string; label: string }[] };
 
@@ -27,6 +28,20 @@ export interface ProtoDef {
     params: Record<Mode, ParamDef[]>;
 }
 
+/** The "gorilla" experiment every game has: an unexpected sound, played once. */
+function experimentParam(when: string): ParamDef {
+    return {
+        key: "experiment", label: "Experiment (onverwacht geluid)", type: "select", default: 1,
+        options: [
+            { value: 0, label: "uit" },
+            { value: 1, label: "miauw" },
+            { value: 2, label: "blaf" },
+            { value: 3, label: "boing" },
+        ],
+        help: when,
+    };
+}
+
 export const PROTOS: ProtoDef[] = [
     {
         id: "p5",
@@ -35,13 +50,11 @@ export const PROTOS: ProtoDef[] = [
         params: {
             intro: [],
             game: [
-                { key: "fishToCatch", label: "Aantal vissen te vangen", type: "number", default: 5, min: 1, max: 5,
-                  help: "verschillende instrumenten (max. 5)" },
-                { key: "maxStrikes", label: "Max. keer drums", type: "number", default: 3, min: 1, max: 10 },
-                { key: "onFail", label: "Bij te vaak drums", type: "select", default: "retry", options: [
-                    { value: "retry", label: "opnieuw proberen" },
-                    { value: "continue", label: "door naar volgende spel" },
-                ] },
+                { key: "days", label: "Aantal dagen", type: "number", default: 3, min: 1, max: 10 },
+                { key: "fishFirstDay", label: "Vissen op het lijstje op dag 1", type: "number", default: 3, min: 1, max: 12 },
+                { key: "maxExtraPerDay", label: "Max. extra vissen per dag", type: "number", default: 1, min: 0, max: 5,
+                  help: "elke volgende dag komen er 0 t/m dit aantal bij" },
+                experimentParam("klinkt op dag 2, bij de laatste vis van het lijstje (vanaf 2 dagen)"),
             ],
         },
     },
@@ -60,6 +73,7 @@ export const PROTOS: ProtoDef[] = [
                   help: "leeg = standaardvolgorde; de lijst herhaalt als er meer nummers zijn" },
                 { key: "speech", label: "Spraak (voice-over)", type: "bool", default: true },
                 { key: "randomNote", label: "Willekeurige toonhoogte bij plaatsen", type: "bool", default: false },
+                experimentParam("vervangt een drumslag tijdens het 2e nummer (vanaf 2 nummers)"),
             ],
         },
     },
@@ -71,6 +85,9 @@ export const PROTOS: ProtoDef[] = [
             intro: [],
             game: [
                 { key: "questions", label: "Aantal vragen", type: "number", default: 8, min: 1, max: 30 },
+                { key: "carryRatings", label: "Spelersniveau overnemen van vorige quiz", type: "bool", default: true,
+                  help: "start met de ratings waarop een eerder quizdeel in deze flow eindigde" },
+                experimentParam("klinkt bij vraag 2, vóór de muziek (vanaf 2 vragen)"),
             ],
         },
     },
@@ -157,13 +174,21 @@ for (const [path, data] of Object.entries(presetModules)) {
     if (flow) PRESETS[id] = flow;
 }
 
-/** The URL a segment's iframe loads. */
-export function segmentUrl(seg: Segment): string {
+/** The game server session the shell hands to every segment; -1 / -1 when offline. */
+export interface ServerSession {
+    id: string | -1;
+    number: number | -1;
+}
+
+/** The URL a segment's iframe loads. `extra` adds runtime-only params (e.g. carried-over ratings). */
+export function segmentUrl(seg: Segment, session: ServerSession, extra: Record<string, unknown> = {}): string {
     const q = new URLSearchParams({
         embed: "1",
         mode: seg.mode,
         title: segmentTitle(seg),
-        params: JSON.stringify(seg.params),
+        params: JSON.stringify({ ...seg.params, ...extra }),
+        sid: String(session.id),
+        snum: String(session.number),
     });
     return `${protoDef(seg.proto).path}?${q}`;
 }

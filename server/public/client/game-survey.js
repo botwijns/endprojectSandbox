@@ -123,7 +123,17 @@
         if (ta && ta.value.trim()) answers[q.id] = ta.value.trim();
       }
     });
+    // Drop answers to questions skipped by branching (e.g. answered, then the
+    // earlier answer changed), so they are never sent.
+    template.questions.forEach(function (q) {
+      if (!isApplicable(q, answers)) delete answers[q.id];
+    });
     return answers;
+  }
+
+  // Mirrors isApplicable() in server/src/survey.js.
+  function isApplicable(q, answers) {
+    return !q.showIf || answers[q.showIf.question] === q.showIf.equals;
   }
 
   function clearErrors(root) {
@@ -150,6 +160,21 @@
     return !firstBad;
   }
 
+  // Top-left badge with the session's number (1, 2, 3, …); -1 while the
+  // server can't be reached (no session to show).
+  function showSessionNumber(T) {
+    var badge = document.querySelector('.gs-session-number');
+    if (!badge) {
+      badge = h('div', { class: 'gs-session-number', title: 'Sessienummer' });
+      document.body.appendChild(badge);
+    }
+    badge.textContent = '-1';
+    return T.session().then(
+      function (s) { badge.textContent = s.number == null ? '-1' : String(s.number); },
+      function () { badge.textContent = '-1'; },
+    );
+  }
+
   function mount(target, options) {
     var opts = options || {};
     var root = typeof target === 'string' ? document.querySelector(target) : target;
@@ -157,6 +182,7 @@
     var T = global.GameTelemetry;
     if (!T) throw new Error('GameSurvey.mount: load game-telemetry.js first');
 
+    showSessionNumber(T);
     root.classList.add('game-survey');
     root.innerHTML = '';
     root.appendChild(h('p', { class: 'gs-loading', text: 'Vragenlijst laden…' }));
@@ -174,18 +200,12 @@
 
       // One question per page: every question stays in the same form (so
       // collect() still sees all answers), but only the current one is shown.
+      // Questions whose "showIf" doesn't match the answers so far are skipped.
       var questions = template.questions;
-      var last = questions.length - 1;
       var step = 0;
 
       var intro = root.querySelector('.gs-intro');
       var form = h('form', { novalidate: true });
-      var progressText = h('p', { class: 'gs-progress-text', 'aria-live': 'polite' });
-      var progressFill = h('div', { class: 'gs-progress-fill' });
-      form.appendChild(h('div', { class: 'gs-progress' }, [
-        progressText,
-        h('div', { class: 'gs-progress-bar', 'aria-hidden': 'true' }, [progressFill]),
-      ]));
 
       var blocks = questions.map(function (q) {
         var block = renderQuestion(q);
@@ -203,15 +223,40 @@
       form.appendChild(h('div', { class: 'gs-nav-row' }, [prev, next, submit]));
       root.appendChild(form);
 
+      // Indexes of the questions that apply given the current answers.
+      function visibleIndexes() {
+        var answers = collect(form, template);
+        var out = [];
+        questions.forEach(function (q, i) { if (isApplicable(q, answers)) out.push(i); });
+        return out;
+      }
+      function lastStep() {
+        var vis = visibleIndexes();
+        return vis[vis.length - 1];
+      }
+      function nextStep() {
+        var vis = visibleIndexes();
+        for (var i = 0; i < vis.length; i++) if (vis[i] > step) return vis[i];
+        return -1;
+      }
+      function prevStep() {
+        var vis = visibleIndexes();
+        for (var i = vis.length - 1; i >= 0; i--) if (vis[i] < step) return vis[i];
+        return -1;
+      }
+
+      function updateNav() {
+        var last = lastStep();
+        prev.hidden = step === 0;
+        next.hidden = step === last;
+        submit.hidden = step !== last;
+      }
+
       function showStep(i, focus) {
         step = i;
         blocks.forEach(function (block, n) { block.hidden = n !== step; });
         if (intro) intro.hidden = step !== 0;
-        progressText.textContent = 'Vraag ' + (step + 1) + ' van ' + questions.length;
-        progressFill.style.width = ((step + 1) / questions.length) * 100 + '%';
-        prev.hidden = step === 0;
-        next.hidden = step === last;
-        submit.hidden = step !== last;
+        updateNav();
         if (focus) {
           var input = blocks[step].querySelector('input, textarea');
           if (input) input.focus({ preventScroll: true });
@@ -227,25 +272,31 @@
 
       prev.addEventListener('click', function () {
         clearErrors(root);
-        if (step > 0) showStep(step - 1, true);
+        var p = prevStep();
+        if (p >= 0) showStep(p, true);
       });
       next.addEventListener('click', function () {
-        if (currentStepValid() && step < last) showStep(step + 1, true);
+        var n = nextStep();
+        if (currentStepValid() && n >= 0) showStep(n, true);
       });
+      // Changing an answer can make the current question the last one (or not
+      // any more), so keep Volgende / Versturen in sync.
+      form.addEventListener('change', updateNav);
 
       showStep(0, false);
 
       form.addEventListener('submit', function (ev) {
         ev.preventDefault();
         // Enter on an earlier page advances instead of submitting.
-        if (step < last) {
+        if (step < lastStep()) {
           next.click();
           return;
         }
         clearErrors(root);
         var answers = collect(form, template);
+        var applicable = questions.filter(function (q) { return isApplicable(q, answers); });
         // Required questions on earlier pages: jump back to the first missing one.
-        if (!showFieldErrors(root, questions, answers)) {
+        if (!showFieldErrors(root, applicable, answers)) {
           for (var i = 0; i < questions.length; i++) {
             if (blocks[i].querySelector('.gs-field-error')) { showStep(i, true); break; }
           }
@@ -258,6 +309,7 @@
 
         T.submitSurvey(answers).then(
           function (result) {
+            showSessionNumber(T);
             root.innerHTML = '';
             root.appendChild(
               h('p', { class: 'gs-done', text: template.thankYou || 'Bedankt, je antwoorden zijn opgeslagen.' }),
@@ -265,6 +317,7 @@
             if (typeof opts.onComplete === 'function') opts.onComplete(result, answers);
           },
           function (err) {
+            showSessionNumber(T);
             submit.disabled = false;
             prev.disabled = false;
             submit.textContent = template.submitLabel || 'Versturen';

@@ -108,9 +108,13 @@ export function runEditor(root: HTMLElement): void {
         }
         if (def.type === "select") {
             const select = el("select");
-            for (const o of def.options) select.append(el("option", { value: o.value, textContent: o.label }));
+            for (const o of def.options) select.append(el("option", { value: String(o.value), textContent: o.label }));
             select.value = String(value ?? def.default);
-            select.addEventListener("change", () => { seg.params[def.key] = select.value; save(); });
+            // keep the option's own type, so numeric choices stay numbers in the flow
+            select.addEventListener("change", () => {
+                seg.params[def.key] = def.options.find(o => String(o.value) === select.value)?.value ?? def.default;
+                save();
+            });
             return el("label", { className: "param" }, el("span", { textContent: def.label }), select, help);
         }
         // list: click options to append them in order

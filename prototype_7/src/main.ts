@@ -1,6 +1,6 @@
 import { QuizSession } from "./quizEngine.ts";
 import { initAudio, getAudioContext, playSong, playNote, stopAudio, fontsReady } from "./audioPlayback.ts";
-import { speak, speakFrom, earcon, positionalCue } from "./speech.ts";
+import { speak, earcon } from "./speech.ts";
 import { InputHandler, zonesFor, type QuizAction, type AnswerIndex, type AnswerZone } from "./inputHandler.ts";
 import { KNOWN_SONGS } from "./knownSongs.ts";
 import { generateQuestion, generatePreviewSong } from "./questionGenerator.ts";
@@ -10,18 +10,18 @@ import {
     DRUMS_SVG, EAR_SVG, PHONE_ZONES_2_SVG, PHONE_ZONES_4_SVG, TAP_SVG, DOUBLE_TAP_SVG, SHAKE_SVG,
 } from "./introIcons.ts";
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { getEmbed, setupEmbedStart, embedDone, num } from "../../src/embed.ts";
+import { getEmbed, setupEmbedStart, embedDone, num, numRecord } from "../../src/embed.ts";
 
 // set when the combined/ shell runs this page as one segment of a longer flow
 const embed = getEmbed();
+import { Howl } from "howler";
 
 // ── Eyes-free "wat hoor je?" music quiz ──────────────────────────────────────
 // Every question generates a brand-new song from a real music-theory engine and
 // asks about something audible in it. Played entirely by ear: the question is
 // spoken, the piece plays, and the answers sit either in the four screen
-// corners or split left/right (matching the question's option count), read
-// out with a positional cue (left/right pan, high/low pitch). Shaking the
-// phone repeats the current question.
+// corners or split left/right (matching the question's option count), each
+// read out by its position name. Shaking the phone repeats the current question.
 //
 // A start screen offers a guided "oefenlevel" (introduction) next to the real
 // quiz - see the introduction section below. Tapping 3× anywhere outside the
@@ -43,6 +43,19 @@ let lastResultsSummary: { category: string; avgDelta: number }[] = [];
 let runId = 0;              // bumped on every start/stop so async work can bail out
 let loading = false;        // waiting for the instrument fonts before a start
 let fontPoll: number | null = null;
+
+// ── Gorilla experiment ───────────────────────────────────────────────────────
+// Like prototype 5: an unexpected sound slipped into the game. `experiment`
+// picks which one (0 = off, 1 = meow, 2 = bark, 3 = boing). It plays once, on
+// the second question, after the question is spoken and before the music.
+let experiment = num(embed, "experiment", 1, 0, 3);
+const gorillaSounds: Howl[] = [
+    new Howl({ src: "sounds/meow.mp3" }),
+    new Howl({ src: "sounds/bark.mp3" }),
+    new Howl({ src: "sounds/boing.mp3" }),
+];
+let gorillaPlayed = false;
+const GORILLA_GAP_MS = 400; // silence between the gorilla sound and the piece
 
 // ── Screens ─────────────────────────────────────────────────────────────────
 const startScreenEl = document.getElementById("start-screen")!;
@@ -103,7 +116,7 @@ function renderHud(): void {
         hud.progress.textContent = phase === "done" ? `${total} / ${total}` : `vraag ${shown} / ${total}`;
         hud.score.textContent = `score ${session.score}`;
         if (session.current) {
-            const rating = Math.round(session.ratingFor(session.current.traitId));
+            const rating = Math.round(session.ratingFor(session.current.category));
             const songRating = Math.round(session.current.songRating);
             hud.tier.textContent = `rating ${rating} vs song ${songRating}`;
         } else {
@@ -131,6 +144,7 @@ function clearPending(): void {
 function silenceEverything(): void {
     clearPending();
     stopAudio();
+    gorillaSounds.forEach(s => s.stop());
     if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
 }
 
@@ -172,20 +186,17 @@ function playPiece(): number {
     return ms;
 }
 
-// Announces one answer option: a positional cue, then either the spoken text
-// or - for "hear the note" questions - the letter followed by the actual tone.
+// Announces one answer option: either the spoken text or - for "hear the
+// note" questions - the position name followed by the actual tone.
 function announceOption(index: AnswerIndex, zone: AnswerZone): void {
     const q = currentQuestion();
     if (!q) return;
-    const ctx = getAudioContext();
-    if (ctx) positionalCue(ctx, zone);
     const audio = q.audioOptions?.[index];
     if (audio) {
-        later(() => speakFrom(`${zone.letter}.`, zone.pan), 180);
-        later(() => playNote(audio.instrument, audio.pitch), 650);
+        speak(`${zone.letter}.`);
+        later(() => playNote(audio.instrument, audio.pitch), 470);
     } else {
-        const opt = q.options[index];
-        later(() => speakFrom(`${zone.letter}. ${opt}`, zone.pan), 180);
+        speak(`${zone.letter}. ${q.options[index]}`);
     }
 }
 
@@ -212,7 +223,7 @@ function setAnswerLayoutClass(count: number): void {
 // ── Introduction level ──────────────────────────────────────────────────────
 // A guided tutorial, in the same shape as prototype 5's: first a player-paced
 // preview (Herhaal / Volgende) that lets the player hear a piece with and
-// without drums and learn where the answers sit by their beeps, then two real
+// without drums and learn where the answers sit, then two real
 // practice questions - one with two answers (left/right), one with four
 // (corners) - with a "Stap X van 4" instruction and icon for each step. A
 // wrong answer is explained and asked again with a fresh song; answering both
@@ -247,7 +258,7 @@ const PRACTICE: { traitId: string; leadIn: string }[] = [
     { traitId: "has-drums", leadIn: "Eerste oefenvraag." },
     {
         traitId: "melody-instrument-family",
-        leadIn: "Nu zijn er vier antwoorden, één in elke hoek. Hoog piepje is boven, laag piepje is onder. " +
+        leadIn: "Nu zijn er vier antwoorden, één in elke hoek. " +
             "Wil je de vraag nog eens horen? Schud dan je telefoon.",
     },
 ];
@@ -270,25 +281,23 @@ const PREVIEW_STEPS: PreviewStep[] = [
     },
     {
         icon: "zones-2",
-        caption: "Soms zijn er twee antwoorden: links en rechts. Elke kant heeft een eigen piepje.",
+        caption: "Soms zijn er twee antwoorden: links en rechts.",
         play: () => playZoneCues(2),
     },
     {
         icon: "zones-4",
-        caption: "Soms zijn er vier antwoorden, één in elke hoek. Boven piept hoog, onder piept laag.",
+        caption: "Soms zijn er vier antwoorden, één in elke hoek.",
         play: () => playZoneCues(4),
     },
 ];
 
-/** Plays every zone's positional cue + name in turn, lighting it up on the icon. Returns the duration in ms. */
+/** Speaks every zone's name in turn, lighting it up on the icon. Returns the duration in ms. */
 function playZoneCues(count: number): number {
     const zones = zonesFor(count);
     zones.forEach((zone, i) => {
         later(() => {
-            const ctx = getAudioContext();
-            if (ctx) positionalCue(ctx, zone);
             setLitZone(i);
-            later(() => speakFrom(zone.letter, zone.pan), 180);
+            speak(zone.letter);
         }, i * ZONE_CUE_GAP_MS);
     });
     later(() => setLitZone(null), zones.length * ZONE_CUE_GAP_MS);
@@ -586,9 +595,21 @@ function presentQuestion(): void {
     // Speech is fire-and-forget status; fixed timers drive the flow so a missing
     // or slow speech-synthesis engine never stalls the quiz.
     speak(prompt);
-    later(() => {
+    const startPiece = () => {
         const ms = playPiece();
         later(readOptions, ms + 700);
+    };
+    later(() => {
+        if (experiment > 0 && !gorillaPlayed && !introMode && session?.progress.current === 2) {
+            gorillaPlayed = true;
+            const gorilla = gorillaSounds[experiment - 1];
+            gorilla.volume(0.5);
+            gorilla.play();
+            const gorillaMs = gorilla.duration() > 0 ? gorilla.duration() * 1000 : 1500;
+            later(startPiece, gorillaMs + GORILLA_GAP_MS);
+        } else {
+            startPiece();
+        }
     }, readMs);
 }
 
@@ -657,7 +678,9 @@ function commitOption(index: AnswerIndex): void {
 
 function beginQuiz(): void {
     lastResultsSummary = [];
-    session = new QuizSession(QUIZ_LENGTH, songPicker.value || undefined);
+    // in the combined flow, start from the ratings a previous quiz part ended on
+    session = new QuizSession(QUIZ_LENGTH, songPicker.value || undefined, numRecord(embed, "ratings") ?? undefined);
+    gorillaPlayed = false;
     input.setQuizEnabled(true);
     speak("Daar gaan we. Luister goed.");
     later(presentQuestion, 1600);
@@ -678,13 +701,15 @@ function endQuiz(): void {
         const names = lastResultsSummary.slice(0, 3).map(s => s.category).join(", ");
         later(() => speak(`Je scoorde het best op: ${names}.`), 3200);
     }
-    // hand back to the combined/ shell once the results have been read out
+    // hand back to the combined/ shell once the results have been read out,
+    // with the ratings so a later quiz part can carry on from them
     if (embed) {
         const myRun = runId;
+        const ratings = session.ratings;
         later(() => {
             if (myRun !== runId) return;
             stopGame();
-            embedDone({ score, total });
+            embedDone({ score, total, ratings });
         }, lastResultsSummary.length > 0 ? 7500 : 4000);
     }
 }

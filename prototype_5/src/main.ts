@@ -1,14 +1,13 @@
 import {GameLoop} from "./gameLoop.ts";
 import {InputHandler} from "./inputHandler.ts";
-import {createInitialState,  generateNumberSequence, generateSequence} from "./gameState.ts";
+import {createInitialState, generateNumberSequence, generateSequence, type State} from "./gameState.ts";
 import {SynthManager} from "./audio/SynthManager.ts";
-import {InstrumentManager, INSTRUMENTS, type InstrumentDef} from "./audio/InstrumentManager.ts";
+import {InstrumentManager, FISH, fishById, type FishDef} from "./audio/InstrumentManager.ts";
 import {Howl, Howler} from "howler";
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { getEmbed, setupEmbedStart, embedDone, num, str } from "../../src/embed.ts";
-
-// set when the combined/ shell runs this page as one segment of a longer flow
-const embed = getEmbed();
+import { getEmbed, setupEmbedStart, embedDone, num } from "../../src/embed.ts";
+import {createIntroLevel, type IntroLevel, type Gesture, type GestureOptions} from "./intro/introLevel.ts";
+import {FISH_NAME_LINES, playGameLine, playSpeech, stopLine} from "./intro/speech.ts";
 
 const debug= !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
 const synth = new SynthManager();
@@ -25,445 +24,58 @@ const startNoteEl = document.getElementById("start-note")!;
 const introBtn = document.getElementById("intro-btn") as HTMLButtonElement;
 const gameBtn = document.getElementById("game-btn") as HTMLButtonElement;
 const stopBtn = document.getElementById("stop-btn") as HTMLButtonElement;
-const stepIconEl = document.getElementById("step-icon")!;
-const previewPanelEl = document.getElementById("preview-panel")!;
-const previewIconSlotEl = document.getElementById("preview-icon-slot")!;
-const previewRepeatBtn = document.getElementById("preview-repeat-btn") as HTMLButtonElement;
-const previewNextBtn = document.getElementById("preview-next-btn") as HTMLButtonElement;
-const listeningAssistEl = document.getElementById("listening-assist")!;
-const repeatSoundBtn = document.getElementById("repeat-sound-btn") as HTMLButtonElement;
-const forceBiteBtn = document.getElementById("force-bite-btn") as HTMLButtonElement;
+const introStageEl = document.getElementById("intro-stage")!;
+const introLandEl = document.getElementById("intro-land")!;
+const introWaterEl = document.getElementById("intro-water")!;
+const introCaptionEl = document.getElementById("intro-caption")!;
+const taskListBtn = document.getElementById("tasklist-btn") as HTMLButtonElement;
 
-// total instruments the player must collect (everything except the drums)
-const CATCHABLE = INSTRUMENTS.filter(i => !i.isDrum);
-// the combined/ shell can ask for fewer distinct fish and a different strike limit
-const FISH_TO_CATCH = num(embed, "fishToCatch", CATCHABLE.length, 1, CATCHABLE.length);
-const MAX_STRIKES = num(embed, "maxStrikes", 3, 1, 10);
-// embedded only: strike out -> "retry" the round (standalone behaviour) or "continue" to the next segment
-const ON_FAIL = str(embed, "onFail", "retry", ["retry", "continue"] as const);
-
+// --- days and the task list ---------------------------------------------------
+// The full game is split into days. Every day gets a random task list of fish to
+// catch; tapping the top-left corner reads out the fish still on it. Fish that
+// aren't on the list can bite too — catching one just releases it again.
+// set when the combined/ shell runs this page as one segment of a longer flow;
+// it can override the day settings and the experiment below
+const embed = getEmbed();
+const DAY_CONFIG = {
+    fishFirstDay: num(embed, "fishFirstDay", 3, 1, FISH.length),  // fish on the list on day 1
+    days: num(embed, "days", 3, 1, 10),                           // the game ends after this many days
+    maxExtraPerDay: num(embed, "maxExtraPerDay", 1, 0, 5),        // each next day adds 0..this many fish (capped at the number of fish)
+};
+const LIST_BITE_CHANCE = 0.6; // share of bites that are a fish still on today's list
+let experiment = num(embed, "experiment", 1, 0, 3);
 // --- introduction level -----------------------------------------------------
-// The intro is a guided tutorial: it first plays a demo of a catchable fish and
-// of the drum trap so the player knows what each sounds like, then the on-screen
-// instruction walks them through every phase. Drums never bite during the intro
-// and landing a single fish completes it, returning to the start screen.
+// The intro is a guided, spoken tutorial in two animated scenes (see
+// src/intro/introLevel.ts). Each step is explained and shown, then the player
+// practises just that movement (tilt back, swing forward, tap, reel), detected
+// by waitForGesture() below. The game's phase machine stays paused throughout.
 let gameRunning = false;   // a round (intro or full game) is currently active
 let introMode = false;     // currently playing the guided tutorial
 let introComplete = false; // the tutorial fish has been landed — freeze play
-let introDemoActive = false; // the current segment is an "explain" slide (loop paused)
-let segmentIndex = 0;      // index into INTRO_SEGMENTS
-let lastRenderedStepIconPhase: string | null = null; // avoids restarting ambient icon loops
+let intro: IntroLevel | null = null;
 let runId = 0;             // bumped on every start/stop so async work can bail out
-let demoTimer: ReturnType<typeof setTimeout> | null = null;
-let introEndTimer: ReturnType<typeof setTimeout> | null = null;
-
-// a practice drill (isolated, ungraded rep of one physical action) is active
-let activeDrill: DrillKind | null = null;
-let drillCueActive = false;   // true during a drill's brief post-success celebration
-
-// fresh, drill-scoped detection state — never read/written by the real phase
-// machine further down, which keeps its own armBeta/armBetaBaseline etc.
-let drillTiltBaseline: number | null = null;
-let drillThrowMin: number | null = null;
-let drillThrowMax: number | null = null;
-let drillListenWindowUntil = 0;
-let drillListenHooked = false;
-let drillCrankAngle = 0;
-const DRILL_REEL_TARGET = 360; // one full turn — a drill rep, not a full fight
+let endTimer: ReturnType<typeof setTimeout> | null = null; // the end of the intro or the last day
 
 const INTRO_DONE_TEXT =
     "🎉 Goed gedaan! Je hebt je eerste vis gevangen. Terug naar het startscherm...";
 
-// what to do right now, keyed by phase
-const INTRO_STEPS: Record<string, string> = {
-    idle:      "Stap 1 van 4 — Trek je telefoon rustig naar achteren, alsof je een hengel terughaalt.",
-    throwing:  "Stap 2 van 4 — Gooi je telefoon naar voren om de lijn uit te werpen.",
-    listening: "Stap 3 van 4 — Luister. Hoor je een instrument een melodie spelen? Raak dan het scherm aan. Hoor je stilte? Wacht op de volgende.",
-    reeling:   "Stap 4 van 4 — Draai met je duim rondjes op het scherm tot de vis binnen is.",
-    success:   "Gevangen!",
-    failure:   "De vis ontsnapte — geen zorgen, je hoort de volgende zo weer.",
-};
-
 const PHASE_HINTS: Record<string, string> = {
     idle:      "Trek je telefoon naar achteren om de hengel terug te halen.",
     throwing:  "Gooi je telefoon naar voren om uit te werpen.",
-    listening: "Luister. Melodie? Raak het scherm aan. Drums of stilte? Doe niks.",
+    listening: "Luister. Hoor je een vis van je lijstje? Raak het scherm aan.",
     reeling:   "Draai met je duim rondjes op het scherm om binnen te halen.",
     success:   "Gevangen! 🎣",
     failure:   "Ontsnapt...",
 };
 
-function updateInstruction(text?: string): void {
-    if (text !== undefined) {
-        instructionEl.textContent = text;
-        return;
-    }
-    if (introDemoActive || activeDrill !== null) return; // explain/drill own the text
-    if (introComplete) {
-        instructionEl.textContent = INTRO_DONE_TEXT;
-        return;
-    }
-    const table = introMode ? INTRO_STEPS : PHASE_HINTS;
-    instructionEl.textContent = table[state.phase] ?? "";
+function updateInstruction(): void {
+    // during the intro the scenes, the speech and the intro caption do the talking
+    instructionEl.textContent = introMode ? "" : PHASE_HINTS[state.phase] ?? "";
 }
 
-// --- hand-drawn tutorial icons (inline SVG, no external assets) ------------
-// Flat, bold-outline pictograms meant to be read at a glance by a young
-// player. Animation is driven by CSS classes toggled from here — see the
-// matching keyframes (fish-wiggle/note-float/drum-shake/wave-pulse/
-// phone-tilt-*/reel-spin) in style.css.
-
-const FISH_SVG = `<svg viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg">
-  <g class="fish-tail"><path d="M30 30 L8 14 L8 46 Z" fill="#3d8fc4"/></g>
-  <g class="fish-body">
-    <ellipse cx="58" cy="30" rx="28" ry="15" fill="#4fa3d1"/>
-    <circle cx="76" cy="25" r="2.6" fill="#0a2540"/>
-  </g>
-  <g class="note"><ellipse cx="58" cy="14" rx="3.5" ry="2.6" fill="#0a2540"/><rect x="61" y="4" width="1.6" height="10" fill="#0a2540"/></g>
-  <g class="note"><ellipse cx="72" cy="10" rx="3.5" ry="2.6" fill="#0a2540"/><rect x="75" y="0" width="1.6" height="10" fill="#0a2540"/></g>
-  <g class="note"><ellipse cx="44" cy="12" rx="3.5" ry="2.6" fill="#0a2540"/><rect x="47" y="2" width="1.6" height="10" fill="#0a2540"/></g>
-</svg>`;
-
-const DRUMS_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-  <g class="drum-body">
-    <line x1="30" y1="8" x2="46" y2="34" stroke="#5a3a22" stroke-width="4" stroke-linecap="round"/>
-    <line x1="70" y1="8" x2="54" y2="34" stroke="#5a3a22" stroke-width="4" stroke-linecap="round"/>
-    <rect x="20" y="35" width="60" height="40" fill="#c0392b"/>
-    <ellipse cx="50" cy="35" rx="30" ry="10" fill="#e8c39e"/>
-    <ellipse cx="50" cy="75" rx="30" ry="10" fill="#8f2418"/>
-  </g>
-  <g class="no-overlay">
-    <circle cx="50" cy="50" r="44" fill="none" stroke="#e63946" stroke-width="7"/>
-    <line x1="18" y1="18" x2="82" y2="82" stroke="#e63946" stroke-width="7"/>
-  </g>
-</svg>`;
-
-const EAR_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-  <path d="M60 18 C40 18 24 34 24 55 C24 74 36 88 52 88 C58 88 61 82 56 78 C46 74 38 65 38 54 C38 40 48 30 61 30 C69 30 74 36 71 43" fill="none" stroke="#2f2f2f" stroke-width="6" stroke-linecap="round"/>
-  <path class="wave" d="M78 38 Q90 55 78 72" fill="none" stroke="#2f7fbf" stroke-width="5" stroke-linecap="round"/>
-  <path class="wave" d="M84 32 Q96 55 84 78" fill="none" stroke="#2f7fbf" stroke-width="5" stroke-linecap="round"/>
-  <path class="wave" d="M90 26 Q99 55 90 84" fill="none" stroke="#2f7fbf" stroke-width="5" stroke-linecap="round"/>
-</svg>`;
-
-const PHONE_BODY_SVG = `<svg class="phone-body" viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg">
-  <rect x="4" y="8" width="92" height="44" rx="9" fill="#333333"/>
-  <rect x="11" y="13" width="70" height="34" rx="3" fill="#bfe3ff"/>
-  <circle cx="90" cy="30" r="3" fill="#666666"/>
-</svg>`;
-
-// A ring around the phone shows which way it tilts. The phone tilts around its
-// horizontal axis, so the ring is a tall ellipse around that axis: its right
-// (front) half crosses over the screen, its left (back) half sits behind the
-// phone and only peeks out above and below it. The ring itself does NOT tilt
-// (the animation lives on .phone-body only). The arrowhead on the front half
-// points up = the front of the ring turns upward = the top edge swings
-// back/away; pointing down = the top edge swings toward you/forward.
-// style.css decides which arrowhead + label is visible per mode class
-// (tilt-back / tilt-forward / swing-demo). Both rings share the 200x130 box.
-const PHONE_SVG = `<svg class="ring ring-back" viewBox="0 0 200 130" xmlns="http://www.w3.org/2000/svg">
-  <path d="M100 7 A34 58 0 0 0 100 123" fill="none" stroke="#e67e22" stroke-width="5" stroke-linecap="round" opacity="0.5"/>
-</svg>
-${PHONE_BODY_SVG}
-<svg class="ring ring-front" viewBox="0 0 200 130" xmlns="http://www.w3.org/2000/svg">
-  <path d="M100 7 A34 58 0 0 1 100 123" fill="none" stroke="#e67e22" stroke-width="5" stroke-linecap="round"/>
-  <polyline class="dir-back" points="122,56 134,43 146,56" fill="none" stroke="#e67e22" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <polyline class="dir-forward" points="122,74 134,87 146,74" fill="none" stroke="#e67e22" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
-<span class="dir-label dir-label-back">naar achteren</span>
-<span class="dir-label dir-label-forward">naar voren</span>`;
-
-const REEL_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-  <g class="reel-arc">
-    <circle cx="50" cy="50" r="42" fill="none" stroke="#888888" stroke-width="6" stroke-dasharray="200 64"/>
-    <polygon points="82,20 92,26 80,32" fill="#888888"/>
-  </g>
-  <circle class="reel-progress" cx="50" cy="50" r="35" fill="none" stroke="#2e7d32" stroke-width="6" stroke-linecap="round"/>
-</svg>`;
-
-/** Remove+re-add a class via a forced reflow so its CSS animation restarts
- *  even when the class was already present (a plain re-add is a no-op). */
-function restartAnimation(el: Element, className: string): void {
-    el.classList.remove(className);
-    void (el as HTMLElement).offsetWidth;
-    el.classList.add(className);
+function setPhase(phase: State["phase"]): void {
+    state.phase = phase;
 }
-
-const ICON_BASE_CLASS: Record<ExplainSegment["icon"], string> = {
-    fish: "icon-fish", drums: "icon-drums", ear: "icon-ear",
-    phone: "icon-phone", reel: "icon-reel",
-};
-
-/** Icon shown in the player-paced explain panel (fish/drums/ear/phone/reel). */
-function renderExplainIcon(seg: ExplainSegment | null): void {
-    if (seg === null) {
-        previewIconSlotEl.innerHTML = "";
-        previewIconSlotEl.className = "";
-        return;
-    }
-    previewIconSlotEl.innerHTML =
-        seg.icon === "fish" ? FISH_SVG :
-        seg.icon === "drums" ? DRUMS_SVG :
-        seg.icon === "ear" ? EAR_SVG :
-        seg.icon === "phone" ? PHONE_SVG : REEL_SVG;
-    previewIconSlotEl.className = ICON_BASE_CLASS[seg.icon];
-}
-
-/** Toggle the explain icon's "currently playing" animation (ear uses its own
- *  ambient "listening" pulse as the playing indicator). */
-function setExplainIconPlaying(playing: boolean, icon: ExplainSegment["icon"]): void {
-    previewIconSlotEl.className = ICON_BASE_CLASS[icon];
-    if (playing) restartAnimation(previewIconSlotEl, icon === "ear" ? "listening" : "playing");
-}
-
-/**
- * Persistent icon shown next to the instruction text — during a practice
- * drill (tilt/throw/listen/reel) or during the real (physical) final-level
- * phases — phone-tilt for idle/throwing, ear for listening, reel-arrow for
- * reeling. Skipped entirely outside the intro, and only re-injected when the
- * phase/drill actually changes, so ambient loops (ear pulse, phone tilt-back)
- * don't restart on every updateUI() call.
- */
-function renderStepIcon(): void {
-    if (activeDrill !== null) {
-        const key = "drill:" + activeDrill;
-        if (key === lastRenderedStepIconPhase) return;
-        lastRenderedStepIconPhase = key;
-        if (activeDrill === "tilt") {
-            stepIconEl.innerHTML = PHONE_SVG;
-            stepIconEl.className = "icon-phone tilt-back";
-        } else if (activeDrill === "throw") {
-            stepIconEl.innerHTML = PHONE_SVG;
-            stepIconEl.className = "icon-phone swing-demo";
-        } else if (activeDrill === "listen") {
-            stepIconEl.innerHTML = EAR_SVG;
-            stepIconEl.className = "icon-ear listening";
-        } else {
-            stepIconEl.innerHTML = REEL_SVG;
-            stepIconEl.className = "icon-reel spinning";
-            stepIconEl.style.setProperty("--reel-progress", "0");
-        }
-        return;
-    }
-    if (!introMode || introDemoActive || introComplete) {
-        if (lastRenderedStepIconPhase !== null) {
-            stepIconEl.innerHTML = "";
-            stepIconEl.className = "";
-            lastRenderedStepIconPhase = null;
-        }
-        return;
-    }
-    if (state.phase === lastRenderedStepIconPhase) return;
-    lastRenderedStepIconPhase = state.phase;
-
-    if (state.phase === "idle") {
-        stepIconEl.innerHTML = PHONE_SVG;
-        stepIconEl.className = "icon-phone tilt-back";
-    } else if (state.phase === "throwing") {
-        stepIconEl.innerHTML = PHONE_SVG;
-        stepIconEl.className = "icon-phone tilt-forward";
-    } else if (state.phase === "listening") {
-        stepIconEl.innerHTML = EAR_SVG;
-        stepIconEl.className = "icon-ear listening";
-    } else if (state.phase === "reeling") {
-        stepIconEl.innerHTML = REEL_SVG;
-        stepIconEl.className = "icon-reel spinning";
-        stepIconEl.style.setProperty("--reel-progress", "0");
-    } else {
-        stepIconEl.innerHTML = "";
-        stepIconEl.className = "";
-    }
-}
-
-/** Live crank progress (0..1), driving the reel icon's progress ring on every
- *  tick — no timer needed. No-ops when the reel icon isn't currently shown. */
-function setReelProgress(progress: number): void {
-    if (stepIconEl.className.includes("icon-reel")) {
-        stepIconEl.style.setProperty("--reel-progress", String(progress));
-    }
-}
-
-function clearDemoTimer(): void {
-    if (demoTimer !== null) { clearTimeout(demoTimer); demoTimer = null; }
-}
-
-// --- the intro script: explain every action, practice it, then put it all
-// together for real -----------------------------------------------------
-type DrillKind = "tilt" | "throw" | "listen" | "reel";
-interface ExplainSegment {
-    type: "explain"; id: string; mode: "sound" | "motion";
-    icon: "fish" | "drums" | "ear" | "phone" | "reel";
-    caption: string;
-    soundDef?: InstrumentDef;   // required when mode === "sound"
-    motionClass?: string;       // required when mode === "motion"
-}
-interface DrillSegment { type: "drill"; id: string; drill: DrillKind; }
-type Segment = ExplainSegment | DrillSegment;
-
-const INTRO_SEGMENTS: Segment[] = [
-    { type: "explain", id: "sound-fish", mode: "sound", icon: "fish",
-      soundDef: INSTRUMENTS.find(i => i.id === "guitar")!,
-      caption: "Luister eerst. Dít is een vis — een melodie. Zó eentje wil je vangen:" },
-    { type: "explain", id: "sound-drums", mode: "sound", icon: "drums",
-      soundDef: INSTRUMENTS.find(i => i.isDrum)!,
-      caption: "En dít zijn de drums — een kale dreun, geen melodie. Die laat je zwemmen:" },
-    { type: "explain", id: "tilt-explain", mode: "motion", icon: "phone", motionClass: "tilt-back",
-      caption: "Zo trek je de hengel terug: kantel je telefoon rustig naar achteren." },
-    { type: "drill", id: "tilt-drill", drill: "tilt" },
-    { type: "explain", id: "throw-explain", mode: "motion", icon: "phone", motionClass: "swing-demo",
-      caption: "En zo gooi je uit: eerst naar achteren, dan met een zwaai naar voren." },
-    { type: "drill", id: "throw-drill", drill: "throw" },
-    { type: "explain", id: "listen-explain", mode: "sound", icon: "ear",
-      soundDef: INSTRUMENTS.find(i => i.id === "piano")!,
-      caption: "Zo klinkt een vis die bijt. Hoor je dit? Raak dan meteen het scherm aan." },
-    { type: "drill", id: "listen-drill", drill: "listen" },
-    { type: "explain", id: "reel-explain", mode: "motion", icon: "reel", motionClass: "demo-spin",
-      caption: "Binnenhalen doe je door met je duim rondjes te draaien op het scherm." },
-    { type: "drill", id: "reel-drill", drill: "reel" },
-];
-
-const DRILL_INSTRUCTIONS: Record<DrillKind, string> = {
-    tilt:   "Nu jij! Kantel je telefoon naar achteren.",
-    throw:  "Nu jij! Zwaai je telefoon naar voren.",
-    listen: "Nu jij! Tik op het scherm zodra je de melodie hoort.",
-    reel:   "Nu jij! Draai met je duim rondjes op het scherm.",
-};
-const DRILL_DONE_TEXT: Record<DrillKind, string> = {
-    tilt:   "Goed geoefend! 🎉",
-    throw:  "Goed geoefend! 🎉",
-    listen: "Precies op tijd! 🎉",
-    reel:   "Goed geoefend! 🎉",
-};
-
-/** Pure: plays an explain segment's sound once + starts its icon's "playing"
- *  animation. Schedules nothing itself — callers decide what happens next.
- *  Returns the duration in ms (0 if the samples weren't ready yet). */
-function playExplainSoundOnce(seg: ExplainSegment, myRun: number): number {
-    if (myRun !== runId) return 0;
-    instruments.stopAll();
-    setExplainIconPlaying(true, seg.icon);
-    return instruments.playMelody(seg.soundDef!) * 1000;
-}
-
-function stopExplainIconPlaying(seg: ExplainSegment): void {
-    setExplainIconPlaying(false, seg.icon);
-}
-
-/** Sound segments' automatic first playback: wait 1s, play, wait 1s, play
- *  again — gives a young player a moment to get ready before each sound. */
-function pacedAutoPlay(seg: ExplainSegment, myRun: number): void {
-    clearDemoTimer();
-    const segIdx = segmentIndex;
-    const stillValid = () => myRun === runId && segmentIndex === segIdx;
-    demoTimer = setTimeout(() => {
-        demoTimer = null;
-        if (!stillValid()) return;
-        const dur1 = playExplainSoundOnce(seg, myRun);
-        demoTimer = setTimeout(() => {
-            demoTimer = null;
-            if (!stillValid()) return;
-            stopExplainIconPlaying(seg);
-            demoTimer = setTimeout(() => {
-                demoTimer = null;
-                if (!stillValid()) return;
-                const dur2 = playExplainSoundOnce(seg, myRun);
-                demoTimer = setTimeout(() => {
-                    demoTimer = null;
-                    if (!stillValid()) return;
-                    stopExplainIconPlaying(seg);
-                }, dur2);
-            }, 1000);
-        }, dur1);
-    }, 1000);
-}
-
-/** Motion segments' automatic first playback: wait 1s, then start the
- *  (already-infinite) CSS loop — there's no natural "second play" for a loop. */
-function pacedDemoStart(seg: ExplainSegment, myRun: number): void {
-    clearDemoTimer();
-    const segIdx = segmentIndex;
-    demoTimer = setTimeout(() => {
-        demoTimer = null;
-        if (myRun !== runId || segmentIndex !== segIdx) return;
-        restartAnimation(previewIconSlotEl, seg.motionClass!);
-    }, 1000);
-}
-
-/** Herhaal: always instant, never paced — a deliberate replay shouldn't make
- *  the player wait through the slow first-time pacing again. */
-function repeatExplain(myRun: number): void {
-    if (myRun !== runId) return;
-    const seg = INTRO_SEGMENTS[segmentIndex];
-    if (seg.type !== "explain") return;
-    clearDemoTimer();
-    instruments.stopAll();
-    if (seg.mode === "sound") {
-        const dur = playExplainSoundOnce(seg, myRun);
-        const segIdx = segmentIndex;
-        demoTimer = setTimeout(() => {
-            demoTimer = null;
-            if (myRun !== runId || segmentIndex !== segIdx) return;
-            stopExplainIconPlaying(seg);
-        }, dur);
-    } else {
-        restartAnimation(previewIconSlotEl, seg.motionClass!);
-    }
-}
-
-/** Show one segment: an explain slide (caption + paced demo) or a drill
- *  (hands off to startDrill). */
-function enterSegment(index: number, myRun: number): void {
-    if (myRun !== runId) return;
-    segmentIndex = index;
-    const seg = INTRO_SEGMENTS[index];
-    previewPanelEl.hidden = seg.type !== "explain";
-    if (seg.type === "explain") {
-        introDemoActive = true;
-        renderExplainIcon(seg);
-        updateInstruction(seg.caption);
-        if (seg.mode === "sound") pacedAutoPlay(seg, myRun);
-        else pacedDemoStart(seg, myRun);
-    } else {
-        introDemoActive = false;
-        renderExplainIcon(null);
-        startDrill(seg.drill, myRun);
-    }
-    updateUI();
-}
-
-/** Volgende, and also reached automatically from a drill's success: advance
- *  to the next segment, or — once the script is done — start the final level. */
-function advanceSegment(myRun: number): void {
-    if (myRun !== runId) return;
-    clearDemoTimer();
-    instruments.stopAll();
-    const next = segmentIndex + 1;
-    if (next>= 2) {previewNextBtn.textContent = "Probeer het zelf"}
-    else{ previewNextBtn.textContent = "Volgende"}
-    if (next >= INTRO_SEGMENTS.length) { startFinalLevel(myRun); return; }
-    enterSegment(next, myRun);
-}
-
-/** The real, continuous cast-to-catch run — unchanged phase machine, same
- *  hints/icons, landing the one real scored fish via finishIntro(). */
-function startFinalLevel(myRun: number): void {
-    if (myRun !== runId) return;
-    previewPanelEl.hidden = true;
-    renderExplainIcon(null);
-    introDemoActive = false;
-    activeDrill = null;
-    updateInstruction("Klaar? Daar gaan we — volg de aanwijzingen.");
-    demoTimer = setTimeout(() => {
-        demoTimer = null;
-        if (myRun !== runId) return;
-        lastRenderedStepIconPhase = null;
-        state.running = true;
-        updateUI();
-    }, 1200);
-}
-
-// --- the four practice drills: isolated, ungraded reps, entirely separate
-// from the real phase machine (which keeps its own armBeta/state.phase/etc
-// untouched until the final level begins) --------------------------------
 
 /** The sensor's beta wraps from 180 to -180 when the phone is tilted far back
  *  (over the shoulder). Comparing raw readings across that wrap looks like a
@@ -492,144 +104,13 @@ function createBetaUnwrapper() {
     };
 }
 
-const drillBeta = createBetaUnwrapper();
-
-function getNormalizedBeta(): number | null {
-    return drillBeta.read(input.getOrientation().beta);
-}
-
-function tickTiltDrill(): void {
-    const beta = getNormalizedBeta();
-    if (beta === null) return;
-    if (drillTiltBaseline === null) { drillTiltBaseline = beta; return; }
-    if (beta - drillTiltBaseline > 10) completeDrill("tilt");
-}
-
-function tickThrowDrill(): void {
-    const beta = getNormalizedBeta();
-    if (beta === null) return;
-    if (drillThrowMin === null || beta < drillThrowMin) drillThrowMin = beta;
-    if (drillThrowMax === null || beta > drillThrowMax) drillThrowMax = beta;
-    if (drillThrowMax - drillThrowMin > 10) completeDrill("throw");
-}
-
-/** Force a practice bite immediately (no random wait) — always a catchable
- *  instrument, exactly like spawnBite()'s introMode branch, but entirely
- *  local to the drill (never touches state.activeInstrument). */
-function forceDrillBite(myRun: number): void {
-    if (myRun !== runId || activeDrill !== "listen") return;
-    const def = pick(CATCHABLE);
-    const dobberId = soundDobber.play("caught");
-    soundDobber.volume(0.8, dobberId);
-    const dur = instruments.playMelody(def);
-    drillListenWindowUntil = performance.now() + dur * 1000 + 600;
-}
-
-function tickListenDrill(): void {
-    // a miss just quietly re-forces another bite — no strikes, ever, in a drill
-    if (performance.now() > drillListenWindowUntil) forceDrillBite(runId);
-}
-
-function onDrillListenPress(): void {
-    if (activeDrill !== "listen" || drillCueActive || drillListenHooked) return;
-    if (performance.now() <= drillListenWindowUntil) {
-        drillListenHooked = true;
-        completeDrill("listen");
-    }
-}
-
-function tickReelDrill(): void {
-    drillCrankAngle = input.getCrankDegrees();
-    setReelProgress(Math.min(1, Math.abs(drillCrankAngle) / DRILL_REEL_TARGET));
-    if (Math.abs(drillCrankAngle) >= DRILL_REEL_TARGET) completeDrill("reel");
-}
-
-function tickDrill(): void {
-    if (drillCueActive) return; // blocks re-detection during the success pause
-    if (activeDrill === "tilt") tickTiltDrill();
-    else if (activeDrill === "throw") tickThrowDrill();
-    else if (activeDrill === "listen") tickListenDrill();
-    else if (activeDrill === "reel") tickReelDrill();
-}
-
-function startDrill(drill: DrillKind, myRun: number): void {
-    if (myRun !== runId) return;
-    activeDrill = drill;
-    drillCueActive = false;
-    lastRenderedStepIconPhase = null; // force a fresh icon render for this drill
-    drillBeta.reset();
-    if (drill === "tilt") {
-        drillTiltBaseline = null;
-    } else if (drill === "throw") {
-        drillThrowMin = null;
-        drillThrowMax = null;
-    } else if (drill === "listen") {
-        drillListenHooked = false;
-        forceDrillBite(myRun);
-    } else {
-        resetCrank();
-        drillCrankAngle = 0;
-    }
-    updateInstruction(DRILL_INSTRUCTIONS[drill]);
-    renderStepIcon();
-    updateUI();
-}
-
-/** A drill succeeded: confirm it audibly + visually, then hand off to the
- *  next segment. Every drill completion plays a clear success sound — the
- *  motion-only drills (tilt/throw/reel) produce no sound of their own, so
- *  this is the player's only audible "yes, that was it" cue for them. */
-function completeDrill(drill: DrillKind): void {
-    if (activeDrill !== drill || drillCueActive) return;
-    drillCueActive = true;
-    soundCatching.play("success");
-    updateInstruction(DRILL_DONE_TEXT[drill]);
-    if (drill === "throw") {
-        // a one-shot forward flourish for the brief celebration beat
-        stepIconEl.innerHTML = PHONE_SVG;
-        stepIconEl.className = "icon-phone tilt-forward";
-        lastRenderedStepIconPhase = "drill:throw:done";
-    }
-    const myRun = runId;
-    const segIdx = segmentIndex;
-    clearDemoTimer();
-    demoTimer = setTimeout(() => {
-        demoTimer = null;
-        if (myRun !== runId || segmentIndex !== segIdx) return;
-        drillCueActive = false;
-        activeDrill = null;
-        advanceSegment(myRun);
-    }, 900);
-}
-
-/** Herhaal geluid (intro only): replay the melody currently on the hook,
- *  without extending the catch window — it helps identify what's biting, it
- *  doesn't remove the mechanic's time pressure. */
-function repeatListeningSound(): void {
-    if (!introMode || state.phase !== "listening" || state.activeInstrument === null) return;
-    const def = INSTRUMENTS.find(i => i.id === state.activeInstrument);
-    if (!def) return;
-    instruments.stopAll();
-    instruments.playMelody(def);
-}
-
-/** Nog een vis laten bijten (intro only): force a bite immediately instead of
- *  waiting for the random timer. The button is disabled while a bite is
- *  already active (see updateUI/the loop) rather than interrupting it. */
-function forceBite(): void {
-    if (!introMode || state.phase !== "listening" || state.activeInstrument !== null) return;
-    biteTimer = 0;
-    spawnBite();
-    updateUI();
-}
-
 function finishIntro(): void {
-    // land the tutorial fish, then drop back to the start screen once the catch
-    // sound and the congratulations have had a moment to register.
+    // the intro's last line has played: drop back to the start screen once the
+    // congratulations have had a moment to register.
     introComplete = true;
-    updateInstruction();
-    soundFishingBackground.fade(soundFishingBackground.volume() as number, 0, 1600);
-    introEndTimer = setTimeout(() => {
+    intro?.finish(INTRO_DONE_TEXT);
+    soundFishingUnderwater.fade(soundFishingUnderwater.volume() as number, 0, 1600);
+    endTimer = setTimeout(() => {
         stopGame();
         if (embed) { embedDone(); return; }
         startNoteEl.hidden = false;
@@ -650,20 +131,18 @@ function showGameScreen(): void {
 
 /** Full teardown — stop everything and return to the start screen. */
 function stopGame(): void {
-    runId++;                       // invalidate any in-flight explain/drill timers
-    introDemoActive = false;
+    runId++;                       // invalidate any in-flight async start-up
     introComplete = false;
-    segmentIndex = 0;
-    activeDrill = null;
-    drillCueActive = false;
-    drillTiltBaseline = null;
-    drillThrowMin = null;
-    drillThrowMax = null;
-    drillListenWindowUntil = 0;
-    drillListenHooked = false;
-    drillCrankAngle = 0;
-    clearDemoTimer();
-    if (introEndTimer !== null) { clearTimeout(introEndTimer); introEndTimer = null; }
+    intro?.destroy();              // stops the intro script, its speech and both scenes
+    intro = null;
+    cancelGesture();
+    introStageEl.hidden = true;
+    if (endTimer !== null) { clearTimeout(endTimer); endTimer = null; }
+    speechToken++;                 // cancel any task-list / feedback speech
+    announcing = false;
+    stopLine();
+    taskListBtn.hidden = true;
+    taskListBtn.classList.remove("lit");
     state.running = false;
     input.stop();
     loop.stop();
@@ -675,12 +154,6 @@ function stopGame(): void {
     gameBtn.disabled = false;
     instructionEl.textContent = "";
     log("");
-    previewPanelEl.hidden = true;
-    renderExplainIcon(null);
-    listeningAssistEl.hidden = true;
-    stepIconEl.innerHTML = "";
-    stepIconEl.className = "";
-    lastRenderedStepIconPhase = null;
     showStartScreen();
 }
 
@@ -715,31 +188,150 @@ async function startGame(asIntro: boolean): Promise<void> {
 
     introMode = asIntro;
     introComplete = false;
-    introDemoActive = false;     // enterSegment()/the else-branch below set this correctly
-    activeDrill = null;
-    drillCueActive = false;
-    segmentIndex = 0;
     state.score = 0;
-    state.collectedInstruments = [];
+    state.day = 0;
+    gorillaPlayed = false;
+    state.taskList = [];
+    state.caughtToday = [];
 
     showGameScreen();
     input.start();
     startRound();                  // phase -> idle, background music on
     gameRunning = true;
     loop.start();                  // safe to start immediately: the loop no-ops
-                                    // whenever introComplete is false, activeDrill is
-                                    // null, and state.running is false — exactly the
-                                    // case during every explain segment below
+                                    // while state.running is false — it stays false
+                                    // for the whole intro (only practice gestures run)
 
     if (asIntro) {
-        // the intro script (explain -> drill, four times, then the final level)
-        // drives state.running/activeDrill/introDemoActive from here on
-        enterSegment(0, myRun);
+        // the intro script drives everything from here on
+        introStageEl.hidden = false;
+        intro = createIntroLevel({
+            land: introLandEl,
+            water: introWaterEl,
+            caption: introCaptionEl,
+            sounds: {
+                throw: soundThrow,
+                reelThrow: soundFishingReelThrow,
+                dobber: soundDobber,
+                reel: soundFishingReel,
+                catching: soundCatching,
+            },
+            demoFish: fishById("trumpetfish")!,
+            playMelody: def => instruments.playMelody(def),
+            stopMelody: () => instruments.stopAll(),
+            goUnderwater: () => {
+                // the same ambience switch as when the bobber lands in the game
+                soundFishingBackground.stop();
+                soundFishingUnderwater.play();
+                soundFishingUnderwater.volume(0.3);
+                soundFishingUnderwater.loop(true);
+            },
+            waitForGesture,
+            highlightTaskList: on => taskListBtn.classList.toggle("lit", on),
+            onFinished: () => finishIntro(),
+        });
+        intro.start();
+        updateUI();
         return;
     }
 
     state.running = true;
+    startDay(1);
+}
+
+function shuffle<T>(arr: T[]): T[] {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+/** Fish on today's list that haven't been caught yet. */
+function remainingFish(): FishDef[] {
+    return state.taskList
+        .filter(id => !state.caughtToday.includes(id))
+        .map(id => fishById(id)!);
+}
+
+/** Draw a fresh task list for `day` and read it out. */
+function startDay(day: number): void {
+    const count = day === 1
+        ? DAY_CONFIG.fishFirstDay
+        : state.taskList.length + Math.floor(Math.random() * (DAY_CONFIG.maxExtraPerDay + 1));
+    state.day = day;
+    state.taskList = shuffle(FISH).slice(0, Math.max(1, Math.min(count, FISH.length))).map(f => f.id);
+    state.caughtToday = [];
+    log(`Dag ${day}`);
     updateUI();
+    void announceTaskList("dayStart");
+}
+
+// --- spoken sequences ----------------------------------------------------------
+// The task list and the catch feedback are spoken (recorded lines, see
+// intro/speech.ts). While a sequence plays no fish bites, so the player can
+// listen without missing one. A newer sequence or stopGame() cancels it.
+let announcing = false;
+let speechToken = 0;
+
+function wait(ms: number): Promise<void> {
+    return new Promise(res => setTimeout(res, ms));
+}
+
+async function speak(steps: (alive: () => boolean) => Promise<void>): Promise<void> {
+    const token = ++speechToken;
+    const myRun = runId;
+    const alive = () => token === speechToken && myRun === runId;
+    announcing = true;
+    // whatever was biting swims off while we talk
+    instruments.stopAll();
+    state.activeFish = null;
+    try {
+        await steps(alive);
+    } finally {
+        if (token === speechToken) {
+            announcing = false;
+            biteTimer = 0;
+            nextBiteDelay = 2 + Math.random() * 1.5;
+            updateUI();
+        }
+    }
+}
+
+/** Read out the fish still on today's list: each fish's name, then its sound. */
+function announceTaskList(opening: "dayStart" | "taskListIntro"): Promise<void> {
+    return speak(async alive => {
+        await playGameLine(opening);
+        for (const fish of remainingFish()) {
+            if (!alive()) return;
+            await playSpeech(FISH_NAME_LINES[fish.id]);
+            if (!alive()) return;
+            const sec = instruments.playMelody(fish);
+            await wait(sec * 1000 + 700);
+        }
+    });
+}
+
+/** The top-left corner: repeat the remaining fish. Tapping again starts over. */
+function onTaskListTap(): void {
+    if (!gameRunning || introMode || !state.running) return;
+    if (state.phase === "reeling") return;            // hands are busy reeling
+    if (remainingFish().length === 0) return;         // the day is wrapping up
+    void announceTaskList("taskListIntro");
+}
+
+/** Last day done: let the final line ring out, then back to the start screen. */
+function finishGame(): void {
+    state.running = false;
+    soundFishingBackground.fade(soundFishingBackground.volume() as number, 0, 1600);
+    endTimer = setTimeout(() => {
+        const score = state.score;
+        stopGame();
+        if (embed) { embedDone({ score, days: DAY_CONFIG.days }); return; }
+        startNoteEl.hidden = false;
+        startNoteEl.textContent = `✅ Alle ${DAY_CONFIG.days} dagen voltooid! Je ving ${score} vissen.`;
+    }, 2200);
 }
 
 // catch-by-ear timing (seconds unless noted)
@@ -778,6 +370,12 @@ function log(message: string): void {
 //     src: ["sounds/frogCroak.webm", "sounds/frogCroak.wav", "sounds/frogCroak.mp3"],
 //     loop: true
 // })
+// add gorrilla sounds to the game, it has three sounds: meow, bark, and boing
+var gorillaMeow = new Howl ({src: "sounds/meow.mp3"})
+var gorillaBark = new Howl ({src: "sounds/bark.mp3"})
+var gorillaBoing = new Howl ({src: "sounds/boing.mp3"})
+var gorillaSounds: Howl[] = [gorillaMeow, gorillaBark, gorillaBoing]
+let gorillaPlayed = false; // the gorilla sound plays only once per game
 var soundCatching = new Howl({
     src: ["sounds/vissen vangen_edited.mp3"],
     sprite: {
@@ -822,10 +420,8 @@ var nextSound: boolean = true;
 var nextSoundTimeout: ReturnType<typeof setTimeout> | null = null; // add this
 // var armTime: number = 0;
 function resetRoundState(): void {
-    state.collectedInstruments = [];
-    state.activeInstrument = null;
-    state.pendingInstrument = null;
-    state.strikes = 0;
+    state.activeFish = null;
+    state.pendingFish = null;
     biteTimer = 0;
     nextBiteDelay = 2;
     catchWindowUntil = 0;
@@ -865,9 +461,77 @@ function startRound(): void {
 
 
 
+// --- intro practice gestures ---------------------------------------------------
+// Between its explanations the intro asks the player to do one movement at a
+// time (tilt back, swing forward, tap, reel). Those are detected here, on their
+// own, while the real phase machine stays paused — so a practice move never
+// leaves the game half-way through a cast.
+const PRACTICE_TILT = 10;      // degrees, same threshold as the real cast
+interface Practice {
+    gesture: Gesture;
+    opts: GestureOptions;
+    resolve: () => void;
+    base: number | null;       // tiltBack: where the phone started
+    peak: number | null;       // swingForward: furthest-back tilt seen
+    lastCrank: number;
+}
+let practice: Practice | null = null;
+const practiceBeta = createBetaUnwrapper();
+
+function waitForGesture(gesture: Gesture, opts: GestureOptions = {}): Promise<void> {
+    cancelGesture();
+    practiceBeta.reset();
+    if (gesture === "crank") resetCrank();
+    return new Promise(resolve => {
+        practice = {gesture, opts, resolve, base: null, peak: null, lastCrank: 0};
+    });
+}
+
+/** Drop a pending gesture without resolving it (stopGame / a newer gesture). */
+function cancelGesture(): void {
+    practice = null;
+}
+
+function completeGesture(): void {
+    const p = practice;
+    practice = null;
+    p?.resolve();
+}
+
+function tickPractice(): void {
+    const p = practice;
+    if (!p) return;
+    if (p.gesture === "crank") {
+        const total = Math.abs(input.getCrankDegrees());
+        const target = p.opts.crankDegrees ?? 720;
+        p.opts.onCrank?.(Math.min(1, total / target), total - p.lastCrank, input.getPointer() !== null);
+        p.lastCrank = total;
+        if (total >= target) completeGesture();
+        return;
+    }
+    if (p.gesture === "tap") return; // handled by onPracticePress
+    const beta = practiceBeta.read(input.getOrientation().beta);
+    if (beta === null) return;
+    if (p.gesture === "tiltBack") {
+        if (p.base === null) p.base = beta;
+        if (beta - p.base > PRACTICE_TILT) completeGesture();
+    } else {
+        // swingForward: a forward swing from the furthest-back point, so it
+        // works whether the phone is still tilted back or held level
+        if (p.peak === null || beta > p.peak) p.peak = beta;
+        if (p.peak - beta > PRACTICE_TILT) completeGesture();
+    }
+}
+
+function onPracticePress(): void {
+    if (practice?.gesture !== "tap") return;
+    if (practice.opts.accept && !practice.opts.accept()) return; // tapped during silence
+    completeGesture();
+}
+
 const loop = new GameLoop((dt) => {
     if (introComplete) return; // tutorial fish landed — hold everything still
-    if (activeDrill !== null) { tickDrill(); return; } // drill detection takes over
+    if (practice) { tickPractice(); return; } // an intro practice move is being detected
     if (!state.running) return;
 
     const orientation = input.getOrientation();
@@ -895,9 +559,16 @@ const loop = new GameLoop((dt) => {
             // we play the sound of throwing the line back
             // we change the state to throwing, as we change the state, the baseline remains the same for the rest of the round
             soundThrow.play()
-            state.phase = "throwing"
+            setPhase("throwing")
             throwPeakBeta = beta
             updateUI()
+        }
+        //play experiment sound when experiment is called
+        if (experiment>0&&!gorillaPlayed&&state.day==2&&remainingFish().length==1){
+            gorillaPlayed = true
+            var gorilla:Howl = gorillaSounds[experiment-1];
+            gorilla.play()
+            gorilla.volume(0.5)
         }
     }
     //wait a tick between phases
@@ -910,7 +581,7 @@ const loop = new GameLoop((dt) => {
             soundThrow.play()
             soundFishingReelThrow.play("throw")
             // set state to waiting to ensure it waits without changing the armbetabaseline
-            state.phase = "waiting"
+            setPhase("waiting")
             setTimeout(() => {
                 soundFishingReelThrow.stop()
                 soundDobber.play("land")
@@ -925,33 +596,29 @@ const loop = new GameLoop((dt) => {
                 stepTimer=0
                 biteTimer=0
                 nextBiteDelay = 1.5 + Math.random()*2
-                state.phase = "listening"
+                setPhase("listening")
                 log("luister goed...")
                 updateUI()
             },1000)
         }
     }
     else if (state.phase == "listening"){
-        // A fish = an instrument. Every so often one "bites" by playing its
-        // melody. The player must tap while they hear a non-drum instrument to
-        // catch it. Drums are a trap. Collect every catchable instrument to win.
-        biteTimer += dt;
+        // Every so often a fish "bites" by playing its sound. The player taps
+        // while they hear one from today's list to catch it. Other fish can be
+        // reeled in too, but they're released again. Bites hold off while the
+        // task list (or other feedback) is being spoken.
+        if (!announcing) biteTimer += dt;
 
         // close the catch window once the melody (+ grace) is over
-        if (state.activeInstrument !== null && performance.now() > catchWindowUntil) {
-            state.activeInstrument = null;
+        if (state.activeFish !== null && performance.now() > catchWindowUntil) {
+            state.activeFish = null;
             log("...weg. luister opnieuw");
         }
 
-        if (state.activeInstrument === null && biteTimer >= nextBiteDelay) {
+        if (!announcing && state.activeFish === null && biteTimer >= nextBiteDelay) {
             biteTimer = 0;
             nextBiteDelay = 4 + Math.random() * 2.6;
             spawnBite();
-        }
-
-        if (introMode) {
-            repeatSoundBtn.disabled = state.activeInstrument === null;
-            forceBiteBtn.disabled = state.activeInstrument !== null;
         }
     }
     else if (state.phase == "reeling"){
@@ -984,10 +651,6 @@ const loop = new GameLoop((dt) => {
             soundFishingReel.rate(Math.min(2, Math.max(0.7, 0.7 + Math.abs(crankVelocity) / 8)));
         }
 
-        if (introMode) {
-            setReelProgress(Math.min(1, Math.abs(crankAngle) / REEL_TARGET));
-        }
-
         // reeled in — two full turns — the outcome is revealed now
         if (Math.abs(crankAngle) >= REEL_TARGET) {
             resolveReel();
@@ -998,9 +661,9 @@ const loop = new GameLoop((dt) => {
             isSoundPlaying = false;
             // soundFailure.play();
             soundCatching.play("escaped")
-            state.pendingInstrument = null;
+            state.pendingFish = null;
             resetCrank();
-            state.phase = "listening";
+            setPhase("listening");
             biteTimer = 0;
             nextBiteDelay = 2;
             log("de vis is los! luister opnieuw");
@@ -1009,91 +672,45 @@ const loop = new GameLoop((dt) => {
             log("binnenhalen: " + Math.round(Math.abs(crankAngle)) + "°");
         }
     }
-    if (state.phase === "success" || state.phase =="failure") {
-        if (embed && (state.phase === "success" || ON_FAIL === "continue")) {
-            // freeze play, let the catch / fail sound ring out, then hand back to the shell
-            const result = { score: state.score, strikes: state.strikes, failed: state.phase === "failure" };
-            state.running = false;
-            log(result.failed ? "Te vaak de drums — door naar het volgende spel." : `Klaar! ${FISH_TO_CATCH} vissen gevangen.`);
-            const myRun = runId;
-            setTimeout(() => {
-                if (myRun !== runId) return;
-                stopGame();
-                embedDone(result);
-            }, 2200);
-            return;
-        }
-        state.currentStep = state.currentStep + 1;
-        // create new target locations
-        if (state.currentStep>2) {
-            state.currentStep = 0
-            state.randomAngles = generateNumberSequence(3,-45,45)
-            state.randomDistances= generateNumberSequence(3,1,3)
-        }
-
-        resetRoundState()
-        state.phase = "idle"
-        updateUI()
-    }
 });
 
 function pick<T>(arr: T[]): T {
     return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/** Pick an instrument to "bite" and play its melody, opening the catch window. */
+/** Pick a fish to "bite" and play its sound, opening the catch window. */
 function spawnBite(): void {
-    const drum = INSTRUMENTS.find(i => i.isDrum)!;
-    const needed = CATCHABLE.filter(i => !state.collectedInstruments.includes(i.id));
+    // mostly a fish that's still on the list, otherwise one that isn't
+    const remaining = remainingFish();
+    const others = FISH.filter(f => !remaining.includes(f));
+    const def = remaining.length > 0 && (others.length === 0 || Math.random() < LIST_BITE_CHANCE)
+        ? pick(remaining)
+        : pick(others);
 
-    // the tutorial never uses the drum trap — a catchable fish always bites
-    if (introMode) {
-        const def = pick(needed.length ? needed : CATCHABLE);
-        const dobberId = soundDobber.play("caught");
-        soundDobber.volume(0.8, dobberId);
-        const melodyDur = instruments.playMelody(def);
-        state.activeInstrument = def.id;
-        catchWindowUntil = performance.now() + melodyDur * 1000 + 600;
-        log("🎣 er bijt iets — raak het scherm aan!");
-        return;
-    }
-
-    // ~25% drum trap; otherwise prefer a not-yet-unlocked instrument, but an
-    // already-unlocked one can still bite (it just won't award a point).
-    const roll = Math.random();
-    let def: InstrumentDef;
-    if (roll < 0.25 || needed.length === 0) {
-        def = roll < 0.25 ? drum : pick(CATCHABLE);
-    } else if (roll < 0.75) {
-        def = pick(needed);
-    } else {
-        def = pick(CATCHABLE);
-    }
-
-    // the bobber dips — an audible "something's there" cue alongside the melody
+    // the bobber dips — an audible "something's there" cue alongside the sound
     const dobberId = soundDobber.play("caught");
     soundDobber.volume(0.8, dobberId);
 
     const melodyDur = instruments.playMelody(def);
-    state.activeInstrument = def.id;
-    // window stays open for the melody plus a short grace period to react
+    state.activeFish = def.id;
+    // window stays open for the sound plus a short grace period to react
     catchWindowUntil = performance.now() + melodyDur * 1000 + 600;
     log("🎣 er bijt iets...");
 }
 
 /**
  * The player commits by touching the screen: whatever is on the hook right now
- * (a melody they heard, the drums, or nothing) gets reeled in. Whether it was
+ * (a fish they heard, or nothing) gets reeled in. Whether it was
  * the right call is only revealed once the reel-in finishes.
  */
 function startReeling(): void {
-    if (!state.running || state.phase !== "listening") return;
-    state.pendingInstrument = state.activeInstrument; // may be null (touched during silence)
-    state.activeInstrument = null;
+    if (!state.running || state.phase !== "listening" || announcing) return;
+    state.pendingFish = state.activeFish; // may be null (touched during silence)
+    state.activeFish = null;
     instruments.stopAll();
     resetCrank();
     stepTimer = 0;
-    state.phase = "reeling";
+    setPhase("reeling");
     log("binnenhalen!");
     updateUI();
 }
@@ -1108,81 +725,90 @@ function resolveReel(): void {
     soundFishingBackground.play()
     soundFishingBackground.volume(0.3)
     soundFishingBackground.loop(true)
-    const id = state.pendingInstrument;
-    const def = id ? INSTRUMENTS.find(i => i.id === id) ?? null : null;
-    state.pendingInstrument = null;
+    const def = state.pendingFish ? fishById(state.pendingFish) ?? null : null;
+    state.pendingFish = null;
     resetCrank();
 
-    state.phase = "idle";
+    setPhase("idle");
     biteTimer = 0;
     nextBiteDelay = 1.5 + Math.random() * 2;
 
     if (!def) {
         // reeled in an empty hook — the miss lands now, not when you touched
-        // soundFailure.volume(0.5);
-        // soundFailure.play();
-        // soundFailure.volume(1);
         soundCatching.play("escaped")
         log("niks aan de haak...");
-    } else if (def.isDrum) {
-        // the drums were the wrong call — the strike lands now
-        state.strikes++;
-        soundCatching.play("failure");
-        log(`fout ${state.strikes}/${MAX_STRIKES} — dat waren de drums!`);
-        if (state.strikes >= MAX_STRIKES) state.phase = "failure";
-    } else {
-        const firstTime = !state.collectedInstruments.includes(def.id);
-        if (firstTime) {
-            state.collectedInstruments.push(def.id);
-            state.score++;
-        }
+    } else if (state.taskList.includes(def.id) && !state.caughtToday.includes(def.id)) {
+        state.caughtToday.push(def.id);
+        state.score++;
         soundCaught.stop()
         soundCatching.play("success")
-        log(firstTime ? `${def.label} gevangen!` : `${def.label} — al vrij, geen punt`);
-        if (introMode) {
-            // one fish is all the tutorial asks for
-            finishIntro();
-        } else if (state.collectedInstruments.length >= FISH_TO_CATCH) {
-            state.phase = "success";
-        }
+        log(`${def.label} gevangen! Die stond op je lijstje.`);
+        const dayDone = remainingFish().length === 0;
+        void speak(async alive => {
+            await wait(1200); // let the catch sound land first
+            if (!alive()) return;
+            await playGameLine("onList");
+            if (!alive() || !dayDone) return;
+            await playGameLine("dayDone");
+            if (!alive()) return;
+            if (state.day >= DAY_CONFIG.days) {
+                await playGameLine("gameDone");
+                if (alive()) finishGame();
+            } else {
+                await wait(800);
+                if (alive()) startDay(state.day + 1);
+            }
+        });
+    } else {
+        // not on today's list (or already caught) — it goes back in the water
+        const already = state.caughtToday.includes(def.id);
+        soundCatching.play("escaped")
+        log(`${def.label} — ${already ? "die had je al" : "staat niet op je lijstje"}, terug het water in`);
+        void speak(async alive => {
+            await wait(1000);
+            if (alive()) await playGameLine(already ? "alreadyCaught" : "notOnList");
+        });
     }
     updateUI();
 }
 
 input.onPress(startReeling);
-input.onPress(onDrillListenPress);
+input.onPress(onPracticePress);
 
 if (debug) {
     (window as any).__game = {
-        state, INSTRUMENTS,
+        state, FISH, DAY_CONFIG,
+        playFish: (id: string) => { const f = fishById(id); return f ? instruments.playMelody(f) : 0; },
         crank: () => ({ crankAngle, crankVelocity, center: input.getCrankCenter() }),
-        activeDrill: () => activeDrill,
-        segmentIndex: () => segmentIndex,
     };
     // keyboard shortcuts so the mechanic can be tested on desktop
     window.addEventListener("keydown", (e) => {
-        // drive whichever practice drill is active first — on desktop, mouse-driven
-        // debug orientation always reports beta:0, so there's no real tilt signal
-        if (activeDrill === "tilt" && e.key === "t") { completeDrill("tilt"); return; }
-        if (activeDrill === "throw" && e.key === "t") { completeDrill("throw"); return; }
-        if (activeDrill === "listen" && e.key === "l") { onDrillListenPress(); return; }
-        if (activeDrill === "reel" && e.key === " ") {
-            e.preventDefault();
-            drillCrankAngle = DRILL_REEL_TARGET;
-            completeDrill("reel");
+        // n: skip the intro's current speech line (handy while they're placeholders)
+        if (e.key === "n") { intro?.skipLine(); stopLine(); return; }
+        // k: read out the task list, as if the top-left corner was tapped
+        if (e.key === "k") { onTaskListTap(); return; }
+        // an intro practice move: t = the tilt/swing, l or space = the tap/reel
+        if (practice) {
+            if (e.key === " ") e.preventDefault();
+            if (e.key === "t" && (practice.gesture === "tiltBack" || practice.gesture === "swingForward")) completeGesture();
+            else if ((e.key === "l" || e.key === " ") && practice.gesture === "tap") onPracticePress();
+            else if (e.key === " " && practice.gesture === "crank") {
+                practice.opts.onCrank?.(1, 30, false);
+                completeGesture();
+            }
             return;
         }
         if (!state.running) return;
         if (e.key === "t" && state.phase === "idle") {
             soundThrow.play();
-            state.phase = "throwing";
+            setPhase("throwing");
             // fake a backswing peak so the flat desktop beta counts as the forward swing on the next tick
             throwPeakBeta = (armBetaBaseline ?? 0) + 90;
             updateUI();
         } else if (e.key === "l") {
             biteTimer = 0;
             nextBiteDelay = 1;
-            state.phase = "listening";
+            setPhase("listening");
             updateUI();
         } else if (e.key === " ") {
             e.preventDefault();
@@ -1194,34 +820,26 @@ if (debug) {
 function updateUI(): void {
     scoreEl.textContent = `Score: ${state.score}`;
 
-    // the instrument on the hook stays hidden until the reel-in resolves
-    const caught = CATCHABLE
-        .map(i => `${state.collectedInstruments.includes(i.id) ? "✅" : "⬜"} ${i.label}`)
+    // today's list; the fish on the hook stays hidden until the reel-in resolves
+    const list = state.taskList
+        .map(id => `${state.caughtToday.includes(id) ? "✅" : "⬜"} ${fishById(id)?.label ?? id}`)
         .join("   ");
-    collectionEl.textContent =
-        `${caught}   |   drums: ${state.strikes}/${MAX_STRIKES}` +
-        (FISH_TO_CATCH < CATCHABLE.length ? `   |   doel: ${state.collectedInstruments.length}/${FISH_TO_CATCH}` : "");
+    collectionEl.textContent = state.day > 0 ? `Dag ${state.day}/${DAY_CONFIG.days}   |   ${list}` : "";
+    // shown in the intro too, so the fisherman can point it out (it lights up)
+    taskListBtn.hidden = !gameRunning;
 
     // the tutorial only asks for one fish — the full collection tracker would
     // just be noise, so hide it and the score until the real game starts
     collectionEl.hidden = introMode;
     scoreEl.hidden = introMode;
 
-    // the listening-step assist buttons only make sense mid-tutorial, while
-    // there's actually something (or nothing yet) to react to
-    listeningAssistEl.hidden = !(introMode && state.phase === "listening");
-
-    renderStepIcon();
     updateInstruction();
 }
 // starting from a button click (a user gesture) is when fullscreen is allowed
 introBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(true); });
 gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(false); });
 stopBtn.addEventListener("click", () => stopGame());
-previewRepeatBtn.addEventListener("click", () => repeatExplain(runId));
-previewNextBtn.addEventListener("click", () => advanceSegment(runId));
-repeatSoundBtn.addEventListener("click", () => repeatListeningSound());
-forceBiteBtn.addEventListener("click", () => forceBite());
+taskListBtn.addEventListener("click", () => onTaskListTap());
 
 // run by the combined/ shell: skip the menu, start straight into the requested mode
 if (embed) {

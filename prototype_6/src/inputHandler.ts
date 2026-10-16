@@ -1,5 +1,5 @@
 // Number of pitch rows available on the note pad (one octave-ish of a scale).
-export const SCALE_DEGREES = 8;
+export const SCALE_DEGREES = 5;
 
 const MIN_BPM = 60;
 const MAX_BPM = 200;
