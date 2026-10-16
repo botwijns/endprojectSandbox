@@ -136,6 +136,7 @@ function stopGame(): void {
     if (endTimer !== null) { clearTimeout(endTimer); endTimer = null; }
     speechToken++;                 // cancel any task-list / feedback speech
     announcing = false;
+    castPaused = false;
     stopLine();
     taskListBtn.hidden = true;
     taskListBtn.classList.remove("lit");
@@ -268,18 +269,23 @@ function startDay(day: number): void {
 // The task list and the catch feedback are spoken (recorded lines, see
 // intro/speech.ts). While a sequence plays no fish bites, so the player can
 // listen without missing one. A newer sequence or stopGame() cancels it.
+// Sequences started with `pauseCast` (the task list, and the lines leading into
+// a new day) also pause the cast detection, so the player can't throw out
+// until they've heard the full list.
 let announcing = false;
+let castPaused = false;
 let speechToken = 0;
 
 function wait(ms: number): Promise<void> {
     return new Promise(res => setTimeout(res, ms));
 }
 
-async function speak(steps: (alive: () => boolean) => Promise<void>): Promise<void> {
+async function speak(steps: (alive: () => boolean) => Promise<void>, pauseCast = false): Promise<void> {
     const token = ++speechToken;
     const myRun = runId;
     const alive = () => token === speechToken && myRun === runId;
     announcing = true;
+    castPaused = pauseCast;
     // whatever was biting swims off while we talk
     instruments.stopAll();
     state.activeFish = null;
@@ -288,6 +294,7 @@ async function speak(steps: (alive: () => boolean) => Promise<void>): Promise<vo
     } finally {
         if (token === speechToken) {
             announcing = false;
+            castPaused = false;
             biteTimer = 0;
             nextBiteDelay = 2 + Math.random() * 1.5;
             updateUI();
@@ -306,7 +313,7 @@ function announceTaskList(opening: "dayStart" | "taskListIntro"): Promise<void> 
             const sec = instruments.playMelody(fish);
             await wait(sec * 1000 + 700);
         }
-    });
+    }, true);
 }
 
 /** The top-left corner: repeat the remaining fish. Tapping again starts over. */
@@ -534,7 +541,21 @@ const loop = new GameLoop((dt) => {
     const beta = gameBeta.read(orientation.beta);
     console.log(beta)
     stepTimer += dt;
-    if (state.phase =="idle" && beta!==null){
+    if (castPaused && (state.phase == "idle" || state.phase == "throwing")) {
+        // the task list is being read: ignore movement, and drop a half-done
+        // backswing. The baseline is re-taken once the list is over, so moving
+        // during it doesn't fire a cast the moment it ends.
+        if (state.phase == "throwing") {
+            soundThrow.stop()
+            setPhase("idle")
+            updateUI()
+        }
+        armBetaBaseline = null
+        armBeta = null
+        throwPeakBeta = null
+        stepTimer = 0
+    }
+    else if (state.phase =="idle" && beta!==null){
         //only do this if beta is not null:
         if (armBetaBaseline== null){
             //set both to be at least something if it is null right now.
@@ -753,7 +774,7 @@ function resolveReel(): void {
                 await wait(800);
                 if (alive()) startDay(state.day + 1);
             }
-        });
+        }, dayDone); // the day is over: no casting until the next list has been read
     } else {
         // not on today's list (or already caught) — it goes back in the water
         const already = state.caughtToday.includes(def.id);
@@ -794,7 +815,7 @@ if (debug) {
             return;
         }
         if (!state.running) return;
-        if (e.key === "t" && state.phase === "idle") {
+        if (e.key === "t" && state.phase === "idle" && !castPaused) {
             soundThrow.play();
             setPhase("throwing");
             // fake a backswing peak so the flat desktop beta counts as the forward swing on the next tick
