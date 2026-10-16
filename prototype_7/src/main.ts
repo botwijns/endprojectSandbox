@@ -10,6 +10,10 @@ import {
     DRUMS_SVG, EAR_SVG, PHONE_ZONES_2_SVG, PHONE_ZONES_4_SVG, TAP_SVG, DOUBLE_TAP_SVG, SHAKE_SVG,
 } from "./introIcons.ts";
 import { enterFullscreen } from "../../src/fullscreen.ts";
+import { getEmbed, setupEmbedStart, embedDone, num, numRecord } from "../../src/embed.ts";
+
+// set when the combined/ shell runs this page as one segment of a longer flow
+const embed = getEmbed();
 import { Howl } from "howler";
 
 // ── Eyes-free "wat hoor je?" music quiz ──────────────────────────────────────
@@ -23,7 +27,7 @@ import { Howl } from "howler";
 // quiz - see the introduction section below. Tapping 3× anywhere outside the
 // buttons still starts the quiz, so it stays playable without looking.
 
-const QUIZ_LENGTH = 8;
+const QUIZ_LENGTH = num(embed, "questions", 8, 1, 30); // the combined/ shell can override it
 const PROMPT_READ_MS = 2600; // rough time to speak the question before the piece plays
 const OPTION_READ_GAP_MS = 1900; // spacing when reading the four options in a row
 const RESULT_ADVANCE_MS = 3200; // delay before the next question after an answer
@@ -44,7 +48,7 @@ let fontPoll: number | null = null;
 // Like prototype 5: an unexpected sound slipped into the game. `experiment`
 // picks which one (0 = off, 1 = meow, 2 = bark, 3 = boing). It plays once, on
 // the second question, after the question is spoken and before the music.
-let experiment = 1;
+let experiment = num(embed, "experiment", 1, 0, 3);
 const gorillaSounds: Howl[] = [
     new Howl({ src: "sounds/meow.mp3" }),
     new Howl({ src: "sounds/bark.mp3" }),
@@ -458,10 +462,11 @@ function finishIntro(): void {
     input.setActive(false);
     setIntroStep("done");
     cue("done");
-    later(() => speak("Goed gedaan! Je kent nu de quiz. Terug naar het startscherm."), 400);
+    later(() => speak(embed ? "Goed gedaan! Je kent nu de quiz." : "Goed gedaan! Je kent nu de quiz. Terug naar het startscherm."), 400);
     later(() => {
         if (myRun !== runId) return;
         stopGame();
+        if (embed) { embedDone(); return; }
         startNoteEl.hidden = false;
         startNoteEl.textContent = "✅ Oefenlevel voltooid! Druk op ‘Start quiz’ voor de echte quiz.";
         introBtn.textContent = "Oefenlevel opnieuw";
@@ -673,7 +678,8 @@ function commitOption(index: AnswerIndex): void {
 
 function beginQuiz(): void {
     lastResultsSummary = [];
-    session = new QuizSession(QUIZ_LENGTH, songPicker.value || undefined);
+    // in the combined flow, start from the ratings a previous quiz part ended on
+    session = new QuizSession(QUIZ_LENGTH, songPicker.value || undefined, numRecord(embed, "ratings") ?? undefined);
     gorillaPlayed = false;
     input.setQuizEnabled(true);
     speak("Daar gaan we. Luister goed.");
@@ -694,6 +700,17 @@ function endQuiz(): void {
     if (lastResultsSummary.length > 0) {
         const names = lastResultsSummary.slice(0, 3).map(s => s.category).join(", ");
         later(() => speak(`Je scoorde het best op: ${names}.`), 3200);
+    }
+    // hand back to the combined/ shell once the results have been read out,
+    // with the ratings so a later quiz part can carry on from them
+    if (embed) {
+        const myRun = runId;
+        const ratings = session.ratings;
+        later(() => {
+            if (myRun !== runId) return;
+            stopGame();
+            embedDone({ score, total, ratings });
+        }, lastResultsSummary.length > 0 ? 7500 : 4000);
     }
 }
 
@@ -734,3 +751,10 @@ readOptionsBtn.addEventListener("click", () => {
 input.start();
 updateIntroUI();
 renderHud();
+
+// run by the combined/ shell: skip the menu, start straight into the requested mode
+if (embed) {
+    songPicker.hidden = true;
+    stopBtn.hidden = true;
+    setupEmbedStart(embed, () => (embed.mode === "intro" ? introBtn : gameBtn).click());
+}

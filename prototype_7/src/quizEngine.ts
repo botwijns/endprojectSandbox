@@ -15,11 +15,19 @@ export class QuizSession {
   private lastCategory?: string;
   // One Elo rating per category, in-memory for this round only - starts at
   // BASE_RATING and only fills in once a category has actually been played.
+  // The combined/ shell can hand in the ratings a previous quiz part ended on,
+  // so a player's level carries over from one quiz part to the next.
   private playerRatings: Record<string, number> = {};
+  // where this round started, per category - the baseline for performanceSummary()
+  private startRatings: Record<string, number> = {};
 
-  constructor(length: number, forcedSongId?: string) {
+  constructor(length: number, forcedSongId?: string, initialRatings?: Record<string, number>) {
     this.length = length;
     this.forcedSongId = forcedSongId;
+    if (initialRatings) {
+      this.playerRatings = { ...initialRatings };
+      this.startRatings = { ...initialRatings };
+    }
     this.state = { questions: [], currentIndex: 0, answered: [] };
     this.state.questions.push(this.nextQuestion());
   }
@@ -72,18 +80,23 @@ export class QuizSession {
     return answered;
   }
 
+  /** A copy of the per-category ratings as they stand now. */
+  get ratings(): Record<string, number> {
+    return { ...this.playerRatings };
+  }
+
   get history(): AnsweredQuestion[] {
     return this.state.answered;
   }
 
   /**
    * Per-category performance for this round: for every category actually
-   * answered, how far its final rating ended up from the starting point
-   * (BASE_RATING). Sorted best first.
+   * answered, how far its final rating ended up from where this round started
+   * (BASE_RATING, or the rating carried over from a previous quiz part). Sorted best first.
    */
   performanceSummary(): { category: string; avgDelta: number }[] {
     return Array.from(new Set(this.state.answered.map((a) => a.category)))
-      .map((category) => ({ category, avgDelta: this.ratingFor(category) - BASE_RATING }))
+      .map((category) => ({ category, avgDelta: this.ratingFor(category) - (this.startRatings[category] ?? BASE_RATING) }))
       .sort((a, b) => b.avgDelta - a.avgDelta);
   }
 }

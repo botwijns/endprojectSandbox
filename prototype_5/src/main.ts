@@ -5,6 +5,7 @@ import {SynthManager} from "./audio/SynthManager.ts";
 import {InstrumentManager, FISH, fishById, type FishDef} from "./audio/InstrumentManager.ts";
 import {Howl, Howler} from "howler";
 import { enterFullscreen } from "../../src/fullscreen.ts";
+import { getEmbed, setupEmbedStart, embedDone, num } from "../../src/embed.ts";
 import {createIntroLevel, type IntroLevel, type Gesture, type GestureOptions} from "./intro/introLevel.ts";
 import {FISH_NAME_LINES, playGameLine, playSpeech, stopLine} from "./intro/speech.ts";
 
@@ -33,14 +34,16 @@ const taskListBtn = document.getElementById("tasklist-btn") as HTMLButtonElement
 // The full game is split into days. Every day gets a random task list of fish to
 // catch; tapping the top-left corner reads out the fish still on it. Fish that
 // aren't on the list can bite too — catching one just releases it again.
-// TODO(combined): expose as embed params fishFirstDay / days / maxExtraPerDay
+// set when the combined/ shell runs this page as one segment of a longer flow;
+// it can override the day settings and the experiment below
+const embed = getEmbed();
 const DAY_CONFIG = {
-    fishFirstDay: 3,   // fish on the list on day 1
-    days: 3,           // the game ends after this many days
-    maxExtraPerDay: 1, // each next day adds 0..this many fish (capped at the number of fish)
+    fishFirstDay: num(embed, "fishFirstDay", 3, 1, FISH.length),  // fish on the list on day 1
+    days: num(embed, "days", 3, 1, 10),                           // the game ends after this many days
+    maxExtraPerDay: num(embed, "maxExtraPerDay", 1, 0, 5),        // each next day adds 0..this many fish (capped at the number of fish)
 };
 const LIST_BITE_CHANCE = 0.6; // share of bites that are a fish still on today's list
-let experiment = 1;
+let experiment = num(embed, "experiment", 1, 0, 3);
 // --- introduction level -----------------------------------------------------
 // The intro is a guided, spoken tutorial in two animated scenes (see
 // src/intro/introLevel.ts). Each step is explained and shown, then the player
@@ -109,6 +112,7 @@ function finishIntro(): void {
     soundFishingUnderwater.fade(soundFishingUnderwater.volume() as number, 0, 1600);
     endTimer = setTimeout(() => {
         stopGame();
+        if (embed) { embedDone(); return; }
         startNoteEl.hidden = false;
         startNoteEl.textContent = "✅ Oefenlevel voltooid! Druk op ‘Start spel’ voor het hele spel.";
         introBtn.textContent = "Oefenlevel opnieuw";
@@ -324,6 +328,7 @@ function finishGame(): void {
     endTimer = setTimeout(() => {
         const score = state.score;
         stopGame();
+        if (embed) { embedDone({ score, days: DAY_CONFIG.days }); return; }
         startNoteEl.hidden = false;
         startNoteEl.textContent = `✅ Alle ${DAY_CONFIG.days} dagen voltooid! Je ving ${score} vissen.`;
     }, 2200);
@@ -835,3 +840,9 @@ introBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enter
 gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(false); });
 stopBtn.addEventListener("click", () => stopGame());
 taskListBtn.addEventListener("click", () => onTaskListTap());
+
+// run by the combined/ shell: skip the menu, start straight into the requested mode
+if (embed) {
+    stopBtn.hidden = true;
+    setupEmbedStart(embed, () => startGame(embed.mode === "intro"));
+}
