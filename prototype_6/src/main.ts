@@ -156,6 +156,16 @@ function pitchForSlot(slot: StepSlot): number {
 type Phase = "idle" | "composing" | "done";
 
 let phase: Phase = "idle";
+// Between a shake-submit and the next brief loading (a ~2s gap while the
+// praise plays) the phase is still "composing", but the pattern has already
+// been cleared for the next song — so input must be ignored, or notes placed
+// in that window would show up in the next track.
+let trackSubmitted = false;
+let nextBriefTimer: number | null = null;
+
+function canCompose(): boolean {
+    return phase === "composing" && !trackSubmitted;
+}
 let bpm = 0;
 let stepDurationMs = 0;
 let currentStep = 0;
@@ -368,7 +378,7 @@ function tick(): void {
     // once the hold has lasted past HOLD_THRESHOLD_MS, so a quick tap that
     // happens to straddle a tick never gets an accidental second note.
     const longEnough = (performance.now() - holdStartAt) >= HOLD_THRESHOLD_MS;
-    if (phase === "composing" && padHeld && heldNote !== null && longEnough) {
+    if (canCompose() && padHeld && heldNote !== null && longEnough) {
         pattern[currentInstrument][currentStep] = { note: heldNote, instrument: currentInstrument };
         recordPlacedNote(currentInstrument, currentStep);
     }
@@ -405,7 +415,7 @@ function previewSlot(slot: StepSlot, step?: number): void {
 
 // ── Composing actions ────────────────────────────────────────────────────────
 function setNote(note: number): void {
-    if (phase !== "composing" || !tutorialAllows("place")) return;
+    if (!canCompose() || !tutorialAllows("place")) return;
     const step = tapStep();
 
     const slot: StepSlot = { note, instrument: currentInstrument };
@@ -423,7 +433,7 @@ function setNote(note: number): void {
 }
 
 function nudgeNote(direction: 1 | -1): void {
-    if (phase !== "composing" || !tutorialAllows("place")) return;
+    if (!canCompose() || !tutorialAllows("place")) return;
     const step = tapStep();
 
     const existing = pattern[currentInstrument][step]
@@ -444,7 +454,7 @@ function nudgeNote(direction: 1 | -1): void {
 // playhead has already moved on by the time you react, and pressing it
 // repeatedly walks back through everything just placed.
 function removeNote(): void {
-    if (phase !== "composing" || !tutorialAllows("remove")) return;
+    if (!canCompose() || !tutorialAllows("remove")) return;
     const entry = placedNoteStack.pop();
     if (!entry) {
         if (!introMode) speak("nog geen noot geplaatst");
@@ -465,7 +475,7 @@ function removeNote(): void {
 }
 
 function switchInstrument(): void {
-    if (phase !== "composing" || !tutorialAllows("instrument")) return;
+    if (!canCompose() || !tutorialAllows("instrument")) return;
     const options = introMode ? INTRO_INSTRUMENTS : currentBrief.instruments;
     const i = (options.indexOf(currentInstrument) + 1) % options.length;
     currentInstrument = options[i];
@@ -483,6 +493,7 @@ function loadBrief(index: number): void {
     currentVolume = currentBrief.volume;
     currentInstrument = currentBrief.instruments[0];
     placedNoteStack.length = 0; // the previous brief's pattern is about to be cleared
+    trackSubmitted = false;
     briefLoop = 0;
 
     // fresh groove for the new vibe; the player's melody is kept
@@ -496,7 +507,10 @@ function loadBrief(index: number): void {
 }
 
 function finishTrack(): void {
-    if (phase !== "composing" || !drumPattern) return;
+    if (!canCompose() || !drumPattern) return;
+    trackSubmitted = true;
+    padHeld = false;
+    heldNote = null;
 
     const notes: MixtapeTrack["notes"] = [];
     for (const id of MELODIC_INSTRUMENTS) {
@@ -514,7 +528,8 @@ function finishTrack(): void {
     // clear the melody so the next brief starts on a blank canvas
     for (const id of MELODIC_INSTRUMENTS) pattern[id] = Array(STEPS).fill(null);
 
-    window.setTimeout(() => {
+    nextBriefTimer = window.setTimeout(() => {
+        nextBriefTimer = null;
         if (mixtape.length >= BRIEFS.length) {
             endSession();
         } else {
@@ -667,6 +682,9 @@ function showGameScreen(): void {
 }
 
 function stopGame(): void {
+    if (nextBriefTimer !== null) window.clearTimeout(nextBriefTimer);
+    nextBriefTimer = null;
+    trackSubmitted = false;
     stopSequencer();
     phase = "idle";
     endIntro();
@@ -716,6 +734,7 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
     stepDurationMs = (60000 / bpm) / 2;
 
     phase = "composing";
+    trackSubmitted = false;
     currentStep = -1;
     pattern = emptyPattern();
     mixtape = [];
