@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:combined": "vite --config vite.combined.config.ts",
+    "dev:combined": "vite --config vite.combined.dev.config.ts",
     "build:prototype_1": "vite build --config vite.prototype_1.config.ts",
     "build:prototype_2": "vite build --config vite.prototype_2.config.ts",
     "build:prototype_3": "vite build --config vite.prototype_3.config.ts",
