@@ -1,5 +1,5 @@
 import { InputHandler, SCALE_DEGREES } from "./inputHandler.ts";
-import { ShakeDetector } from "./shake.ts";
+import { ShakeDetector } from "../../src/shake.ts";
 import { Howl, Howler } from "howler";
 import { generateDrumPattern, type DrumPattern } from "./music.ts";
 import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts";
