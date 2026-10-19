@@ -288,21 +288,61 @@ for (let s = 0; s < STEPS; s++) {
         cellEls[s].push(cell);
     }
 }
+// The sweeping line of the intro's grid overlay (see movePlayhead()).
+const playheadEl = document.createElement("div");
+playheadEl.id = "playhead";
+gridEl.appendChild(playheadEl);
 
-// The grid stays hidden — all feedback is audio (and, in the intro, the
-// campfire scene). It's kept in the DOM as a debugging aid.
+// Tile colours for the intro overlay, taken from the campfire's flames so they
+// sit in the scene instead of on top of it.
+const INTRO_TILE_COLOR: Partial<Record<MelodicInstrument, string>> = {
+    piano:            "#ffd35a",
+    distortionGuitar: "#ff6a2a",
+};
+
+// The grid stays hidden in the real game — all feedback is audio. Only the
+// intro shows it, as a see-through overlay on the campfire scene while the
+// beat runs: a line sweeps along the steps and placed notes light up as tiles.
 function renderGrid(): void {
-    gridEl.style.display = "none";
+    const show = introMode && stepIntervalId !== null;
+    gridEl.style.display = show ? "" : "none";
+    gridEl.classList.toggle("intro-grid", show);
+    if (!show) return;
     for (let s = 0; s < STEPS; s++) {
-        const slot = pattern[currentInstrument][s];
+        // The current instrument's note wins; otherwise show the other one, so
+        // the piano notes stay visible after switching to the guitar.
+        const slot = pattern[currentInstrument][s]
+            ?? INTRO_INSTRUMENTS.map(id => pattern[id][s]).find(x => x) ?? null;
         for (let r = 0; r < SCALE_DEGREES; r++) {
             const cell = cellEls[s][r];
             const filled = !!slot && slot.note === r;
-            const onPlayhead = s === currentStep && phase === "composing";
-            cell.classList.toggle("current", onPlayhead);
-            cell.style.background = filled ? INSTRUMENT_COLOR[slot!.instrument] : "";
+            cell.classList.toggle("current", s === currentStep);
+            cell.classList.toggle("filled", filled);
+            if (filled) cell.style.setProperty("--tile", INTRO_TILE_COLOR[slot!.instrument as MelodicInstrument] ?? INSTRUMENT_COLOR[slot!.instrument]);
         }
     }
+}
+
+// The line glides across each step's column during that step, so it moves
+// smoothly in time with the beat; at the wrap it jumps back to the left edge.
+function movePlayhead(step: number): void {
+    const width = 100 / STEPS;
+    if (step === 0) {
+        playheadEl.style.transition = "none";
+        playheadEl.style.left = "0%";
+        void playheadEl.offsetWidth; // apply the jump before the next glide starts
+    }
+    playheadEl.style.transition = `left ${currentStepMs()}ms linear`;
+    playheadEl.style.left = `${(step + 1) * width}%`;
+}
+
+/** A short burst on a tile the player just tapped. */
+function flashCell(step: number, note: number): void {
+    const cell = cellEls[step]?.[note];
+    if (!cell || !introMode) return;
+    cell.classList.remove("pop");
+    void cell.offsetWidth; // restart the animation on repeated taps
+    cell.classList.add("pop");
 }
 
 function updateHud(): void {
@@ -397,10 +437,12 @@ function tick(): void {
     }
     playStep(currentStep);
     drumAlong(currentStep);
+    if (introMode) movePlayhead(currentStep);
     renderGrid();
     if (replayStepsLeft > 0 && --replayStepsLeft === 0) {
         // let the last step ring out before the intro moves on
         stopSequencer();
+        renderGrid();
         const done = replayDone;
         replayDone = null;
         window.setTimeout(() => done?.(), currentStepMs());
@@ -439,6 +481,7 @@ function setNote(note: number): void {
     earcon(ctx, "place");
     log(`stap ${step + 1}: noot ${note + 1} (${INSTRUMENT_LABEL_NL[currentInstrument]})`);
     renderGrid();
+    flashCell(step, note);
     if (introMode) {
         intro?.notify("place");
         if (currentInstrument !== INTRO_INSTRUMENTS[0]) intro?.notify("placeOther");
@@ -662,6 +705,7 @@ function endIntro(): void {
     replayDone = null;
     introStageEl.hidden = true;
     hudEl.classList.remove("hidden");
+    renderGrid();
 }
 
 function finishIntro(): void {
