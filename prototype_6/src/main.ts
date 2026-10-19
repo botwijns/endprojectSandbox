@@ -686,6 +686,8 @@ function stopGame(): void {
     nextBriefTimer = null;
     trackSubmitted = false;
     stopSequencer();
+    // the end-of-session medley is queued up front, so silence what's left of it
+    player.cancelQueue(ctx);
     phase = "idle";
     endIntro();
     stopSpeech();
