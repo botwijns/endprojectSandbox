@@ -5,7 +5,7 @@ import {SynthManager} from "./audio/SynthManager.ts";
 import {InstrumentManager, FISH, fishById, type FishDef} from "./audio/InstrumentManager.ts";
 import {Howl, Howler} from "howler";
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { getEmbed, setupEmbedStart, embedDone, num } from "../../src/embed.ts";
+import { getEmbed, setupEmbedStart, embedDone, num, track, EXPERIMENT_SOUNDS } from "../../src/embed.ts";
 import {createIntroLevel, type IntroLevel, type Gesture, type GestureOptions} from "./intro/introLevel.ts";
 import {FISH_NAME_LINES, playGameLine, playSpeech, stopLine} from "./intro/speech.ts";
 
@@ -237,6 +237,7 @@ async function startGame(asIntro: boolean): Promise<void> {
     }
 
     state.running = true;
+    track("game_start", { ...DAY_CONFIG, experiment });
     startDay(1);
 }
 
@@ -265,6 +266,7 @@ function startDay(day: number): void {
     state.taskList = shuffle(FISH).slice(0, Math.max(1, Math.min(count, FISH.length))).map(f => f.id);
     state.caughtToday = [];
     log(`Dag ${day}`);
+    track("day_start", { day, taskList: [...state.taskList] });
     updateUI();
     void announceTaskList("dayStart");
 }
@@ -334,6 +336,7 @@ function finishGame(): void {
     soundFishingBackground.fade(soundFishingBackground.volume() as number, 0, 1600);
     endTimer = setTimeout(() => {
         const score = state.score;
+        track("game_end", { score, days: DAY_CONFIG.days });
         stopGame();
         if (embed) { embedDone({ score, days: DAY_CONFIG.days }); return; }
         startNoteEl.hidden = false;
@@ -590,6 +593,7 @@ const loop = new GameLoop((dt) => {
             var gorilla:Howl = gorillaSounds[experiment-1];
             gorilla.play()
             gorilla.volume(0.5)
+            track("gorilla", { sound: EXPERIMENT_SOUNDS[experiment-1], day: state.day, remaining: remainingFish().length })
         }
     }
     //wait a tick between phases
@@ -682,6 +686,7 @@ const loop = new GameLoop((dt) => {
             isSoundPlaying = false;
             // soundFailure.play();
             soundCatching.play("escaped")
+            track("catch_result", { day: state.day, fish: state.pendingFish, outcome: "escaped", correct: false, score: state.score });
             state.pendingFish = null;
             resetCrank();
             setPhase("listening");
@@ -728,6 +733,11 @@ function startReeling(): void {
     if (!state.running || state.phase !== "listening" || announcing) return;
     state.pendingFish = state.activeFish; // may be null (touched during silence)
     state.activeFish = null;
+    track("catch_attempt", {
+        day: state.day,
+        fish: state.pendingFish,
+        onList: state.pendingFish !== null && remainingFish().some(f => f.id === state.pendingFish),
+    });
     instruments.stopAll();
     resetCrank();
     stepTimer = 0;
@@ -756,6 +766,7 @@ function resolveReel(): void {
 
     if (!def) {
         // reeled in an empty hook — the miss lands now, not when you touched
+        track("catch_result", { day: state.day, fish: null, outcome: "empty", correct: false, score: state.score });
         soundCatching.play("escaped")
         log("niks aan de haak...");
     } else if (state.taskList.includes(def.id) && !state.caughtToday.includes(def.id)) {
@@ -765,6 +776,8 @@ function resolveReel(): void {
         soundCatching.play("success")
         log(`${def.label} gevangen! Die stond op je lijstje.`);
         const dayDone = remainingFish().length === 0;
+        track("catch_result", { day: state.day, fish: def.id, outcome: "caught", correct: true, score: state.score });
+        if (dayDone) track("day_end", { day: state.day, caught: [...state.caughtToday], score: state.score });
         void speak(async alive => {
             await wait(1200); // let the catch sound land first
             if (!alive()) return;
@@ -783,6 +796,9 @@ function resolveReel(): void {
     } else {
         // not on today's list (or already caught) — it goes back in the water
         const already = state.caughtToday.includes(def.id);
+        track("catch_result", {
+            day: state.day, fish: def.id, outcome: already ? "already_caught" : "not_on_list", correct: false, score: state.score,
+        });
         soundCatching.play("escaped")
         log(`${def.label} — ${already ? "die had je al" : "staat niet op je lijstje"}, terug het water in`);
         void speak(async alive => {

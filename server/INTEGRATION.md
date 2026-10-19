@@ -155,3 +155,40 @@ To change the questions, edit `server/survey-template.json` and bump its
   `survey/index.html`** to the production URL.
 - Redeploy Pages after editing `server/survey-template.json` so the bundled copy
   on the `/survey/` page matches what the server validates against.
+
+---
+
+## Combined-flow telemetry (prototypes 5, 6, 7)
+
+The combined shell (`combined/`) already wires this up — nothing to add per page.
+Games call `track(type, payload)` from `src/embed.ts`; that posts the event to the
+shell, which batches it to `POST /api/sessions/:id/progress` under the flow's one
+session (the same id the survey uses). Standalone pages and oefenlevels send no
+game events; the shell logs `segment_start` / `segment_done` for every segment.
+
+Every event's payload also carries `segment` (index in the flow, -1 for flow-level
+events), `mode`, `title`, `clientAt` (when it happened in the browser — the
+server's `at` is when the batch arrived) and `segmentMs` (ms since the segment began).
+
+| prototype | type | payload |
+|---|---|---|
+| combined | `flow_start` | flow, segments `[{proto, mode, title}]` |
+| combined | `segment_start` | proto, mode, params |
+| combined | `segment_done` / `segment_skipped` | proto, result |
+| combined | `flow_end` | segments |
+| prototype_5 | `game_start` | days, fishFirstDay, maxExtraPerDay, experiment |
+| prototype_5 | `day_start` | day, taskList |
+| prototype_5 | `catch_attempt` | day, fish (null = empty hook), onList |
+| prototype_5 | `catch_result` | day, fish, outcome (`caught` / `not_on_list` / `already_caught` / `empty` / `escaped`), correct, score |
+| prototype_5 | `day_end` | day, caught, score |
+| prototype_5 | `game_end` | score, days |
+| prototype_6 | `game_start` | bpm, songCount, briefs, experiment, randomNote |
+| prototype_6 | `song_finished` | index, brief, notes `[step, note, instrument][]`, instruments, noteCount, loops, durationMs |
+| prototype_6 | `game_end` | tracks |
+| prototype_7 | `game_start` | questions, experiment, startRatings |
+| prototype_7 | `question_answered` | number, total, category, traitId, difficulty, prompt, options, correctAnswer, chosenAnswer, correct, repeats, songRating, correctSoFar, ratings |
+| prototype_7 | `game_end` | score, total, ratings |
+| all three | `gorilla` | sound (`meow` / `bark` / `boing`) + where: day/remaining (p5), songIndex/loop/step (p6), question (p7) |
+
+Get the data with `npm run export` (or `GET /api/export`): each session's `events`
+array holds them in order.

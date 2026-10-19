@@ -2,8 +2,12 @@
 // prototype page in a full-screen iframe (see src/embed.ts for the other side).
 
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { segmentTitle, segmentUrl, type Flow, type ServerSession } from "./segments.ts";
+import { segmentTitle, segmentUrl, type Flow, type ProtoId, type ServerSession } from "./segments.ts";
 import { connectSession } from "./session.ts";
+import { createTracker, type Tracker } from "./telemetry.ts";
+
+/** The `prototype` column of the server's event log, per game. */
+const PROTOTYPE_NAME: Record<ProtoId, string> = { p5: "prototype_5", p6: "prototype_6", p7: "prototype_7" };
 
 interface Options {
     /** show a "Volgende" button so the researcher can skip a segment */
@@ -58,10 +62,25 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
     let session: ServerSession = { id: -1, number: -1 };
     // the per-category ratings the last P7 quiz ended on, for the next quiz part
     let lastRatings: Record<string, number> | null = null;
+    // telemetry for the whole flow, under the session above; null until it's known
+    let tracker: Tracker | null = null;
+    let segmentStart = 0;
+
+    function context() {
+        const seg = flow.segments[index];
+        return seg
+            ? { segment: index, mode: seg.mode, title: segmentTitle(seg), segmentStart }
+            : { segment: -1 };
+    }
+
+    function logShell(type: string, payload: Record<string, unknown> = {}): void {
+        tracker?.log("combined", type, payload, context());
+    }
 
     // ask the server for the session right away, so it's usually ready by the first tap
     const sessionReady = connectSession().then(s => {
         session = s;
+        tracker = createTracker(s);
         badge.textContent = `sessie ${s.number}`;
     });
 
@@ -86,6 +105,8 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
             ? { ratings: lastRatings }
             : {};
         frame.src = segmentUrl(seg, session, extra);
+        segmentStart = Date.now();
+        logShell("segment_start", { proto: seg.proto, mode: seg.mode, params: { ...seg.params, ...extra } });
         badge.hidden = true; // the game shows its own badge
         // the segment's own page shows the title + "tik om te beginnen"; say it too, eyes-free
         speak(index === 0
@@ -95,6 +116,8 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
 
     function finish(): void {
         console.info("[combined] flow finished", results);
+        logShell("flow_end", { segments: flow.segments.length });
+        void tracker?.flush();
         show("Klaar! 🎉", "Bedankt voor het spelen.");
         badge.hidden = false;
         speak("Klaar! Bedankt voor het spelen.");
@@ -111,8 +134,17 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         if (e.origin !== location.origin || e.source !== frame.contentWindow) return;
         const data = e.data as { source?: string; type?: string; result?: unknown };
         if (data?.source !== "combined-embed") return;
-        if (data.type === "done") {
+        if (data.type === "event") {
+            const ev = (data as { event?: { type?: unknown; payload?: unknown; at?: unknown } }).event;
+            const seg = flow.segments[index];
+            if (!seg || typeof ev?.type !== "string") return;
+            const payload = ev.payload && typeof ev.payload === "object" ? ev.payload as Record<string, unknown> : {};
+            const at = typeof ev.at === "number" ? ev.at : Date.now();
+            tracker?.log(PROTOTYPE_NAME[seg.proto], ev.type, payload, context(), at);
+        } else if (data.type === "done") {
             results[index] = data.result ?? {};
+            logShell("segment_done", { proto: flow.segments[index]?.proto, result: data.result ?? {} });
+            void tracker?.flush();
             const ratings = (data.result as { ratings?: unknown } | undefined)?.ratings;
             if (flow.segments[index]?.proto === "p7" && ratings && typeof ratings === "object") {
                 lastRatings = ratings as Record<string, number>;
@@ -122,7 +154,11 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         }
     });
 
-    skipBtn.addEventListener("click", () => { results[index] = { skipped: true }; next(); });
+    skipBtn.addEventListener("click", () => {
+        results[index] = { skipped: true };
+        logShell("segment_skipped", { proto: flow.segments[index]?.proto });
+        next();
+    });
 
     // the first tap is the shell's own user gesture: fullscreen + speech unlock
     show(flow.name, `${flow.segments.length} onderdelen · tik op het scherm om te beginnen`);
@@ -134,6 +170,12 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         document.body.classList.add("playing");
         sub.textContent = "verbinden…";
         // waits at most connectSession()'s timeout; offline → -1 / -1
-        void sessionReady.then(next);
+        void sessionReady.then(() => {
+            logShell("flow_start", {
+                flow: flow.name,
+                segments: flow.segments.map(seg => ({ proto: seg.proto, mode: seg.mode, title: segmentTitle(seg) })),
+            });
+            next();
+        });
     });
 }

@@ -10,7 +10,7 @@ import {
     DRUMS_SVG, EAR_SVG, PHONE_ZONES_2_SVG, PHONE_ZONES_4_SVG, TAP_SVG, DOUBLE_TAP_SVG, SHAKE_SVG,
 } from "./introIcons.ts";
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { getEmbed, setupEmbedStart, embedDone, num, numRecord } from "../../src/embed.ts";
+import { getEmbed, setupEmbedStart, embedDone, num, numRecord, track, EXPERIMENT_SOUNDS } from "../../src/embed.ts";
 
 // set when the combined/ shell runs this page as one segment of a longer flow
 const embed = getEmbed();
@@ -55,6 +55,8 @@ const gorillaSounds: Howl[] = [
     new Howl({ src: "sounds/boing.mp3" }),
 ];
 let gorillaPlayed = false;
+// how often the player asked for the current question again (telemetry)
+let repeats = 0;
 const GORILLA_GAP_MS = 400; // silence between the gorilla sound and the piece
 
 // ── Screens ─────────────────────────────────────────────────────────────────
@@ -605,12 +607,19 @@ function presentQuestion(): void {
             const gorilla = gorillaSounds[experiment - 1];
             gorilla.volume(0.5);
             gorilla.play();
+            track("gorilla", { sound: EXPERIMENT_SOUNDS[experiment - 1], question: session.progress.current });
             const gorillaMs = gorilla.duration() > 0 ? gorilla.duration() * 1000 : 1500;
             later(startPiece, gorillaMs + GORILLA_GAP_MS);
         } else {
             startPiece();
         }
     }, readMs);
+}
+
+/** The player asked to hear the question again. */
+function repeatQuestion(): void {
+    repeats++;
+    presentQuestion();
 }
 
 function previewOption(index: AnswerIndex): void {
@@ -665,6 +674,23 @@ function commitOption(index: AnswerIndex): void {
 
     if (!session) return;
     const answered = session.submitAnswer(chosen);
+    track("question_answered", {
+        number: session.history.length,
+        total: session.progress.total,
+        category: q.category,
+        traitId: q.traitId,
+        difficulty: q.difficulty,
+        prompt: q.prompt,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        chosenAnswer: chosen,
+        correct: answered.correct,
+        repeats,
+        songRating: q.songRating,
+        correctSoFar: session.score,
+        ratings: session.ratings,
+    });
+    repeats = 0;
     renderHud();
     giveFeedback(q, answered.correct);
 
@@ -681,6 +707,8 @@ function beginQuiz(): void {
     // in the combined flow, start from the ratings a previous quiz part ended on
     session = new QuizSession(QUIZ_LENGTH, songPicker.value || undefined, numRecord(embed, "ratings") ?? undefined);
     gorillaPlayed = false;
+    repeats = 0;
+    track("game_start", { questions: QUIZ_LENGTH, experiment, startRatings: session.ratings });
     input.setQuizEnabled(true);
     speak("Daar gaan we. Luister goed.");
     later(presentQuestion, 1600);
@@ -694,6 +722,7 @@ function endQuiz(): void {
     const total = session.history.length;
     const score = session.score;
     lastResultsSummary = session.performanceSummary().filter(s => s.avgDelta > 0);
+    track("game_end", { score, total, ratings: session.ratings });
     renderHud();
     cue("done");
     later(() => speak(`Klaar. Je had ${score} van de ${total} goed.`), 500);
@@ -729,7 +758,7 @@ input.onAction((action: QuizAction) => {
             commitOption(action.index);
             return;
         case "repeat":
-            if (phase === "listening") presentQuestion();
+            if (phase === "listening") repeatQuestion();
             return;
     }
 });
@@ -740,7 +769,7 @@ gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterF
 stopBtn.addEventListener("click", () => stopGame());
 previewRepeatBtn.addEventListener("click", () => playPreviewStep(runId));
 previewNextBtn.addEventListener("click", () => advancePreview(runId));
-repeatQuestionBtn.addEventListener("click", () => { if (phase === "listening") presentQuestion(); });
+repeatQuestionBtn.addEventListener("click", () => { if (phase === "listening") repeatQuestion(); });
 readOptionsBtn.addEventListener("click", () => {
     if (phase !== "listening") return;
     clearPending();

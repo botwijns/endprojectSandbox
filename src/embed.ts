@@ -94,6 +94,19 @@ function post(type: string, data: Record<string, unknown> = {}): void {
     window.parent.postMessage({ source: "combined-embed", type, ...data }, location.origin);
 }
 
+/** The gorilla experiment's sounds, by `experiment` value - 1 (0 = off). */
+export const EXPERIMENT_SOUNDS = ["meow", "bark", "boing"] as const;
+
+/**
+ * Telemetry: one game event, forwarded by the shell to the game server under
+ * the flow's session. Only game segments log — standalone pages and oefenlevels
+ * send nothing (the shell itself logs when an oefenlevel starts and ends).
+ */
+export function track(type: string, payload: Record<string, unknown> = {}): void {
+    if (getEmbed()?.mode !== "game") return;
+    post("event", { event: { type, payload, at: Date.now() } });
+}
+
 let doneSent = false;
 /** The segment is over — the shell moves on to the next one. Sent once. */
 export function embedDone(result: Record<string, unknown> = {}): void {
