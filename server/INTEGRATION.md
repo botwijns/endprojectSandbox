@@ -178,7 +178,7 @@ server's `at` is when the batch arrived) and `segmentMs` (ms since the segment b
 
 | prototype | type | payload |
 |---|---|---|
-| combined | `flow_start` | flow, segments `[{proto, mode, title}]` |
+| combined | `flow_start` | flow, gorilla (sound for the whole run: `uit` / `miauw` / `blaf` / `boing`), gorillaRandom, segments `[{proto, mode, title}]` |
 | combined | `segment_start` | proto, mode, params |
 | combined | `segment_done` / `segment_skipped` | proto, result |
 | combined | `flow_end` | segments |

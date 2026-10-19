@@ -1,6 +1,7 @@
 {
   "name": "voorbeeld",
   "surveyAtEnd": false,
+  "gorilla": 1,
   "segments": [
     {
       "proto": "p7",
@@ -13,7 +14,7 @@
       "params": {
         "questions": 4,
         "carryRatings": true,
-        "experiment": 1
+        "gorilla": true
       }
     },
     {
@@ -28,7 +29,7 @@
         "days": 2,
         "fishFirstDay": 2,
         "maxExtraPerDay": 1,
-        "experiment": 1
+        "gorilla": true
       }
     },
     {
@@ -49,7 +50,7 @@
         ],
         "speech": true,
         "randomNote": false,
-        "experiment": 1
+        "gorilla": true
       }
     }
   ]
