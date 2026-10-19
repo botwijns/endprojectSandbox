@@ -3,7 +3,7 @@
 
 import { enterFullscreen } from "../../src/fullscreen.ts";
 import { segmentTitle, segmentUrl, type Flow, type ProtoId, type ServerSession } from "./segments.ts";
-import { connectSession } from "./session.ts";
+import { connectSession, endSession } from "./session.ts";
 import { createTracker, type Tracker } from "./telemetry.ts";
 
 /** The `prototype` column of the server's event log, per game. */
@@ -117,7 +117,7 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
     function finish(): void {
         console.info("[combined] flow finished", results);
         logShell("flow_end", { segments: flow.segments.length });
-        void tracker?.flush();
+        const flushed = tracker?.flush() ?? Promise.resolve();
         show("Klaar! 🎉", "Bedankt voor het spelen.");
         badge.hidden = false;
         speak("Klaar! Bedankt voor het spelen.");
@@ -127,6 +127,10 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
             const api = new URLSearchParams(location.search).get("api");
             if (api) survey.searchParams.set("api", api);
             window.setTimeout(() => { location.href = survey.href; }, 3500);
+        } else {
+            // no survey to link answers to: the session is over (the survey page
+            // forgets the id itself, after submitting) — once the last events are sent
+            void flushed.finally(endSession);
         }
     }
 

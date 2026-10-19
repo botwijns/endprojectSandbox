@@ -8,7 +8,7 @@
 import type { ServerSession } from "./segments.ts";
 
 interface Telemetry {
-    recordProgress(patch: { events: TelemetryEvent[] }): Promise<unknown>;
+    _apiBase(): string;
 }
 
 interface TelemetryEvent {
@@ -37,6 +37,20 @@ export interface Tracker {
 export function createTracker(session: ServerSession): Tracker {
     const telemetry = (window as unknown as { GameTelemetry?: Telemetry }).GameTelemetry;
     const online = session.id !== -1 && !!telemetry;
+    // Posts to *this* session's id directly instead of GameTelemetry.recordProgress(),
+    // which looks the session up again at send time: once the flow ends the
+    // shell forgets the id (endSession), and a late batch would otherwise
+    // start a fresh session.
+    const url = online ? `${telemetry!._apiBase()}/api/sessions/${encodeURIComponent(String(session.id))}/progress` : "";
+
+    function send(events: TelemetryEvent[]): Promise<void> {
+        return fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ events }),
+            keepalive: true, // lets the last batch land while the page is being left
+        }).then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); });
+    }
     const queue: TelemetryEvent[] = [];
     let sending: Promise<void> = Promise.resolve();
     let timer: number | null = null;
@@ -46,8 +60,8 @@ export function createTracker(session: ServerSession): Tracker {
         if (!online || queue.length === 0) return sending;
         const batch = queue.splice(0, MAX_BATCH);
         sending = sending
-            .then(() => telemetry!.recordProgress({ events: batch }))
-            .then(() => undefined, err => console.warn("[combined] telemetry not sent", err));
+            .then(() => send(batch))
+            .catch(err => console.warn("[combined] telemetry not sent", err));
         return queue.length ? flush() : sending;
     }
 
