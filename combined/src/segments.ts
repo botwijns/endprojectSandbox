@@ -28,18 +28,25 @@ export interface ProtoDef {
     params: Record<Mode, ParamDef[]>;
 }
 
-/** The "gorilla" experiment every game has: an unexpected sound, played once. */
-function experimentParam(when: string): ParamDef {
-    return {
-        key: "experiment", label: "Experiment (onverwacht geluid)", type: "select", default: 1,
-        options: [
-            { value: 0, label: "uit" },
-            { value: 1, label: "miauw" },
-            { value: 2, label: "blaf" },
-            { value: 3, label: "boing" },
-        ],
-        help: when,
-    };
+/**
+ * The "gorilla" experiment every game has: an unexpected sound, played once,
+ * plus which day / song / question (1-based) it plays in.
+ */
+function experimentParams(unit: string, units: string, max: number, when: string): ParamDef[] {
+    return [
+        {
+            key: "experiment", label: "Experiment (onverwacht geluid)", type: "select", default: 1,
+            options: [
+                { value: 0, label: "uit" },
+                { value: 1, label: "miauw" },
+                { value: 2, label: "blaf" },
+                { value: 3, label: "boing" },
+            ],
+            help: when,
+        },
+        { key: "gorillaAt", label: `Experiment klinkt in ${unit}`, type: "number", default: 2, min: 1, max,
+          help: `meer dan het aantal ${units} = klinkt nooit` },
+    ];
 }
 
 export const PROTOS: ProtoDef[] = [
@@ -54,7 +61,7 @@ export const PROTOS: ProtoDef[] = [
                 { key: "fishFirstDay", label: "Vissen op het lijstje op dag 1", type: "number", default: 3, min: 1, max: 12 },
                 { key: "maxExtraPerDay", label: "Max. extra vissen per dag", type: "number", default: 1, min: 0, max: 5,
                   help: "elke volgende dag komen er 0 t/m dit aantal bij" },
-                experimentParam("klinkt op dag 2, bij de laatste vis van het lijstje (vanaf 2 dagen)"),
+                ...experimentParams("dag", "dagen", 10, "klinkt bij de laatste vis van het lijstje"),
             ],
         },
     },
@@ -73,7 +80,7 @@ export const PROTOS: ProtoDef[] = [
                   help: "leeg = standaardvolgorde; de lijst herhaalt als er meer nummers zijn" },
                 { key: "speech", label: "Spraak (voice-over)", type: "bool", default: true },
                 { key: "randomNote", label: "Willekeurige toonhoogte bij plaatsen", type: "bool", default: false },
-                experimentParam("vervangt een drumslag tijdens het 2e nummer (vanaf 2 nummers)"),
+                ...experimentParams("nummer", "nummers", 20, "vervangt een drumslag (vanaf de 4e herhaling)"),
             ],
         },
     },
@@ -87,7 +94,7 @@ export const PROTOS: ProtoDef[] = [
                 { key: "questions", label: "Aantal vragen", type: "number", default: 8, min: 1, max: 30 },
                 { key: "carryRatings", label: "Spelersniveau overnemen van vorige quiz", type: "bool", default: true,
                   help: "start met de ratings waarop een eerder quizdeel in deze flow eindigde" },
-                experimentParam("klinkt bij vraag 2, vóór de muziek (vanaf 2 vragen)"),
+                ...experimentParams("vraag", "vragen", 30, "klinkt vóór de muziek"),
             ],
         },
     },

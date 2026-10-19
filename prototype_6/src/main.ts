@@ -121,9 +121,10 @@ window.addEventListener("pointerdown", () => {
 // ── Gorilla experiment ───────────────────────────────────────────────────────
 // Like prototype 5: an unexpected sound slipped into the game. `experiment`
 // picks which one (0 = off, 1 = meow, 2 = bark, 3 = boing). It replaces one
-// background drum hit during the second melody — not before its fourth loop and
-// not on the bar's first drum hit — once per game.
+// background drum hit during the second melody (or the `gorillaAt`th) — not
+// before its fourth loop and not on the bar's first drum hit — once per game.
 let experiment = num(embed, "experiment", 1, 0, 3);
+const GORILLA_SONG = num(embed, "gorillaAt", 2, 1, 20) - 1; // briefIndex is 0-based
 const gorillaSounds: Howl[] = [
     new Howl({ src: "sounds/meow.mp3" }),
     new Howl({ src: "sounds/bark.mp3" }),
@@ -393,9 +394,9 @@ function hasDrumHit(step: number): boolean {
 }
 
 // The gorilla takes the place of a drum hit on the fourth loop (or later) of
-// the second melody, and never the bar's first drum hit.
+// the GORILLA_SONG melody, and never the bar's first drum hit.
 function gorillaReplacesDrums(step: number): boolean {
-    if (experiment <= 0 || gorillaPlayed || introMode || briefIndex !== 1 || briefLoop < 4) return false;
+    if (experiment <= 0 || gorillaPlayed || introMode || briefIndex !== GORILLA_SONG || briefLoop < 4) return false;
     if (!hasDrumHit(step)) return false;
     for (let s = 0; s < step; s++) if (hasDrumHit(s)) return true;
     return false;

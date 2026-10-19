@@ -47,8 +47,10 @@ let fontPoll: number | null = null;
 // ── Gorilla experiment ───────────────────────────────────────────────────────
 // Like prototype 5: an unexpected sound slipped into the game. `experiment`
 // picks which one (0 = off, 1 = meow, 2 = bark, 3 = boing). It plays once, on
-// the second question, after the question is spoken and before the music.
+// the second question (or the `gorillaAt`th), after the question is spoken and
+// before the music.
 let experiment = num(embed, "experiment", 1, 0, 3);
+const GORILLA_QUESTION = num(embed, "gorillaAt", 2, 1, 30);
 const gorillaSounds: Howl[] = [
     new Howl({ src: "sounds/meow.mp3" }),
     new Howl({ src: "sounds/bark.mp3" }),
@@ -602,7 +604,7 @@ function presentQuestion(): void {
         later(readOptions, ms + 700);
     };
     later(() => {
-        if (experiment > 0 && !gorillaPlayed && !introMode && session?.progress.current === 2) {
+        if (experiment > 0 && !gorillaPlayed && !introMode && session?.progress.current === GORILLA_QUESTION) {
             gorillaPlayed = true;
             const gorilla = gorillaSounds[experiment - 1];
             gorilla.volume(0.5);
