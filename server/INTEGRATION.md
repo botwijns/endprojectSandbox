@@ -27,6 +27,12 @@ the `<meta>` tag, then the origin the script itself was loaded from.
 // Safe to call as often as you like — it creates the session once, caches the
 // id in localStorage, and resumes it on the next visit.
 await GameTelemetry.session();
+
+// When the player is done, forget the id on this device so the next player
+// gets a new session (the server keeps the data). The survey page does this
+// itself after a successful submit; the combined/ shell does it when a flow
+// without a survey finishes.
+GameTelemetry.resetSession();
 ```
 
 ## 3. Record progress

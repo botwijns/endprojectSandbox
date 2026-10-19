@@ -3,7 +3,7 @@
 
 import { enterFullscreen } from "../../src/fullscreen.ts";
 import { segmentTitle, segmentUrl, type Flow, type ServerSession } from "./segments.ts";
-import { connectSession } from "./session.ts";
+import { connectSession, endSession } from "./session.ts";
 
 interface Options {
     /** show a "Volgende" button so the researcher can skip a segment */
@@ -104,6 +104,10 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
             const api = new URLSearchParams(location.search).get("api");
             if (api) survey.searchParams.set("api", api);
             window.setTimeout(() => { location.href = survey.href; }, 3500);
+        } else {
+            // no survey to link answers to: the session is over (the survey page
+            // forgets the id itself, after submitting)
+            endSession();
         }
     }
 

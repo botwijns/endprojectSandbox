@@ -309,7 +309,10 @@
 
         T.submitSurvey(answers).then(
           function (result) {
-            showSessionNumber(T);
+            // The survey closes the session: forget the id so the next player on
+            // this device starts fresh. The badge keeps showing the finished
+            // session's number (calling showSessionNumber now would create a new one).
+            T.resetSession();
             root.innerHTML = '';
             root.appendChild(
               h('p', { class: 'gs-done', text: template.thankYou || 'Bedankt, je antwoorden zijn opgeslagen.' }),
