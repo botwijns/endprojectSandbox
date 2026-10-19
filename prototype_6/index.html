@@ -77,6 +77,38 @@
     }
     .cell { background: rgb(0 0 0 / 0.06); border-radius: 4px; }
     .cell.current { outline: 2px solid rgb(0 0 0 / 0.65); outline-offset: -2px; }
+
+    /* ── Intro grid overlay: see-through, in the campfire's colours ─────── */
+    /* Faint tiles, a column that warms up under the playhead, a glowing line
+       sweeping left → right, and placed notes as half-transparent embers, so
+       the scene behind always stays visible. */
+    #grid.intro-grid { pointer-events: none; }
+    #grid.intro-grid .cell {
+      background: rgb(255 243 196 / 0.05);
+      transition: background 120ms, box-shadow 120ms;
+    }
+    #grid.intro-grid .cell.current { outline: none; background: rgb(255 180 74 / 0.13); }
+    #grid.intro-grid .cell.filled {
+      background: color-mix(in srgb, var(--tile) 45%, transparent);
+      box-shadow: 0 0 10px color-mix(in srgb, var(--tile) 35%, transparent);
+    }
+    /* a note brightens as the line passes over it */
+    #grid.intro-grid .cell.filled.current {
+      background: color-mix(in srgb, var(--tile) 75%, transparent);
+      box-shadow: 0 0 18px color-mix(in srgb, var(--tile) 70%, transparent);
+    }
+    #grid.intro-grid .cell.pop { animation: tile-pop 450ms ease-out; }
+    @keyframes tile-pop {
+      0%   { transform: scale(1.18); filter: brightness(1.8); }
+      100% { transform: scale(1);    filter: brightness(1); }
+    }
+    #playhead { display: none; }
+    #grid.intro-grid #playhead {
+      display: block; position: absolute; top: 2px; bottom: 2px; left: 0;
+      width: 3px; margin-left: -1.5px; border-radius: 2px;
+      background: rgb(255 214 140 / 0.7);
+      box-shadow: 0 0 12px 3px rgb(255 140 50 / 0.45);
+    }
     #log {
       position: fixed; bottom: 15%; left: 8px; z-index: 10;
       font-size: 13px; opacity: 0.85;
