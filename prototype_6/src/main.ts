@@ -7,7 +7,7 @@ import { speak, earcon, setSpeechEnabled, stopSpeech } from "./speech.ts";
 import { createIntroLevel, type IntroGate, type IntroLevel } from "./intro/introLevel.ts";
 import "webaudiofont";
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { getEmbed, setupEmbedStart, embedDone, num, bool, strList } from "../../src/embed.ts";
+import { getEmbed, setupEmbedStart, embedDone, num, bool, strList, track, EXPERIMENT_SOUNDS } from "../../src/embed.ts";
 
 // set when the combined/ shell runs this page as one segment of a longer flow
 const embed = getEmbed();
@@ -239,6 +239,7 @@ let briefIndex = 0;
 let currentBrief: Brief = BRIEFS[0];
 let drumPattern: DrumPattern | null = null;
 let briefLoop = 0;                    // full bars played in the current brief (1 = first loop)
+let briefStartedAt = 0;               // Date.now() when the current brief began (telemetry)
 
 interface MixtapeTrack {
     brief: string;
@@ -408,6 +409,7 @@ function playStep(step: number): void {
         gorilla.volume(0.5);
         gorilla.play();
         gorillaPlayed = true;
+        track("gorilla", { sound: EXPERIMENT_SOUNDS[experiment - 1], songIndex: briefIndex, loop: briefLoop, step });
     }
     for (const instrument of INSTRUMENTS) {
         const slot = pattern[instrument][step];
@@ -551,6 +553,7 @@ function loadBrief(index: number): void {
     placedNoteStack.length = 0; // the previous brief's pattern is about to be cleared
     trackSubmitted = false;
     briefLoop = 0;
+    briefStartedAt = Date.now();
 
     // fresh groove for the new vibe; the player's melody is kept
     drumPattern = generateDrumPattern(STEPS, currentBrief.grooveStyle);
@@ -575,6 +578,15 @@ function finishTrack(): void {
         });
     }
     mixtape.push({ brief: currentBrief.id, notes, groove: drumPattern, volume: currentVolume });
+    track("song_finished", {
+        index: briefIndex,
+        brief: currentBrief.id,
+        notes,
+        instruments: [...new Set(notes.map(([, , id]) => id))],
+        noteCount: notes.length,
+        loops: briefLoop,
+        durationMs: Date.now() - briefStartedAt,
+    });
     persistMixtape();
 
     earcon(ctx, "done");
@@ -596,6 +608,7 @@ function finishTrack(): void {
 
 function endSession(): void {
     phase = "done";
+    track("game_end", { tracks: mixtape.length });
     stopSequencer();
     updateHud();
     renderGrid();
@@ -816,6 +829,11 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
         startIntro();
     } else {
         introMode = false;
+        track("game_start", {
+            bpm, songCount: SONG_COUNT,
+            briefs: Array.from({ length: SONG_COUNT }, (_, i) => briefFor(i).id),
+            experiment, randomNote: randomNoteMode,
+        });
         loadBrief(0);   // starts the sequencer
     }
     earcon(ctx, "start");
