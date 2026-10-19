@@ -44,6 +44,7 @@ const DAY_CONFIG = {
 };
 const LIST_BITE_CHANCE = 0.6; // share of bites that are a fish still on today's list
 let experiment = num(embed, "experiment", 1, 0, 3);
+const GORILLA_DAY = num(embed, "gorillaAt", 2, 1, 10); // the day the gorilla sound plays on
 // --- introduction level -----------------------------------------------------
 // The intro is a guided, spoken tutorial in two animated scenes (see
 // src/intro/introLevel.ts). Each step is explained and shown, then the player
@@ -585,7 +586,7 @@ const loop = new GameLoop((dt) => {
             updateUI()
         }
         //play experiment sound when experiment is called
-        if (experiment>0&&!gorillaPlayed&&state.day==2&&remainingFish().length==1){
+        if (experiment>0&&!gorillaPlayed&&state.day==GORILLA_DAY&&remainingFish().length==1){
             gorillaPlayed = true
             var gorilla:Howl = gorillaSounds[experiment-1];
             gorilla.play()
