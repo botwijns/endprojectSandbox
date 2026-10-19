@@ -11,6 +11,11 @@ import type { ServerSession } from "./segments.ts";
 interface Telemetry {
     setApiBase(base: string): void;
     session(): Promise<{ id: string; number: number }>;
+    resetSession(): void;
+}
+
+function telemetry(): Telemetry | undefined {
+    return (window as unknown as { GameTelemetry?: Telemetry }).GameTelemetry;
 }
 
 const OFFLINE: ServerSession = { id: -1, number: -1 };
@@ -20,12 +25,12 @@ let pending: Promise<ServerSession> | null = null;
 
 export function connectSession(): Promise<ServerSession> {
     if (pending) return pending;
-    const telemetry = (window as unknown as { GameTelemetry?: Telemetry }).GameTelemetry;
+    const t = telemetry();
     const api = new URLSearchParams(location.search).get("api");
-    if (api) telemetry?.setApiBase(api);
+    if (api) t?.setApiBase(api);
 
-    const request: Promise<ServerSession> = telemetry
-        ? telemetry.session().then(s =>
+    const request: Promise<ServerSession> = t
+        ? t.session().then(s =>
             typeof s?.id === "string" && Number.isInteger(s.number) ? { id: s.id, number: s.number } : OFFLINE)
         : Promise.resolve(OFFLINE);
     const timeout = new Promise<ServerSession>(resolve => window.setTimeout(() => resolve(OFFLINE), TIMEOUT_MS));
@@ -35,4 +40,10 @@ export function connectSession(): Promise<ServerSession> {
         return s;
     });
     return pending;
+}
+
+/** Forget this device's session id, so the next player gets a new session. */
+export function endSession(): void {
+    telemetry()?.resetSession();
+    pending = null;
 }
