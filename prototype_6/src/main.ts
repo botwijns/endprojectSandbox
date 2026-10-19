@@ -1,3 +1,6 @@
+// must come first: in the combined flow's no-tap mode it makes this page borrow
+// the shell's audio, speech and motion before anything creates its own
+import "../../src/embedShared.ts";
 import { InputHandler, SCALE_DEGREES } from "./inputHandler.ts";
 import { ShakeDetector } from "./shake.ts";
 import { Howl, Howler } from "howler";
@@ -7,7 +10,7 @@ import { speak, earcon, setSpeechEnabled, stopSpeech } from "./speech.ts";
 import { createIntroLevel, type IntroGate, type IntroLevel } from "./intro/introLevel.ts";
 import "webaudiofont";
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { getEmbed, setupEmbedStart, embedDone, num, bool, strList } from "../../src/embed.ts";
+import { getEmbed, setupEmbedStart, embedDone, onEmbedStop, num, bool, strList } from "../../src/embed.ts";
 
 // set when the combined/ shell runs this page as one segment of a longer flow
 const embed = getEmbed();
@@ -814,6 +817,8 @@ renderGrid();
 
 // run by the combined/ shell: skip the menu, start straight into the requested mode
 if (embed) {
+    // the shell sends "stop" before removing this page (segment over or skipped)
+    onEmbedStop(stopGame);
     stopBtn.hidden = true;
     setupEmbedStart(embed, () => (embed.mode === "intro" ? introBtn : gameBtn).click());
 }

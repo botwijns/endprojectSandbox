@@ -54,6 +54,9 @@ export function runEditor(root: HTMLElement): void {
     const surveyBox = el("input", { type: "checkbox", checked: !!flow.surveyAtEnd });
     surveyBox.addEventListener("change", () => { flow.surveyAtEnd = surveyBox.checked; save(); });
 
+    const sharedBox = el("input", { type: "checkbox", checked: !!flow.sharedAudio });
+    sharedBox.addEventListener("change", () => { flow.sharedAudio = sharedBox.checked; save(); });
+
     const presetSelect = el("select", {}, el("option", { value: "", textContent: "— kies een preset —" }));
     for (const id of Object.keys(PRESETS)) presetSelect.append(el("option", { value: id, textContent: id }));
     const loadPresetBtn = el("button", { type: "button", textContent: "Laden" });
@@ -82,6 +85,8 @@ export function runEditor(root: HTMLElement): void {
     const header = el("section", { className: "panel" },
         el("label", { className: "row" }, el("span", { textContent: "Naam" }), nameInput),
         el("label", { className: "row check" }, surveyBox, el("span", { textContent: "Na afloop naar de vragenlijst (/survey/)" })),
+        el("label", { className: "row check" }, sharedBox,
+            el("span", { textContent: "Geen tik per spel: alleen de eerste tik, daarna starten de spellen vanzelf (gedeelde audio — test op je toestel)" })),
         el("div", { className: "row" }, presetSelect, loadPresetBtn, importBtn, importInput),
     );
 
@@ -227,6 +232,7 @@ export function runEditor(root: HTMLElement): void {
         flow = next;
         nameInput.value = flow.name;
         surveyBox.checked = !!flow.surveyAtEnd;
+        sharedBox.checked = !!flow.sharedAudio;
         save();
         renderSegments();
     }

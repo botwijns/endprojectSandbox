@@ -22,8 +22,8 @@ export interface CombinedShared {
     ctx: AudioContext;
     /** a fresh output channel for one game, connected to the speakers */
     newBus(): GainNode;
-    /** result of the shell's motion permission request ("granted" off iOS) */
-    motionPermission: PermissionState | "granted" | "denied";
+    /** the shell's motion permission request, started in its first tap ("granted" off iOS) */
+    motion: Promise<"granted" | "denied">;
 }
 
 const MOTION_EVENTS = new Set(["devicemotion", "deviceorientation", "deviceorientationabsolute"]);
@@ -81,7 +81,7 @@ function install(shared: CombinedShared, parentWin: Window & typeof globalThis):
     // the shell removes this page's iframe when the game ends; don't leave listeners behind
     addListener("pagehide", dropMotionListeners);
     // iOS asks for permission per page and only inside a tap: answer with the shell's result
-    const answer = () => Promise.resolve(shared.motionPermission === "granted" ? "granted" : "denied");
+    const answer = () => shared.motion;
     for (const name of ["DeviceMotionEvent", "DeviceOrientationEvent"]) {
         const Ev = w[name] as { requestPermission?: unknown } | undefined;
         if (Ev && typeof Ev.requestPermission === "function") {

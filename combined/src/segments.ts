@@ -112,6 +112,8 @@ export interface Flow {
     name: string;
     /** send the player to the /survey/ page after the last segment */
     surveyAtEnd?: boolean;
+    /** games borrow the shell's audio/speech/motion, so only the very first tap is needed (src/embedShared.ts) */
+    sharedAudio?: boolean;
     segments: Segment[];
 }
 
@@ -144,7 +146,12 @@ export function sanitizeFlow(raw: unknown): Flow | null {
         }
         segments.push({ proto: s.proto, mode, title: typeof s.title === "string" ? s.title : undefined, params });
     }
-    return { name: typeof r.name === "string" ? r.name : "flow", surveyAtEnd: !!r.surveyAtEnd, segments };
+    return {
+        name: typeof r.name === "string" ? r.name : "flow",
+        surveyAtEnd: !!r.surveyAtEnd,
+        sharedAudio: !!r.sharedAudio,
+        segments,
+    };
 }
 
 // ── URL encoding (UTF-8 safe base64url) ─────────────────────────────────────
@@ -180,8 +187,11 @@ export interface ServerSession {
     number: number | -1;
 }
 
-/** The URL a segment's iframe loads. `extra` adds runtime-only params (e.g. carried-over ratings). */
-export function segmentUrl(seg: Segment, session: ServerSession, extra: Record<string, unknown> = {}): string {
+/**
+ * The URL a segment's iframe loads. `extra` adds runtime-only params (e.g. carried-over
+ * ratings); `shared` makes the game borrow the shell's audio instead of showing its tap screen.
+ */
+export function segmentUrl(seg: Segment, session: ServerSession, extra: Record<string, unknown> = {}, shared = false): string {
     const q = new URLSearchParams({
         embed: "1",
         mode: seg.mode,
@@ -190,5 +200,6 @@ export function segmentUrl(seg: Segment, session: ServerSession, extra: Record<s
         sid: String(session.id),
         snum: String(session.number),
     });
+    if (shared) q.set("shared", "1");
     return `${protoDef(seg.proto).path}?${q}`;
 }

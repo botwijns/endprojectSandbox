@@ -4,20 +4,27 @@
 import { enterFullscreen } from "../../src/fullscreen.ts";
 import { segmentTitle, segmentUrl, type Flow, type ServerSession } from "./segments.ts";
 import { connectSession } from "./session.ts";
+import { unlockSharedAudio, type SharedAudio } from "./sharedAudio.ts";
 
 interface Options {
     /** show a "Volgende" button so the researcher can skip a segment */
     skip: boolean;
 }
 
-function speak(text: string): void {
-    if (typeof speechSynthesis === "undefined") return;
+/** Speak, then call `then` when done — or after `maxMs`, if speech is missing or never ends. */
+function speak(text: string, then?: () => void, maxMs = 6000): void {
+    let called = false;
+    const done = () => { if (!called) { called = true; then?.(); } };
+    if (then) window.setTimeout(done, maxMs);
+    if (typeof speechSynthesis === "undefined") return done();
     try {
         speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = "nl-NL";
+        u.onend = done;
+        u.onerror = done;
         speechSynthesis.speak(u);
-    } catch { /* no speech — the on-screen text still shows */ }
+    } catch { done(); /* no speech — the on-screen text still shows */ }
 }
 
 export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
@@ -58,6 +65,8 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
     let session: ServerSession = { id: -1, number: -1 };
     // the per-category ratings the last P7 quiz ended on, for the next quiz part
     let lastRatings: Record<string, number> | null = null;
+    // set on the first tap when the flow uses shared audio (no tap per game)
+    let shared: SharedAudio | null = null;
 
     // ask the server for the session right away, so it's usually ready by the first tap
     const sessionReady = connectSession().then(s => {
@@ -74,27 +83,49 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         screen.hidden = false;
     }
 
+    /** Stop the current game and silence it: its own stopGame(), then cut its audio bus. */
+    function endSegment(): void {
+        frame.contentWindow?.postMessage({ source: "combined-shell", type: "stop" }, location.origin);
+        // the game's stopGame() handles what it knows about; the bus catches the rest
+        shared?.silence();
+    }
+
     function next(): void {
         index++;
         if (index >= flow.segments.length) return finish();
         const seg = flow.segments[index];
         const title = segmentTitle(seg);
-        screen.hidden = true;
-        frame.hidden = false;
         skipBtn.hidden = !opts.skip;
+        badge.hidden = true; // the game shows its own badge
         const extra = seg.proto === "p7" && seg.mode === "game" && seg.params.carryRatings !== false && lastRatings
             ? { ratings: lastRatings }
             : {};
-        frame.src = segmentUrl(seg, session, extra);
-        badge.hidden = true; // the game shows its own badge
+        const url = segmentUrl(seg, session, extra, shared !== null);
+        const lead = index === 0 ? "" : "Goed gedaan! Nu: ";
+
+        if (shared) {
+            // no tap screen in the game: announce it here, then load it once that's been said
+            const myIndex = index;
+            show(title, "");
+            skipBtn.hidden = !opts.skip;
+            speak(`${lead}${title}.`, () => {
+                if (myIndex !== index) return; // skipped meanwhile
+                screen.hidden = true;
+                frame.hidden = false;
+                frame.src = url;
+            });
+            return;
+        }
+        screen.hidden = true;
+        frame.hidden = false;
+        frame.src = url;
         // the segment's own page shows the title + "tik om te beginnen"; say it too, eyes-free
-        speak(index === 0
-            ? `${title}. Tik op het scherm om te beginnen.`
-            : `Goed gedaan! Nu: ${title}. Tik op het scherm om te beginnen.`);
+        speak(`${lead}${title}. Tik op het scherm om te beginnen.`);
     }
 
     function finish(): void {
         console.info("[combined] flow finished", results);
+        endSegment();
         show("Klaar! 🎉", "Bedankt voor het spelen.");
         badge.hidden = false;
         speak("Klaar! Bedankt voor het spelen.");
@@ -118,11 +149,12 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
                 lastRatings = ratings as Record<string, number>;
             }
             console.info(`[combined] segment ${index + 1} done`, data.result);
+            endSegment();
             next();
         }
     });
 
-    skipBtn.addEventListener("click", () => { results[index] = { skipped: true }; next(); });
+    skipBtn.addEventListener("click", () => { results[index] = { skipped: true }; endSegment(); next(); });
 
     // the first tap is the shell's own user gesture: fullscreen + speech unlock
     show(flow.name, `${flow.segments.length} onderdelen · tik op het scherm om te beginnen`);
@@ -130,6 +162,9 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         if (index !== -1) return;
         screen.removeEventListener("click", start);
         void enterFullscreen();
+        // unlock audio, speech and motion here, inside the tap, for the games to borrow
+        if (flow.sharedAudio) shared = unlockSharedAudio();
+        speak("Daar gaan we.");
         // the shared fullscreen toggle would sit on top of the game's tap zones
         document.body.classList.add("playing");
         sub.textContent = "verbinden…";
