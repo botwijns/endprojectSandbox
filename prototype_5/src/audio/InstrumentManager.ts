@@ -3,6 +3,9 @@ import WebAudioFontPlayer from "webaudiofont";
 import * as synth from "./fishSynth.ts";
 import { decodeFonts, loadFonts } from "../../../src/fonts.ts";
 
+/** extra gain for the synthesised (fishSynth.ts) voices, on top of each fish's own volume */
+const SYNTH_BOOST = 2;
+
 /** One step of a melody: a MIDI pitch (null = rest), its length in beats and an optional velocity 0..1. */
 export interface Note {
     p: number | null;
@@ -191,7 +194,11 @@ export class InstrumentManager {
             });
             duration = t - start;
         } else if (voice.kind === "synth") {
-            duration = voice.play(this.ctx, out, start, track);
+            // the synthesised voices come out quieter than the samples — lift them
+            const boost = this.ctx.createGain();
+            boost.gain.value = SYNTH_BOOST;
+            boost.connect(out);
+            duration = voice.play(this.ctx, boost, start, track);
         } else {
             const buffer = this.samples.get(voice.src);
             if (buffer) {
