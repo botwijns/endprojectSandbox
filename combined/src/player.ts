@@ -2,7 +2,7 @@
 // prototype page in a full-screen iframe (see src/embed.ts for the other side).
 
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { segmentTitle, segmentUrl, type Flow, type ProtoId, type ServerSession } from "./segments.ts";
+import { gorillaLabel, resolveGorilla, segmentParams, segmentTitle, segmentUrl, type Flow, type ProtoId, type ServerSession } from "./segments.ts";
 import { connectSession, endSession } from "./session.ts";
 import { createTracker, type Tracker } from "./telemetry.ts";
 
@@ -62,6 +62,9 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
     let session: ServerSession = { id: -1, number: -1 };
     // the per-category ratings the last P7 quiz ended on, for the next quiz part
     let lastRatings: Record<string, number> | null = null;
+    // one unexpected sound for every game in this run ("random" draws it here, per player)
+    const sound = resolveGorilla(flow.gorilla ?? "random");
+    console.info(`[combined] gorilla sound: ${gorillaLabel(sound)}${flow.gorilla === "random" ? " (willekeurig)" : ""}`);
     // telemetry for the whole flow, under the session above; null until it's known
     let tracker: Tracker | null = null;
     let segmentStart = 0;
@@ -104,9 +107,9 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         const extra = seg.proto === "p7" && seg.mode === "game" && seg.params.carryRatings !== false && lastRatings
             ? { ratings: lastRatings }
             : {};
-        frame.src = segmentUrl(seg, session, extra);
+        frame.src = segmentUrl(seg, session, sound, extra);
         segmentStart = Date.now();
-        logShell("segment_start", { proto: seg.proto, mode: seg.mode, params: { ...seg.params, ...extra } });
+        logShell("segment_start", { proto: seg.proto, mode: seg.mode, params: segmentParams(seg, sound, extra) });
         badge.hidden = true; // the game shows its own badge
         // the segment's own page shows the title + "tik om te beginnen"; say it too, eyes-free
         speak(index === 0
@@ -177,6 +180,8 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         void sessionReady.then(() => {
             logShell("flow_start", {
                 flow: flow.name,
+                gorilla: gorillaLabel(sound),
+                gorillaRandom: flow.gorilla === "random",
                 segments: flow.segments.map(seg => ({ proto: seg.proto, mode: seg.mode, title: segmentTitle(seg) })),
             });
             next();
