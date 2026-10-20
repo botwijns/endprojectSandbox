@@ -182,9 +182,19 @@ export function createCampfireScene(host: HTMLElement): CampfireScene {
     const smooth = (t: number) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
     const f = (v: number) => v.toFixed(1);
     const copy = (p: Pt): Pt => ({ x: p.x, y: p.y });
+    // Every frame rewrites the animated attributes; skip the ones whose value
+    // didn't change, so the browser doesn't re-lay out and repaint the SVG for nothing.
+    const attrCache = new WeakMap<Element, Record<string, string>>();
+    function setAttr(e: Element, name: string, value: string): void {
+        let c = attrCache.get(e);
+        if (!c) attrCache.set(e, c = {});
+        if (c[name] === value) return;
+        c[name] = value;
+        e.setAttribute(name, value);
+    }
     function mk(tag: string, attrs: Record<string, string | number>, parent?: Element): SVGElement {
         const e = document.createElementNS(NS, tag);
-        for (const k in attrs) e.setAttribute(k, String(attrs[k]));
+        for (const k in attrs) setAttr(e, k, String(attrs[k]));
         if (parent) parent.appendChild(e);
         return e;
     }
@@ -465,40 +475,40 @@ export function createCampfireScene(host: HTMLElement): CampfireScene {
                 const x = FIRE.x + T.dx * (0.45 + 0.55 * k);
                 const sw = amp * 5 * Math.sin(clock * T.sp * 0.9 + T.ph + 1) * (h / 70);
                 const y0 = FIRE.y;
-                flamePaths[i][j].setAttribute("d",
+                setAttr(flamePaths[i][j], "d",
                     "M" + f(x - w) + " " + f(y0) +
                     " C" + f(x - w) + " " + f(y0 - h * 0.45) + " " + f(x - w * 0.3 + sw * 0.4) + " " + f(y0 - h * 0.78) + " " + f(x + sw) + " " + f(y0 - h) +
                     " C" + f(x + w * 0.3 + sw * 0.4) + " " + f(y0 - h * 0.74) + " " + f(x + w) + " " + f(y0 - h * 0.42) + " " + f(x + w) + " " + f(y0) +
                     " Q" + f(x) + " " + f(y0 + w * 0.6) + " " + f(x - w) + " " + f(y0) + " Z");
             }
         }
-        el.glow.setAttribute("opacity", (0.72 + 0.28 * flick).toFixed(2));
-        el.groundGlow.setAttribute("opacity", (0.7 + 0.3 * flick).toFixed(2));
-        el.coals.setAttribute("opacity", (0.6 + 0.4 * flick).toFixed(2));
+        setAttr(el.glow, "opacity", (0.72 + 0.28 * flick).toFixed(2));
+        setAttr(el.groundGlow, "opacity", (0.7 + 0.3 * flick).toFixed(2));
+        setAttr(el.coals, "opacity", (0.6 + 0.4 * flick).toFixed(2));
         for (const e of embers) {
             const t = (clock * (reduce ? 0.4 : 1) + e.off) % e.life, u = t / e.life;
             const ex = e.x0 + Math.sin(t * 2.3 + e.ph) * (5 + t * 6) + t * 3;
             const ey = FIRE.y - 8 - e.vy * t;
-            e.el.setAttribute("cx", f(ex)); e.el.setAttribute("cy", f(ey));
-            e.el.setAttribute("r", (0.5 + 1.7 * (1 - u)).toFixed(2));
-            e.el.setAttribute("opacity", ((1 - u) * (u < 0.1 ? u / 0.1 : 1) * 0.95).toFixed(2));
+            setAttr(e.el, "cx", f(ex)); setAttr(e.el, "cy", f(ey));
+            setAttr(e.el, "r", (0.5 + 1.7 * (1 - u)).toFixed(2));
+            setAttr(e.el, "opacity", ((1 - u) * (u < 0.1 ? u / 0.1 : 1) * 0.95).toFixed(2));
         }
     }
     function drawWorld() {
         for (const s of stars) {
-            s.el.setAttribute("opacity", (s.base * (reduce ? 0.8 : 0.6 + 0.4 * Math.sin(clock * s.sp + s.ph))).toFixed(2));
+            setAttr(s.el, "opacity", (s.base * (reduce ? 0.8 : 0.6 + 0.4 * Math.sin(clock * s.sp + s.ph))).toFixed(2));
         }
         for (let i = 0; i < moonDash.length; i++) {
             const w = 6 + i * 3.6;
-            moonDash[i].setAttribute("x", f(655 - w / 2 + (reduce ? 0 : Math.sin(clock * 1.1 + i) * 3)));
-            moonDash[i].setAttribute("y", f(268 + i * 5));
-            moonDash[i].setAttribute("width", f(w));
+            setAttr(moonDash[i], "x", f(655 - w / 2 + (reduce ? 0 : Math.sin(clock * 1.1 + i) * 3)));
+            setAttr(moonDash[i], "y", f(268 + i * 5));
+            setAttr(moonDash[i], "width", f(w));
         }
         for (const sh of shim) {
-            sh.el.setAttribute("x", f(((sh.x + clock * sh.sp) % 900) - 50));
-            sh.el.setAttribute("y", f(sh.y));
-            sh.el.setAttribute("width", f(sh.w));
-            sh.el.setAttribute("opacity", (sh.base * (0.55 + 0.45 * Math.sin(clock * 1.4 + sh.ph))).toFixed(2));
+            setAttr(sh.el, "x", f(((sh.x + clock * sh.sp) % 900) - 50));
+            setAttr(sh.el, "y", f(sh.y));
+            setAttr(sh.el, "width", f(sh.w));
+            setAttr(sh.el, "opacity", (sh.base * (0.55 + 0.45 * Math.sin(clock * 1.4 + sh.ph))).toFixed(2));
         }
     }
 
@@ -506,54 +516,54 @@ export function createCampfireScene(host: HTMLElement): CampfireScene {
         /* arms and hands */
         const HN = hands.right.cur, HF = hands.left.cur;
         const en = elbow(SH_NEAR, HN, ARM), ef = elbow(SH_FAR, HF, ARM);
-        el.armNear.setAttribute("d", "M" + f(SH_NEAR.x) + " " + f(SH_NEAR.y) + " L" + f(en.x) + " " + f(en.y) + " L" + f(HN.x) + " " + f(HN.y));
-        el.armFar.setAttribute("d", "M" + f(SH_FAR.x) + " " + f(SH_FAR.y) + " L" + f(ef.x) + " " + f(ef.y) + " L" + f(HF.x) + " " + f(HF.y));
-        el.handNear.setAttribute("cx", f(HN.x)); el.handNear.setAttribute("cy", f(HN.y));
-        el.handFar.setAttribute("cx", f(HF.x)); el.handFar.setAttribute("cy", f(HF.y));
+        setAttr(el.armNear, "d", "M" + f(SH_NEAR.x) + " " + f(SH_NEAR.y) + " L" + f(en.x) + " " + f(en.y) + " L" + f(HN.x) + " " + f(HN.y));
+        setAttr(el.armFar, "d", "M" + f(SH_FAR.x) + " " + f(SH_FAR.y) + " L" + f(ef.x) + " " + f(ef.y) + " L" + f(HF.x) + " " + f(HF.y));
+        setAttr(el.handNear, "cx", f(HN.x)); setAttr(el.handNear, "cy", f(HN.y));
+        setAttr(el.handFar, "cx", f(HF.x)); setAttr(el.handFar, "cy", f(HF.y));
 
         /* drum: dips and brightens on a hit, with a ring where the hand landed */
-        el.drum.setAttribute("transform", "translate(0 " + f(1.3 * Math.min(1, flash)) + ")");
+        setAttr(el.drum, "transform", "translate(0 " + f(1.3 * Math.min(1, flash)) + ")");
         const ry = DRUM.ry - 0.9 * Math.min(1, flash);
-        el.drumHead.setAttribute("ry", f(ry));
-        el.drumFlash.setAttribute("ry", f(ry));
-        el.drumFlash.setAttribute("opacity", (0.5 * Math.min(1, flash)).toFixed(2));
+        setAttr(el.drumHead, "ry", f(ry));
+        setAttr(el.drumFlash, "ry", f(ry));
+        setAttr(el.drumFlash, "opacity", (0.5 * Math.min(1, flash)).toFixed(2));
         for (let i = 0; i < rings.length; i++) {
             const r = rings[i], p = (clock - r.t0) / r.life, e = ringEls[i];
-            if (p <= 0 || p >= 1) { e.setAttribute("opacity", "0"); continue; }
+            if (p <= 0 || p >= 1) { setAttr(e, "opacity", "0"); continue; }
             const rad = 4 + r.max * (1 - Math.pow(1 - p, 2));
-            e.setAttribute("cx", f(DRUM.x + (r.x - DRUM.x) * 0.7));
-            e.setAttribute("rx", f(rad)); e.setAttribute("ry", f(rad * 0.3));
-            e.setAttribute("opacity", (0.8 * (1 - p)).toFixed(2));
+            setAttr(e, "cx", f(DRUM.x + (r.x - DRUM.x) * 0.7));
+            setAttr(e, "rx", f(rad)); setAttr(e, "ry", f(rad * 0.3));
+            setAttr(e, "opacity", (0.8 * (1 - p)).toFixed(2));
         }
 
         /* eye: looks at the fire, glances down while drumming, blinks now and then */
         const drumming = clock - lastHitAt < 1.2;
-        el.eye.setAttribute("cx", f(199.2));
-        el.eye.setAttribute("cy", f(236.9 + (drumming ? 0.9 : 0.2)));
+        setAttr(el.eye, "cx", f(199.2));
+        setAttr(el.eye, "cy", f(236.9 + (drumming ? 0.9 : 0.2)));
         if (clock >= blink.next) { blink.t0 = clock; blink.next = clock + 2.5 + ((Math.sin(clock * 12.9) + 1) * 2.5); }
         const bt = (clock - blink.t0) / 0.16;
-        el.eye.setAttribute("ry", f(bt >= 0 && bt < 1 ? Math.max(0.15, 1.4 * Math.abs(1 - 2 * bt)) : 1.4));
+        setAttr(el.eye, "ry", f(bt >= 0 && bt < 1 ? Math.max(0.15, 1.4 * Math.abs(1 - 2 * bt)) : 1.4));
 
         /* mouth, jaw and head: talking plus a nod on every drum hit */
         const ov = mouth.v;
         if (ov > 0.1) {
             const ryM = 0.5 + ov * 3.4, rxM = 2.3 + ov * 0.9, cyM = 247.3 + ov * 1.1;
-            el.mouthLine.setAttribute("opacity", "0");
-            el.mouthO.setAttribute("opacity", "1");
-            el.mouthO.setAttribute("rx", f(rxM)); el.mouthO.setAttribute("ry", f(ryM)); el.mouthO.setAttribute("cy", f(cyM));
-            el.tongue.setAttribute("opacity", ov > 0.45 ? "1" : "0");
-            el.tongue.setAttribute("cy", f(cyM + ryM * 0.45)); el.tongue.setAttribute("rx", f(rxM * 0.55)); el.tongue.setAttribute("ry", f(ryM * 0.4));
+            setAttr(el.mouthLine, "opacity", "0");
+            setAttr(el.mouthO, "opacity", "1");
+            setAttr(el.mouthO, "rx", f(rxM)); setAttr(el.mouthO, "ry", f(ryM)); setAttr(el.mouthO, "cy", f(cyM));
+            setAttr(el.tongue, "opacity", ov > 0.45 ? "1" : "0");
+            setAttr(el.tongue, "cy", f(cyM + ryM * 0.45)); setAttr(el.tongue, "rx", f(rxM * 0.55)); setAttr(el.tongue, "ry", f(ryM * 0.4));
         } else {
-            el.mouthLine.setAttribute("opacity", "1");
-            el.mouthO.setAttribute("opacity", "0");
-            el.tongue.setAttribute("opacity", "0");
+            setAttr(el.mouthLine, "opacity", "1");
+            setAttr(el.mouthO, "opacity", "0");
+            setAttr(el.tongue, "opacity", "0");
         }
-        el.beard.setAttribute("transform", "translate(0 " + f(ov * 2.2) + ")");
+        setAttr(el.beard, "transform", "translate(0 " + f(ov * 2.2) + ")");
         const nod = Math.min(1.6, bob);
         const sway = drumming && !reduce ? Math.sin(clock * 3.1) * 0.6 : 0;
-        el.head.setAttribute("transform", "translate(0 " + f(-0.5 * ov + 1.6 * nod) + ") rotate(" + f(-1.8 * ov + 1.0 * ov * Math.sin(clock * 5.2) + 2.2 * nod + sway) + " 186 254)");
+        setAttr(el.head, "transform", "translate(0 " + f(-0.5 * ov + 1.6 * nod) + ") rotate(" + f(-1.8 * ov + 1.0 * ov * Math.sin(clock * 5.2) + 2.2 * nod + sway) + " 186 254)");
 
-        el.fade.setAttribute("opacity", (1 - smooth(clock / 0.8)).toFixed(2));
+        setAttr(el.fade, "opacity", (1 - smooth(clock / 0.8)).toFixed(2));
     }
 
     /* ---------- main loop ---------- */
