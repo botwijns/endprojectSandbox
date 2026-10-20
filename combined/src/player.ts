@@ -73,7 +73,14 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
     badge.title = "Sessienummer";
     badge.textContent = "sessie …";
 
-    root.replaceChildren(screen, frame, skipBtn, badge);
+    // after the first tap everything but the oefenlevels is covered, so the
+    // player plays by ear only; it lets taps through to the game underneath
+    const guard = document.createElement("div");
+    guard.className = "peek-guard";
+    guard.textContent = "Niet spieken";
+    guard.hidden = true;
+
+    root.replaceChildren(screen, frame, guard, skipBtn, badge);
 
     let index = -1;
     const results: unknown[] = [];
@@ -136,6 +143,7 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         if (index < 0 || index + 1 >= flow.segments.length) return next();
         walking = true;
         show("🚶", "Op weg naar het volgende spel…");
+        guard.hidden = false;
         logShell("walk_start");
         let timer = 0;
         const arrive = () => {
@@ -169,6 +177,7 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         segmentStart = Date.now();
         logShell("segment_start", { proto: seg.proto, mode: seg.mode, params: segmentParams(seg, sound, extra) });
         badge.hidden = true; // the game shows its own badge
+        guard.hidden = seg.mode === "intro"; // oefenlevels may be watched
         // the segment's own page shows the title + "tik om te beginnen"; say it too, eyes-free
         speak(index === 0
             ? `${title}. Tik op het scherm om te beginnen.`
@@ -180,6 +189,7 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         logShell("flow_end", { segments: flow.segments.length });
         const flushed = tracker?.flush() ?? Promise.resolve();
         show("Klaar! 🎉", "Bedankt voor het spelen.");
+        guard.hidden = true;
         badge.hidden = false;
         speak("Klaar! Bedankt voor het spelen.");
         if (flow.surveyAtEnd) {
@@ -238,6 +248,7 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         void enterFullscreen();
         // the shared fullscreen toggle would sit on top of the game's tap zones
         document.body.classList.add("playing");
+        guard.hidden = false;
         sub.dataset.loading = "1";
         sub.textContent = loadingText();
         // waits at most connectSession()'s timeout; offline → -1 / -1
