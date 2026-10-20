@@ -199,33 +199,9 @@
   <button id="stop-btn" data-ui>Stop &mdash; terug naar startscherm</button>
 </div>
 
-<!-- WebAudioFont instrument + drum banks live in the shared repo-root /public/fonts
-     folder (wired up via `publicDir` in vite.prototype_7.config.ts). Paths are
-     relative so they resolve under the deployed sub-path for both dev and Pages.
-     The player library itself comes from the `webaudiofont` npm package (see
-     src/audioPlayback.ts), not a <script> tag. -->
-<script src="fonts/0000_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0241_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0271_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0282_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0321_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0331_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0340_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0382_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0401_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0421_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0430_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0560_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0650_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0851_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0882_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/12836_1_Chaos_sf2_file.js"></script>
-<script src="fonts/12838_1_Chaos_sf2_file.js"></script>
-<script src="fonts/12842_1_Chaos_sf2_file.js"></script>
-<script src="fonts/12864_0_Chaos_sf2_file.js"></script>
-<script src="fonts/12868_0_Chaos_sf2_file.js"></script>
-<script src="fonts/12869_0_Chaos_sf2_file.js"></script>
-
+<!-- The WebAudioFont instruments (repo-root /public/fonts) are listed in
+     src/fonts.ts and loaded by the shared ../src/fonts.ts, so the combined/ shell
+     can hand over its already-decoded copies instead of each page loading them. -->
 <script type="module" src="src/main.ts"></script>
 </body>
 </html>
