@@ -20,6 +20,11 @@ const PROTOTYPE_FONTS: Record<ProtoId, readonly string[]> = {
     p7: Object.values(P7_FONTS),
 };
 
+/** Played between two games, so the player "walks" from one to the next. */
+const FOOTSTEPS_URL = `${import.meta.env.BASE_URL}sounds/footsteps.mp3`;
+/** Fallback if the footsteps can't play or never report their end (the file is ~5.6 s). */
+const WALK_MAX_MS = 8000;
+
 interface Options {
     /** show a "Volgende" button so the researcher can skip a segment */
     skip: boolean;
@@ -81,6 +86,10 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
     // telemetry for the whole flow, under the session above; null until it's known
     let tracker: Tracker | null = null;
     let segmentStart = 0;
+    // true while the footsteps play between two segments
+    let walking = false;
+    const footsteps = new Audio(FOOTSTEPS_URL);
+    footsteps.preload = "auto";
 
     function context() {
         const seg = flow.segments[index];
@@ -119,6 +128,30 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         heading.textContent = big;
         sub.textContent = small;
         screen.hidden = false;
+    }
+
+    /** Leaves the current segment: walks to the next game if there is one, else finishes. */
+    function advance(): void {
+        if (walking) return;
+        if (index < 0 || index + 1 >= flow.segments.length) return next();
+        walking = true;
+        show("🚶", "Op weg naar het volgende spel…");
+        logShell("walk_start");
+        let timer = 0;
+        const arrive = () => {
+            if (!walking) return;
+            walking = false;
+            window.clearTimeout(timer);
+            footsteps.removeEventListener("ended", arrive);
+            footsteps.removeEventListener("error", arrive);
+            footsteps.pause();
+            next();
+        };
+        timer = window.setTimeout(arrive, WALK_MAX_MS);
+        footsteps.addEventListener("ended", arrive);
+        footsteps.addEventListener("error", arrive);
+        footsteps.currentTime = 0;
+        footsteps.play().catch(arrive);
     }
 
     function next(): void {
@@ -186,14 +219,15 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
                 lastRatings = ratings as Record<string, number>;
             }
             console.info(`[combined] segment ${index + 1} done`, data.result);
-            next();
+            advance();
         }
     });
 
     skipBtn.addEventListener("click", () => {
+        if (walking) return;
         results[index] = { skipped: true };
         logShell("segment_skipped", { proto: flow.segments[index]?.proto });
-        next();
+        advance();
     });
 
     // the first tap is the shell's own user gesture: fullscreen + speech unlock
