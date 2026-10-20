@@ -72,9 +72,11 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
     let destroyed = false;
     const timers = new Set<ReturnType<typeof setTimeout>>();
 
-    preloadLines();
+    preloadLines(); // only the intro's own lines; the game's load when first played
     const fisherman: LakesideScene = createLakesideScene(deps.land);
     const water: HookReelScene = createHookReelScene(deps.water);
+    // only the scene on screen animates: drawing both every frame made the intro lag
+    water.setPaused(true);
 
     function sleep(ms: number): Promise<void> {
         return new Promise(res => {
@@ -185,9 +187,11 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
     // --- 2. under water: explain, show and practise the bite and the reeling --
     async function explainWater(): Promise<void> {
         deps.goUnderwater();
+        water.setPaused(false);
         showLayer("water");
         await sleep(1000);
         if (destroyed) return;
+        fisherman.setPaused(true); // faded out by now (0.8s cross-fade)
 
         // show: what a biting fish sounds like
         await playLine("fishSounds");

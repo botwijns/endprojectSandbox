@@ -85,13 +85,10 @@ const howls = new Map<SpeechLine, Howl>();
 let current: Howl | null = null;
 let cancelCurrent: (() => void) | null = null;
 
-/** Start loading every recorded line so the first playback isn't delayed. */
+/** Start loading the intro's recorded lines so the first playback isn't delayed.
+ *  (Not the game's: decoding all of them at once made the intro's start stutter.) */
 export function preloadLines(): void {
-    for (const line of [
-        ...Object.values(INTRO_LINES),
-        ...Object.values(GAME_LINES),
-        ...Object.values(FISH_NAME_LINES),
-    ] as SpeechLine[]) getHowl(line);
+    for (const line of Object.values(INTRO_LINES) as SpeechLine[]) getHowl(line);
 }
 
 function getHowl(line: SpeechLine): Howl | null {

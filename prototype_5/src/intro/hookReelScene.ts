@@ -22,6 +22,8 @@ export interface HookReelScene {
     land(): void;
     /** Abandon a driven reel-in: the hook sinks back to its resting depth. */
     dropHook(): void;
+    /** Stop (or resume) updating and drawing, e.g. while the layer is hidden. */
+    setPaused(p: boolean): void;
     destroy(): void;
 }
 
@@ -669,20 +671,21 @@ export function createHookReelScene(host: HTMLElement): HookReelScene {
     else window.addEventListener("resize", layout);
     layout();
 
-    let destroyed = false, rafId = 0;
+    let destroyed = false, paused = false, rafId = 0;
     let last = performance.now();
     function frame(now: number) {
         if (destroyed) return;
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
-        T += dt;
-        if (W && H) { update(dt); render(); }
+        if (!paused) T += dt;
+        if (W && H && !paused) { update(dt); render(); }
         rafId = requestAnimationFrame(frame);
     }
     rafId = requestAnimationFrame(frame);
 
     return {
         showBite, showReel, showEscape, driveReel, land, dropHook,
+        setPaused(p: boolean) { paused = p; },
         destroy() {
             destroyed = true;
             cancelAnimationFrame(rafId);
