@@ -263,6 +263,9 @@ const pitchBottomEl = document.getElementById("pitch-edge-bottom")!;
 
 function log(msg: string) { logEl.textContent = msg; }
 
+// Track counts follow the constants, so the grid always fills the whole pad.
+gridEl.style.gridTemplateColumns = `repeat(${STEPS}, 1fr)`;
+gridEl.style.gridTemplateRows = `repeat(${SCALE_DEGREES}, 1fr)`;
 const cellEls: HTMLDivElement[][] = [];
 for (let s = 0; s < STEPS; s++) {
     cellEls.push([]);
