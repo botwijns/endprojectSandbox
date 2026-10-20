@@ -1,0 +1,126 @@
+{
+  "name": "experiment_1",
+  "surveyAtEnd": true,
+  "gorilla": "random",
+  "segments": [
+    {
+      "proto": "p5",
+      "mode": "intro",
+      "params": {}
+    },
+    {
+      "proto": "p6",
+      "mode": "intro",
+      "params": {
+        "speech": true
+      }
+    },
+    {
+      "proto": "p7",
+      "mode": "intro",
+      "params": {}
+    },
+    {
+      "proto": "p5",
+      "mode": "game",
+      "params": {
+        "days": 1,
+        "fishFirstDay": 2,
+        "maxExtraPerDay": 1,
+        "gorilla": false,
+        "gorillaAt": 2
+      }
+    },
+    {
+      "proto": "p6",
+      "mode": "game",
+      "params": {
+        "songCount": 2,
+        "briefs": [
+          "vrolijk",
+          "slaapliedje"
+        ],
+        "speech": true,
+        "randomNote": false,
+        "gorilla": false,
+        "gorillaAt": 2
+      }
+    },
+    {
+      "proto": "p7",
+      "mode": "game",
+      "params": {
+        "questions": 2,
+        "carryRatings": true,
+        "gorilla": false,
+        "gorillaAt": 2
+      }
+    },
+    {
+      "proto": "p5",
+      "mode": "game",
+      "params": {
+        "days": 1,
+        "fishFirstDay": 4,
+        "maxExtraPerDay": 1,
+        "gorilla": false,
+        "gorillaAt": 2
+      }
+    },
+    {
+      "proto": "p6",
+      "mode": "game",
+      "params": {
+        "songCount": 2,
+        "briefs": [],
+        "speech": true,
+        "randomNote": false,
+        "gorilla": true,
+        "gorillaAt": 2
+      }
+    },
+    {
+      "proto": "p7",
+      "mode": "game",
+      "params": {
+        "questions": 2,
+        "carryRatings": true,
+        "gorilla": false,
+        "gorillaAt": 2
+      }
+    },
+    {
+      "proto": "p5",
+      "mode": "game",
+      "params": {
+        "days": 1,
+        "fishFirstDay": 5,
+        "maxExtraPerDay": 1,
+        "gorilla": true,
+        "gorillaAt": 1
+      }
+    },
+    {
+      "proto": "p6",
+      "mode": "game",
+      "params": {
+        "songCount": 2,
+        "briefs": [],
+        "speech": true,
+        "randomNote": false,
+        "gorilla": false,
+        "gorillaAt": 2
+      }
+    },
+    {
+      "proto": "p7",
+      "mode": "game",
+      "params": {
+        "questions": 2,
+        "carryRatings": true,
+        "gorilla": true,
+        "gorillaAt": 2
+      }
+    }
+  ]
+}
