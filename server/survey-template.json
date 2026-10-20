@@ -47,7 +47,19 @@
         "Een miauw van een kat",
         "Een flits van een camera",
         "Een rubber eendje dat piept",
-        "Ik heb geen geluid gehoord"
+        "Ik heb een ander geluid gehoord"
+      ]
+    },
+    {
+      "id": "gorrilla_when",
+      "type": "multi",
+      "label": "Tijdens wel spel heb je dit geluid gehoord?",
+      "required": true,
+      "showIf": { "question": "gorrilla_noticed", "equals": true },
+      "options": [
+        "1 - Hengelen naar instrumenten",
+        "2 - Muziek maken",
+        "3 - De muziek quiz"
       ]
     },
     {
