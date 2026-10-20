@@ -13,6 +13,14 @@
       "options": ["(Bijna) nooit", "Een paar keer per maand", "Wekelijks", "Dagelijks"]
     },
     {
+      "id": "age",
+      "type": "scale",
+      "label": "Hoe oud ben je?",
+      "required": true,
+      "min": 8,
+      "max": 13
+    },
+    {
       "id": "favorite_prototype",
       "type": "single",
       "label": "Welk deel van het spel vond je het leukst?",
