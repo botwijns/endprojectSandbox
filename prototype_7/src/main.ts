@@ -57,6 +57,11 @@ const gorillaSounds: Howl[] = [
     new Howl({ src: "sounds/boing.mp3" }),
 ];
 let gorillaPlayed = false;
+
+// answer feedback: applause for a right answer, an "aww" for a wrong one
+const applauseSound = new Howl({ src: "sounds/applause.mp3" });
+const awwSound = new Howl({ src: "sounds/aww.mp3" });
+const FEEDBACK_SOUND_MS = 1500; // let the aww mostly finish before revealing the answer
 // how often the player asked for the current question again (telemetry)
 let repeats = 0;
 const GORILLA_GAP_MS = 400; // silence between the gorilla sound and the piece
@@ -149,6 +154,8 @@ function silenceEverything(): void {
     clearPending();
     stopAudio();
     gorillaSounds.forEach(s => s.stop());
+    applauseSound.stop();
+    awwSound.stop();
     if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
 }
 
@@ -634,20 +641,21 @@ function previewOption(index: AnswerIndex): void {
     if (introMode && (introStep === "listen" || introStep === "tap")) setIntroStep("commit");
 }
 
-/** Spoken + earcon feedback after an answer. */
+/** Applause/aww + earcon feedback after an answer; a wrong answer also reveals the right one. */
 function giveFeedback(q: Question, correct: boolean): void {
     if (correct) {
         cue("correct");
-        speak("Goed.");
+        applauseSound.play();
         return;
     }
     cue("wrong");
+    awwSound.play();
     const correctAudio = q.audioOptions?.[q.options.indexOf(q.correctAnswer)];
     if (correctAudio) {
-        later(() => speak("Fout. Dit was de juiste noot:"), 500);
-        later(() => playNote(correctAudio.instrument, correctAudio.pitch), 1300);
+        later(() => speak("Dit was de juiste noot:"), FEEDBACK_SOUND_MS);
+        later(() => playNote(correctAudio.instrument, correctAudio.pitch), FEEDBACK_SOUND_MS + 800);
     } else {
-        later(() => speak(`Fout. Het was ${q.correctAnswer}.`), 500);
+        later(() => speak(`Het was ${q.correctAnswer}.`), FEEDBACK_SOUND_MS);
     }
 }
 
@@ -664,8 +672,8 @@ function commitOption(index: AnswerIndex): void {
         giveFeedback(q, correct);
         if (!correct) {
             // same kind of question again, with a fresh song
-            later(() => speak("Probeer het nog eens met een nieuw stukje."), 2600);
-            later(() => { nextPracticeQuestion(false); presentQuestion(); }, 5200);
+            later(() => speak("Probeer het nog eens met een nieuw stukje."), 3600);
+            later(() => { nextPracticeQuestion(false); presentQuestion(); }, 6200);
         } else if (practiceIndex + 1 < PRACTICE.length) {
             later(() => { practiceIndex++; nextPracticeQuestion(true); presentQuestion(); }, RESULT_ADVANCE_MS);
         } else {
@@ -701,7 +709,8 @@ function commitOption(index: AnswerIndex): void {
         if (session.isFinished) endQuiz();
         else presentQuestion();
     };
-    later(advance, RESULT_ADVANCE_MS);
+    // a wrong answer gets the aww plus the right answer, so give it a bit longer
+    later(advance, answered.correct ? RESULT_ADVANCE_MS : RESULT_ADVANCE_MS + 1000);
 }
 
 function beginQuiz(): void {
@@ -727,13 +736,8 @@ function endQuiz(): void {
     track("game_end", { score, total, ratings: session.ratings });
     renderHud();
     cue("done");
-    later(() => speak(`Klaar. Je had ${score} van de ${total} goed.`), 500);
-    if (lastResultsSummary.length > 0) {
-        const names = lastResultsSummary.slice(0, 3).map(s => s.category).join(", ");
-        later(() => speak(`Je scoorde het best op: ${names}.`), 3200);
-    }
-    // hand back to the combined/ shell once the results have been read out,
-    // with the ratings so a later quiz part can carry on from them
+    // hand back to the combined/ shell after the closing cue (and the last
+    // answer's feedback), with the ratings so a later quiz part can carry on from them
     if (embed) {
         const myRun = runId;
         const ratings = session.ratings;
@@ -741,7 +745,7 @@ function endQuiz(): void {
             if (myRun !== runId) return;
             stopGame();
             embedDone({ score, total, ratings });
-        }, lastResultsSummary.length > 0 ? 7500 : 4000);
+        }, 2500);
     }
 }
 
