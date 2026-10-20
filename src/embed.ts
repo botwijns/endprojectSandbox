@@ -6,8 +6,9 @@
 // display number, both -1 when the shell couldn't reach the server. Opened without ?embed, getEmbed() returns
 // null and the prototype behaves exactly as it does standalone.
 //
-// The iframe is not granted fullscreen (the shell holds it), so the prototypes'
-// own enterFullscreen() calls quietly no-op and their fullscreen button hides.
+// The iframe is not granted fullscreen (allow="fullscreen 'none'": the shell
+// holds it), so the prototypes' own enterFullscreen() calls quietly no-op and
+// their fullscreen button hides. Instrument fonts come from the shell too (src/fonts.ts).
 
 export type EmbedMode = "intro" | "game";
 
@@ -159,6 +160,7 @@ export function setupEmbedStart(embed: Embed, onStart: () => void): void {
     btn.addEventListener("click", (e) => {
         e.stopPropagation();
         btn.remove();
+        post("start");
         onStart();
     }, { once: true });
 

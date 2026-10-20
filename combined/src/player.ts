@@ -2,12 +2,23 @@
 // prototype page in a full-screen iframe (see src/embed.ts for the other side).
 
 import { enterFullscreen } from "../../src/fullscreen.ts";
+import { preloadFonts } from "../../src/fonts.ts";
+import { FONT_VARIABLES as P5_FONTS } from "../../prototype_5/src/audio/InstrumentManager.ts";
+import { FONT_VARS as P6_FONTS } from "../../prototype_6/src/fonts.ts";
+import { FONT_VARS as P7_FONTS } from "../../prototype_7/src/fonts.ts";
 import { gorillaLabel, resolveGorilla, segmentParams, segmentTitle, segmentUrl, type Flow, type ProtoId, type ServerSession } from "./segments.ts";
 import { connectSession, endSession } from "./session.ts";
 import { createTracker, type Tracker } from "./telemetry.ts";
 
 /** The `prototype` column of the server's event log, per game. */
 const PROTOTYPE_NAME: Record<ProtoId, string> = { p5: "prototype_5", p6: "prototype_6", p7: "prototype_7" };
+
+/** The WebAudioFont instruments each game plays, preloaded once for the whole flow. */
+const PROTOTYPE_FONTS: Record<ProtoId, readonly string[]> = {
+    p5: P5_FONTS,
+    p6: Object.values(P6_FONTS),
+    p7: Object.values(P7_FONTS),
+};
 
 interface Options {
     /** show a "Volgende" button so the researcher can skip a segment */
@@ -39,8 +50,10 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
 
     const frame = document.createElement("iframe");
     frame.className = "player-frame";
-    // no "fullscreen": the shell holds fullscreen so it survives segment changes
-    frame.allow = "autoplay; accelerometer; gyroscope; magnetometer";
+    // the shell holds fullscreen so it survives segment changes. Same-origin
+    // frames may go fullscreen by default, and a game doing so would hand
+    // fullscreen to this iframe — then lose it when the next segment replaces it.
+    frame.allow = "autoplay; accelerometer; gyroscope; magnetometer; fullscreen 'none'";
     frame.hidden = true;
 
     const skipBtn = document.createElement("button");
@@ -86,6 +99,18 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         tracker = createTracker(s);
         badge.textContent = `sessie ${s.number}`;
     });
+
+    // every instrument the flow needs, loaded + decoded once; each game's page
+    // takes these instead of loading its own (src/fonts.ts)
+    let fontProgress = 0;
+    const loadingText = () => `instrumenten laden… ${Math.round(fontProgress * 100)}%`;
+    const fontsReady = preloadFonts(
+        [...new Set(flow.segments.map(seg => seg.proto))].flatMap(proto => PROTOTYPE_FONTS[proto]),
+        (done) => {
+            fontProgress = done;
+            if (index === -1 && sub.dataset.loading) sub.textContent = loadingText();
+        },
+    );
 
     function show(big: string, small: string): void {
         frame.hidden = true;
@@ -141,7 +166,11 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         if (e.origin !== location.origin || e.source !== frame.contentWindow) return;
         const data = e.data as { source?: string; type?: string; result?: unknown };
         if (data?.source !== "combined-embed") return;
-        if (data.type === "event") {
+        if (data.type === "start") {
+            // the game's start tap also activates this page: win fullscreen back
+            // if the player left it (e.g. the Android back gesture)
+            void enterFullscreen();
+        } else if (data.type === "event") {
             const ev = (data as { event?: { type?: unknown; payload?: unknown; at?: unknown } }).event;
             const seg = flow.segments[index];
             if (!seg || typeof ev?.type !== "string") return;
@@ -175,9 +204,11 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         void enterFullscreen();
         // the shared fullscreen toggle would sit on top of the game's tap zones
         document.body.classList.add("playing");
-        sub.textContent = "verbinden…";
+        sub.dataset.loading = "1";
+        sub.textContent = loadingText();
         // waits at most connectSession()'s timeout; offline → -1 / -1
-        void sessionReady.then(() => {
+        void Promise.all([sessionReady, fontsReady]).then(() => {
+            delete sub.dataset.loading;
             logShell("flow_start", {
                 flow: flow.name,
                 gorilla: gorillaLabel(sound),
