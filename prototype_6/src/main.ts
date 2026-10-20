@@ -6,6 +6,8 @@ import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts
 import { speak, earcon, setSpeechEnabled, stopSpeech } from "./speech.ts";
 import { createIntroLevel, type IntroGate, type IntroLevel } from "./intro/introLevel.ts";
 import "webaudiofont";
+import { FONT_VARS } from "./fonts.ts";
+import { loadFonts } from "../../src/fonts.ts";
 import { enterFullscreen } from "../../src/fullscreen.ts";
 import { getEmbed, setupEmbedStart, embedDone, num, bool, strList, track, EXPERIMENT_SOUNDS } from "../../src/embed.ts";
 
@@ -21,30 +23,13 @@ function briefFor(index: number): Brief {
     return BRIEF_ORDER.length ? BRIEF_ORDER[index % BRIEF_ORDER.length] : briefAt(index);
 }
 declare const WebAudioFontPlayer: any;
-// Each WebAudioFont file assigns one global var (loaded via a <script> tag in
-// index.html) — this table maps our instrument keys to those var names, so
-// adding an instrument is just one new entry + one new <script> tag instead
-// of a hand-written `declare const` per font.
 declare global { interface Window { [fontVar: string]: unknown } }
-const FONT_VARS = {
-    piano:            "_tone_0000_GeneralUserGS_sf2_file",
-    electricPiano:    "_tone_0040_GeneralUserGS_sf2_file",
-    distortionGuitar: "_tone_0301_GeneralUserGS_sf2_file",
-    electricBass:     "_tone_0331_GeneralUserGS_sf2_file",
-    slapBass:         "_tone_0361_GeneralUserGS_sf2_file",
-    cello:            "_tone_0421_GeneralUserGS_sf2_file",
-    contrabass:       "_tone_0430_GeneralUserGS_sf2_file",
-    trumpet:          "_tone_0560_GeneralUserGS_sf2_file",
-    synthPad:         "_tone_0882_GeneralUserGS_sf2_file",
-    steelDrums:       "_tone_1140_Chaos_sf2_file",
-    kick:             "_drum_36_1_Chaos_sf2_file",
-    snare:            "_drum_38_1_Chaos_sf2_file",
-    highHat:          "_drum_42_1_Chaos_sf2_file",
-} as const;
 type Instrument = keyof typeof FONT_VARS;
 const INSTRUMENTS = Object.keys(FONT_VARS) as Instrument[];
 
 // ── WebAudioFont setup ────────────────────────────────────────────────────────
+// standalone this downloads the fonts; in the combined/ shell they come pre-decoded
+await loadFonts(Object.values(FONT_VARS));
 const ctx = new AudioContext();
 const player = new WebAudioFontPlayer();
 
