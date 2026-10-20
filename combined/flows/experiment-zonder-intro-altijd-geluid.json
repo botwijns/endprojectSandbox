@@ -55,7 +55,10 @@
       "mode": "game",
       "params": {
         "songCount": 2,
-        "briefs": [],
+        "briefs": [
+          "spannend",
+          "feest"
+        ],
         "speech": true,
         "randomNote": false,
         "gorilla": true,
@@ -88,7 +91,10 @@
       "mode": "game",
       "params": {
         "songCount": 2,
-        "briefs": [],
+        "briefs": [
+          "stoer",
+          "onderwater"
+        ],
         "speech": true,
         "randomNote": false,
         "gorilla": false,
