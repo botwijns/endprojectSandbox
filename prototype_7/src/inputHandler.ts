@@ -16,15 +16,15 @@ export interface AnswerZone {
 }
 
 const SIDES_2: AnswerZone[] = [
-  { index: 0, letter: "Links" }, // links
-  { index: 1, letter: "Rechts" }, // rechts
+  { index: 0, letter: "A" }, // links
+  { index: 1, letter: "B" }, // rechts
 ];
 
 const CORNERS_4: AnswerZone[] = [
-  { index: 0, letter: "Linksboven" }, // linksboven
-  { index: 1, letter: "Rechtsboven" }, // rechtsboven
-  { index: 2, letter: "Linksonder" }, // linksonder
-  { index: 3, letter: "Rechtsonder" }, // rechtsonder
+  { index: 0, letter: "A" }, // linksboven
+  { index: 1, letter: "B" }, // rechtsboven
+  { index: 2, letter: "C" }, // linksonder
+  { index: 3, letter: "D" }, // rechtsonder
 ];
 
 /** The active set of answer zones for a question with `count` options (2 or 4). */
