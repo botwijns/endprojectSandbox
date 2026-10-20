@@ -30,14 +30,29 @@ interface Options {
     skip: boolean;
 }
 
+let speechTimer = 0;
+
+/**
+ * Stop the shell's own announcement. Only when it's actually talking: an extra
+ * cancel() would also cut off a game's speech (same origin, one Chrome queue).
+ */
+function stopSpeech(): void {
+    window.clearTimeout(speechTimer);
+    if (typeof speechSynthesis === "undefined") return;
+    if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
+}
+
 function speak(text: string): void {
     if (typeof speechSynthesis === "undefined") return;
-    try {
-        speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = "nl-NL";
-        speechSynthesis.speak(u);
-    } catch { /* no speech — the on-screen text still shows */ }
+    stopSpeech();
+    // Chrome tends to drop an utterance spoken right after cancel(): let it settle
+    speechTimer = window.setTimeout(() => {
+        try {
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = "nl-NL";
+            speechSynthesis.speak(u);
+        } catch { /* no speech — the on-screen text still shows */ }
+    }, 120);
 }
 
 export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
@@ -121,7 +136,17 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         },
     );
 
+    /** Silence the current game's speech before its page is replaced (see stopSpeech()). */
+    function stopFrameSpeech(): void {
+        try {
+            const synth = (frame.contentWindow as (Window & typeof globalThis) | null)?.speechSynthesis;
+            if (synth && (synth.speaking || synth.pending)) synth.cancel();
+        } catch { /* about:blank / not loaded yet */ }
+    }
+
     function show(big: string, small: string): void {
+        stopFrameSpeech();
+        stopSpeech();
         frame.hidden = true;
         frame.src = "about:blank";
         skipBtn.hidden = true;
@@ -162,6 +187,7 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         screen.hidden = true;
         frame.hidden = false;
         skipBtn.hidden = !opts.skip;
+        stopFrameSpeech();
         const extra = seg.proto === "p7" && seg.mode === "game" && seg.params.carryRatings !== false && lastRatings
             ? { ratings: lastRatings }
             : {};
