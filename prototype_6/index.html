@@ -70,9 +70,7 @@
     }
     #grid {
       position: fixed; left: 0; top: 0; width: 100%; height: 86%; z-index: 4;
-      display: grid;
-      grid-template-columns: repeat(8, 1fr);
-      grid-template-rows: repeat(8, 1fr);
+      display: grid; /* tracks set from STEPS × SCALE_DEGREES in main.ts */
       gap: 2px; padding: 2px; box-sizing: border-box;
     }
     .cell { background: rgb(0 0 0 / 0.06); border-radius: 4px; }
