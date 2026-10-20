@@ -23,6 +23,41 @@ if (typeof speechSynthesis !== "undefined") {
     speechSynthesis.addEventListener?.("voiceschanged", pickVoice);
 }
 
+// Chrome (Android especially) tends to drop an utterance that's spoken right
+// after cancel() interrupted another one, so give a cancel a moment to settle.
+const CANCEL_SETTLE_MS = 120;
+let lastCancelAt = -Infinity;
+// bumped by every speak()/stopSpeech(), so a delayed or retried utterance
+// never plays after something newer took over
+let generation = 0;
+let pendingTimer = 0;
+
+/**
+ * Stop whatever this page is saying (and drop a line waiting to be spoken).
+ * Only cancels when this page actually has speech going: in the combined/ shell
+ * the shell's own announcement shares Chrome's speech queue, and an extra
+ * cancel() would cut it off and can swallow our next utterance.
+ */
+export function stopSpeech(): void {
+    generation++;
+    window.clearTimeout(pendingTimer);
+    if (typeof speechSynthesis === "undefined") return;
+    if (!speechSynthesis.speaking && !speechSynthesis.pending) return;
+    speechSynthesis.cancel();
+    lastCancelAt = performance.now();
+}
+
+/** speechSynthesis.speak(u), once a recent cancel() has settled. */
+function queue(u: SpeechSynthesisUtterance, gen: number): void {
+    const wait = CANCEL_SETTLE_MS - (performance.now() - lastCancelAt);
+    const go = () => {
+        if (gen !== generation) return;
+        try { speechSynthesis.speak(u); } catch { /* earcons still carry the essentials */ }
+    };
+    if (wait > 0) pendingTimer = window.setTimeout(go, wait);
+    else go();
+}
+
 /**
  * Speak a short Dutch phrase. Cancels whatever is currently being said so the
  * latest state always wins (announcements are status, not a queue).
@@ -31,13 +66,26 @@ if (typeof speechSynthesis !== "undefined") {
 export function speak(text: string): SpeechSynthesisUtterance | null {
     if (typeof speechSynthesis === "undefined") return null;
     try {
-        speechSynthesis.cancel();
+        stopSpeech();
+        const gen = generation;
         const u = new SpeechSynthesisUtterance(text);
         u.lang = "nl-NL";
         if (voice) u.voice = voice;
         u.rate = 1.05;
         u.pitch = 1;
-        speechSynthesis.speak(u);
+        let retried = false;
+        u.onstart = () => console.debug("[p7 speech] start:", text);
+        u.onerror = e => {
+            console.warn(`[p7 speech] ${e.error}:`, text);
+            // cut off by someone else (another frame's cancel, a hiccup in the
+            // engine) rather than by a newer line of ours: try it once more
+            if ((e.error === "interrupted" || e.error === "canceled") && !retried && gen === generation) {
+                retried = true;
+                lastCancelAt = performance.now();
+                queue(u, gen);
+            }
+        };
+        queue(u, gen);
         return u;
     } catch {
         // unsupported / blocked — the earcons still carry the essentials

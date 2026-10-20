@@ -1,6 +1,6 @@
 import { QuizSession } from "./quizEngine.ts";
 import { initAudio, getAudioContext, playSong, playNote, stopAudio, fontsReady } from "./audioPlayback.ts";
-import { speak, earcon } from "./speech.ts";
+import { speak, stopSpeech, earcon } from "./speech.ts";
 import { InputHandler, zonesFor, type QuizAction, type AnswerIndex, type AnswerZone } from "./inputHandler.ts";
 import { KNOWN_SONGS } from "./knownSongs.ts";
 import { generateQuestion, generatePreviewSong } from "./questionGenerator.ts";
@@ -156,7 +156,7 @@ function silenceEverything(): void {
     gorillaSounds.forEach(s => s.stop());
     applauseSound.stop();
     awwSound.stop();
-    if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    stopSpeech();
 }
 
 /**
