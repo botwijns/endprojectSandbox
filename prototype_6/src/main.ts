@@ -37,7 +37,7 @@ for (const fontVar of Object.values(FONT_VARS)) player.loader.decodeAfterLoading
 const instruments = Object.fromEntries(
     Object.entries(FONT_VARS).map(([key, fontVar]) => [key, window[fontVar]]),
 ) as Record<Instrument, any>;
-
+var backgroundSound = new Howl({src: "sounds/campfire.mp3"})
 // The drums are generated automatically, so the player only cycles the melodic voices.
 const MELODIC_INSTRUMENTS: MelodicInstrument[] = [
     "piano", "electricPiano", "distortionGuitar", "electricBass", "slapBass",
@@ -658,6 +658,9 @@ function startIntro(): void {
     currentVolume = brief.volume;
     currentInstrument = INTRO_INSTRUMENTS[0];
     placedNoteStack.length = 0;
+    backgroundSound.play();
+    backgroundSound.loop(true);
+    backgroundSound.volume(0.4);
 
     drumPattern = generateDrumPattern(STEPS, brief.grooveStyle);
     applyDrumPattern(drumPattern);
@@ -705,6 +708,7 @@ function endIntro(): void {
     introStageEl.hidden = true;
     hudEl.classList.remove("hidden");
     renderGrid();
+    backgroundSound.stop();
 }
 
 function finishIntro(): void {
@@ -755,6 +759,7 @@ function stopGame(): void {
     stopSpeech();
     showStartScreen();
     startNoteEl.classList.add("hidden");
+    backgroundSound.stop();
 }
 
 function applyStartOptions(): void {
@@ -801,7 +806,9 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
     // blend the player's tapped tempo with the brief's target so it stays on-vibe
     bpm = Math.round((tappedBpm + briefFor(0).tempo) / 2);
     stepDurationMs = (60000 / bpm) / 2;
-
+    backgroundSound.play();
+    backgroundSound.loop(true);
+    backgroundSound.volume(0.4);
     phase = "composing";
     trackSubmitted = false;
     currentStep = -1;
