@@ -25,7 +25,7 @@
       "mode": "game",
       "params": {
         "days": 1,
-        "fishFirstDay": 2,
+        "fishFirstDay": 3,
         "maxExtraPerDay": 1,
         "gorilla": false,
         "gorillaAt": 2
@@ -42,7 +42,7 @@
         ],
         "speech": true,
         "randomNote": false,
-        "gorilla": false,
+        "gorilla": true,
         "gorillaAt": 2
       }
     },
@@ -63,42 +63,6 @@
         "days": 1,
         "fishFirstDay": 4,
         "maxExtraPerDay": 1,
-        "gorilla": false,
-        "gorillaAt": 2
-      }
-    },
-    {
-      "proto": "p6",
-      "mode": "game",
-      "params": {
-        "songCount": 2,
-        "briefs": [
-          "stoer",
-          "feest"
-        ],
-        "speech": true,
-        "randomNote": false,
-        "gorilla": true,
-        "gorillaAt": 2
-      }
-    },
-    {
-      "proto": "p7",
-      "mode": "game",
-      "params": {
-        "questions": 2,
-        "carryRatings": true,
-        "gorilla": false,
-        "gorillaAt": 2
-      }
-    },
-    {
-      "proto": "p5",
-      "mode": "game",
-      "params": {
-        "days": 1,
-        "fishFirstDay": 5,
-        "maxExtraPerDay": 1,
         "gorilla": true,
         "gorillaAt": 1
       }
@@ -110,7 +74,7 @@
         "songCount": 2,
         "briefs": [
           "spannend",
-          "spookachtig"
+          "feest"
         ],
         "speech": true,
         "randomNote": false,
