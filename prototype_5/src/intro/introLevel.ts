@@ -142,7 +142,9 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         await castWithSounds();
         await windLine;
         if (destroyed) return;
+        sounds.reel.play();
         await fisherman.reelIn();
+        sounds.reel.stop();
         if (destroyed) return;
 
         // practise: the player tilts back, he copies it
