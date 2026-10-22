@@ -1,5 +1,6 @@
 import {createCampfireScene, type CampfireScene} from "./campfireScene.ts";
 import {speakLine, stopSpeech} from "../speech.ts";
+import {INTRO_LINES as LINES, type VoiceLine} from "../voiceLines.ts";
 
 // The intro level ("oefenlevel"): the fisherman sits by the campfire with his
 // drum and teaches the controls, one action at a time. There are no buttons —
@@ -42,19 +43,6 @@ export interface IntroLevel {
     destroy(): void;
 }
 
-// TODO(speech): replace with recordings, like prototype 5's intro/speech.ts.
-const LINES = {
-    welcome:    "Oké, bij een goed vuurtje hoort ook een lekker liedje.",
-    teach:      "En dat ga jij voor ons maken. Geen zorgen, ik ga het je allemaal leren.",
-    instrument: "Kijk, dit is je muziekinstrument. En we gaan korte liedjes maken van een paar tellen. Ik zal je alvast een ritme geven.",
-    tap:        "Oké, als je nu op het scherm drukt, dan verschijnt er een pianonoot in het liedje.",
-    pitch:      "Juist! Deze noot kan hoog en laag zijn, afhankelijk van hoe hoog je op het scherm tikt.",
-    more:       "Probeer maar wat meer noten toe te voegen!",
-    switch:     "Juist! Nou, als je een ander instrument wil, moet je rechtsonder in de hoek klikken om te wisselen. Plaats ook wat noten met de gitaar!",
-    remove:     "Kijk! Dat begint al ergens op te lijken. Als laatste kan je linksonder de laatste noot die je geplaatst hebt wissen. Probeer dat ook even!",
-    shake:      "Laatste noot is gewist! Top! Als je klaar bent, schud de telefoon heen en weer. Dan is het nummer af.",
-    outro:      "Dat klinkt erg goed!",
-} as const;
 
 const MORE_NOTES = 2;   // extra notes asked for after the first one
 const REPLAYS = 2;      // the finished song is played this many times
@@ -82,7 +70,7 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         });
     }
 
-    const say = (text: string) => speakLine(text, scene);
+    const say = (line: VoiceLine) => speakLine(line, scene);
 
     async function run(): Promise<void> {
         await sleep(900); // let the scene fade in
