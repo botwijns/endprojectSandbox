@@ -1,6 +1,7 @@
 import { QuizSession } from "./quizEngine.ts";
 import { initAudio, getAudioContext, playSong, playNote, stopAudio, fontsReady } from "./audioPlayback.ts";
 import { speak, stopSpeech, earcon } from "./speech.ts";
+import { GAME_LINES, INTRO_LINES, answerLine, letterLine, questionLine, type VoiceLine } from "./voiceLines.ts";
 import { InputHandler, zonesFor, type QuizAction, type AnswerIndex, type AnswerZone } from "./inputHandler.ts";
 import { KNOWN_SONGS } from "./knownSongs.ts";
 import { generateQuestion, generatePreviewSong } from "./questionGenerator.ts";
@@ -160,21 +161,12 @@ function silenceEverything(): void {
 }
 
 /**
- * Speak, then run `fn` once the speech ends - or after a length-based
- * fallback, so a missing/silent speech engine never stalls the flow. `fn` runs
- * at most once (a cancelled utterance can still fire onend), and the fallback
- * is a pending timer, so silenceEverything() drops it.
+ * Speak, then run `fn` once the speech ends (speak() never stalls on a
+ * missing/silent speech engine). `fn` doesn't run when the line is cut off,
+ * e.g. by silenceEverything().
  */
-function speakThen(text: string, fn: () => void): void {
-    let fired = false;
-    const go = () => {
-        if (fired) return;
-        fired = true;
-        fn();
-    };
-    const u = speak(text);
-    if (u) u.onend = go;
-    later(go, Math.max(1500, text.length * 75));
+function speakThen(line: VoiceLine, fn: () => void): void {
+    void speak(line).then(said => { if (said) fn(); });
 }
 
 // ── Audio helpers ───────────────────────────────────────────────────────────
@@ -204,10 +196,10 @@ function announceOption(index: AnswerIndex, zone: AnswerZone): void {
     if (!q) return;
     const audio = q.audioOptions?.[index];
     if (audio) {
-        speak(`${zone.letter}.`);
+        speak(letterLine(zone.letter));
         later(() => playNote(audio.instrument, audio.pitch), 470);
     } else {
-        speak(`${zone.letter}. ${q.options[index]}`);
+        speak(letterLine(zone.letter), answerLine(q.options[index]));
     }
 }
 
@@ -265,39 +257,35 @@ const INTRO_STEPS: Record<IntroStep, string> = {
 const PRACTICE_RATING = BASE_RATING - 200; // aim well below neutral: the easiest songs the generator can make
 const PRACTICE_MAX_BARS = 3;                // ...but keep them short - for some traits "easiest" means "longest"
 
-const PRACTICE: { traitId: string; leadIn: string }[] = [
-    { traitId: "has-drums", leadIn: "Eerste oefenvraag." },
-    {
-        traitId: "melody-instrument-family",
-        leadIn: "Nu zijn er vier antwoorden, één in elke hoek. " +
-            "Wil je de vraag nog eens horen? Schud dan je telefoon.",
-    },
+const PRACTICE: { traitId: string; leadIn: VoiceLine }[] = [
+    { traitId: "has-drums", leadIn: INTRO_LINES.practice1 },
+    { traitId: "melody-instrument-family", leadIn: INTRO_LINES.practice2 },
 ];
 
 type PreviewIcon = "drums" | "no-drums" | "zones-2" | "zones-4";
-interface PreviewStep { icon: PreviewIcon; caption: string; play: () => number; }
+interface PreviewStep { icon: PreviewIcon; caption: VoiceLine; play: () => number; }
 
 const ZONE_CUE_GAP_MS = 1400;
 
 const PREVIEW_STEPS: PreviewStep[] = [
     {
         icon: "drums",
-        caption: "Luister eerst. Dit is een stukje muziek mét drums.",
+        caption: INTRO_LINES.previewDrums,
         play: () => playSong(previewSong!),
     },
     {
         icon: "no-drums",
-        caption: "En dit is hetzelfde stukje zónder drums.",
+        caption: INTRO_LINES.previewNoDrums,
         play: () => playSong({ ...previewSong!, drums: undefined }),
     },
     {
         icon: "zones-2",
-        caption: "Soms zijn er twee antwoorden: links en rechts.",
+        caption: INTRO_LINES.previewTwoZones,
         play: () => playZoneCues(2),
     },
     {
         icon: "zones-4",
-        caption: "Soms zijn er vier antwoorden, één in elke hoek.",
+        caption: INTRO_LINES.previewFourZones,
         play: () => playZoneCues(4),
     },
 ];
@@ -308,7 +296,7 @@ function playZoneCues(count: number): number {
     zones.forEach((zone, i) => {
         later(() => {
             setLitZone(i);
-            speak(zone.letter);
+            speak(letterLine(zone.letter));
         }, i * ZONE_CUE_GAP_MS);
     });
     later(() => setLitZone(null), zones.length * ZONE_CUE_GAP_MS);
@@ -408,7 +396,7 @@ function showPreviewStep(index: number, myRun: number): void {
     previewIndex = index;
     const step = PREVIEW_STEPS[index];
     renderPreviewIcon(step.icon);
-    updateInstruction(step.caption);
+    updateInstruction(step.caption.text);
     renderHud();
     speakThen(step.caption, () => {
         if (previewIndex === index) playPreviewStep(myRun);
@@ -439,9 +427,8 @@ function advancePreview(myRun: number): void {
     previewIndex = PREVIEW_STEPS.length; // ignores further Herhaal/Volgende clicks
     previewPanelEl.hidden = true;
     renderPreviewIcon(null);
-    const text = "Klaar? Daar gaan we — volg de aanwijzingen.";
-    updateInstruction(text);
-    speakThen(text, () => startPractice(myRun));
+    updateInstruction(INTRO_LINES.ready.text);
+    speakThen(INTRO_LINES.ready, () => startPractice(myRun));
 }
 
 function startPractice(myRun: number): void {
@@ -473,7 +460,7 @@ function finishIntro(): void {
     input.setActive(false);
     setIntroStep("done");
     cue("done");
-    later(() => speak(embed ? "Goed gedaan! Je kent nu de quiz." : "Goed gedaan! Je kent nu de quiz. Terug naar het startscherm."), 400);
+    later(() => embed ? speak(INTRO_LINES.done) : speak(INTRO_LINES.done, INTRO_LINES.backToStart), 400);
     later(() => {
         if (myRun !== runId) return;
         stopGame();
@@ -549,7 +536,7 @@ async function startGame(asIntro: boolean): Promise<void> {
         gameBtn.disabled = true;
         startNoteEl.hidden = false;
         startNoteEl.textContent = "Instrumenten laden…";
-        speak("Instrumenten laden, momentje.");
+        speak(GAME_LINES.loading);
         await waitForFonts();
         if (myRun !== runId) return;
         loading = false;
@@ -589,14 +576,14 @@ function presentQuestion(): void {
     input.setAnswerCount(q.options.length);
     setAnswerLayoutClass(q.options.length);
 
-    let prompt = q.prompt;
+    const prompt: VoiceLine[] = [questionLine(q.traitId, q.prompt)];
     let readMs = PROMPT_READ_MS;
     if (introMode) {
-        const leadIn = leadInPending ? PRACTICE[practiceIndex].leadIn : "";
+        const leadIn = leadInPending ? PRACTICE[practiceIndex].leadIn : null;
         leadInPending = false;
         if (leadIn) {
-            prompt = `${leadIn} ${prompt}`;
-            readMs += leadIn.length * 65;
+            prompt.unshift(leadIn);
+            readMs += leadIn.text.length * 65;
         }
         setIntroStep(practiceIndex === 0 ? "listen" : "corners");
     }
@@ -605,7 +592,7 @@ function presentQuestion(): void {
 
     // Speech is fire-and-forget status; fixed timers drive the flow so a missing
     // or slow speech-synthesis engine never stalls the quiz.
-    speak(prompt);
+    speak(...prompt);
     const startPiece = () => {
         const ms = playPiece();
         later(readOptions, ms + 700);
@@ -652,10 +639,10 @@ function giveFeedback(q: Question, correct: boolean): void {
     awwSound.play();
     const correctAudio = q.audioOptions?.[q.options.indexOf(q.correctAnswer)];
     if (correctAudio) {
-        later(() => speak("Dit was de juiste noot:"), FEEDBACK_SOUND_MS);
+        later(() => speak(GAME_LINES.rightNote), FEEDBACK_SOUND_MS);
         later(() => playNote(correctAudio.instrument, correctAudio.pitch), FEEDBACK_SOUND_MS + 800);
     } else {
-        later(() => speak(`Het was ${q.correctAnswer}.`), FEEDBACK_SOUND_MS);
+        later(() => speak(GAME_LINES.itWas, answerLine(q.correctAnswer)), FEEDBACK_SOUND_MS);
     }
 }
 
@@ -672,7 +659,7 @@ function commitOption(index: AnswerIndex): void {
         giveFeedback(q, correct);
         if (!correct) {
             // same kind of question again, with a fresh song
-            later(() => speak("Probeer het nog eens met een nieuw stukje."), 3600);
+            later(() => speak(INTRO_LINES.tryAgain), 3600);
             later(() => { nextPracticeQuestion(false); presentQuestion(); }, 6200);
         } else if (practiceIndex + 1 < PRACTICE.length) {
             later(() => { practiceIndex++; nextPracticeQuestion(true); presentQuestion(); }, RESULT_ADVANCE_MS);
@@ -721,7 +708,7 @@ function beginQuiz(): void {
     repeats = 0;
     track("game_start", { questions: QUIZ_LENGTH, experiment, startRatings: session.ratings });
     input.setQuizEnabled(true);
-    speak("Daar gaan we. Luister goed.");
+    speak(GAME_LINES.quizStart);
     later(presentQuestion, 1600);
 }
 
