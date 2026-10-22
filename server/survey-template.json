@@ -18,7 +18,9 @@
       "label": "Hoe oud ben je?",
       "required": true,
       "min": 8,
-      "max": 13
+      "max": 13,
+      "minOptionLabel": "8 of jonger",
+      "maxOptionLabel": "13 of ouder"
     },
     {
       "id": "favorite_prototype",
@@ -33,10 +35,13 @@
     },
     {
       "id": "length",
-      "type": "text",
+      "type": "slider",
       "label": "Hoeveel minuten denk je dat je gespeeld hebt?",
       "required": true,
-      "placeholder": "Typ hier je antwoord"
+      "min": 0,
+      "max": 60,
+      "step": 1,
+      "unit": "minuten"
     },
     {
       "id": "gorrilla_noticed",

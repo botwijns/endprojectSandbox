@@ -6,7 +6,7 @@ import { isPlainObject } from './merge.js';
 const serverRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TEMPLATE_PATH = process.env.SURVEY_TEMPLATE_PATH || join(serverRoot, 'survey-template.json');
 
-const VALID_TYPES = new Set(['single', 'multi', 'scale', 'boolean', 'text']);
+const VALID_TYPES = new Set(['single', 'multi', 'scale', 'slider', 'boolean', 'text']);
 
 let cached = null;
 
@@ -35,6 +35,14 @@ export function loadTemplate() {
     if (q.type === 'scale') {
       if (!Number.isInteger(q.min) || !Number.isInteger(q.max) || q.min >= q.max) {
         throw new Error(`survey question "${q.id}" needs integer "min" < "max"`);
+      }
+    }
+    if (q.type === 'slider') {
+      if (typeof q.min !== 'number' || typeof q.max !== 'number' || q.min >= q.max) {
+        throw new Error(`survey question "${q.id}" needs numeric "min" < "max"`);
+      }
+      if (q.step !== undefined && !(typeof q.step === 'number' && q.step > 0)) {
+        throw new Error(`survey question "${q.id}" needs a positive "step"`);
       }
     }
     if (q.showIf !== undefined) {
@@ -106,6 +114,18 @@ export function validateAnswers(template, answers) {
         const n = Number(raw);
         if (!Number.isInteger(n) || n < q.min || n > q.max) {
           errors.push(`"${q.id}": must be an integer between ${q.min} and ${q.max}`);
+        } else {
+          clean[q.id] = n;
+        }
+        break;
+      }
+      case 'slider': {
+        const n = Number(raw);
+        const step = q.step || 1;
+        // Tolerate float noise, e.g. 0.1 + 0.2.
+        const offStep = Math.abs((n - q.min) / step - Math.round((n - q.min) / step)) > 1e-9;
+        if (typeof raw !== 'number' || !Number.isFinite(n) || n < q.min || n > q.max || offStep) {
+          errors.push(`"${q.id}": must be a number between ${q.min} and ${q.max} (step ${step})`);
         } else {
           clean[q.id] = n;
         }
