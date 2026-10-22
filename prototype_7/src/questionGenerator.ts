@@ -157,19 +157,19 @@ export const TRAITS: TraitDefinition[] = [
   //   optionPool: ["dun", "gemiddeld", "druk"],
   //   difficultyWeights: { bars: -5, bass: 0, chords: 0, drums: 0, density: 0 }, // longer clip -> easier to judge how busy it is
   // },
-  {
-    id: "beats-per-bar",
-    category: "Ritme",
-    difficulty: "medium",
-    prompt: "Hoeveel tellen zitten er in elke maat?",
-    numOptions: 4,
-    getValue: (s) => String(s.config.bpb),
-    optionPool: ["2", "3", "4", "5", "6"],
-    ratingOffset: 150,
-    // longer clip -> more bars to feel the metre in; chords change and the drums' kick
-    // and bass root land on every downbeat, so each marks the bar lines; a busier melody blurs them
-    difficultyWeights: { bars: -40, bass: -40, chords: -80, drums: -80, density: 30 },
-  },
+  // {
+  //   id: "beats-per-bar",
+  //   category: "Ritme",
+  //   difficulty: "medium",
+  //   prompt: "Hoeveel tellen zitten er in elke maat?",
+  //   numOptions: 4,
+  //   getValue: (s) => String(s.config.bpb),
+  //   optionPool: ["2", "3", "4", "5", "6"],
+  //   ratingOffset: 150,
+  //   // longer clip -> more bars to feel the metre in; chords change and the drums' kick
+  //   // and bass root land on every downbeat, so each marks the bar lines; a busier melody blurs them
+  //   difficultyWeights: { bars: -40, bass: -40, chords: -80, drums: -80, density: 30 },
+  // },
   {
     id: "melody-note-count",
     category: "Melodie",
