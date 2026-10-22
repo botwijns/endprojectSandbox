@@ -60,18 +60,68 @@
     } else if (q.type === 'scale') {
       wrap = h('fieldset', { class: 'gs-q' });
       wrap.appendChild(h('legend', {}, [labelText(q)]));
+      // Equal-width columns that shrink with the card, so 10 options still fit.
       var row = h('div', { class: 'gs-scale' });
-      if (q.minLabel) row.appendChild(h('span', { class: 'gs-scale-label', text: q.minLabel }));
+      row.style.setProperty('--gs-scale-count', String(q.max - q.min + 1));
       for (var n = q.min; n <= q.max; n++) {
+        // minOptionLabel / maxOptionLabel replace the end numbers' text
+        // (e.g. "8 of jonger"); the submitted value stays the number.
+        var text = String(n);
+        if (n === q.min && q.minOptionLabel) text = q.minOptionLabel;
+        if (n === q.max && q.maxOptionLabel) text = q.maxOptionLabel;
         row.appendChild(
           h('label', {}, [
             h('input', { type: 'radio', name: name, value: String(n) }),
-            h('span', { text: String(n) }),
+            h('span', { class: text === String(n) ? '' : 'gs-scale-text', text: text }),
           ]),
         );
       }
-      if (q.maxLabel) row.appendChild(h('span', { class: 'gs-scale-label', text: q.maxLabel }));
       wrap.appendChild(row);
+      if (q.minLabel || q.maxLabel) {
+        wrap.appendChild(
+          h('div', { class: 'gs-scale-ends' }, [
+            h('span', { class: 'gs-scale-label', text: q.minLabel || '' }),
+            h('span', { class: 'gs-scale-label', text: q.maxLabel || '' }),
+          ]),
+        );
+      }
+    } else if (q.type === 'slider') {
+      wrap = h('div', { class: 'gs-q' });
+      wrap.appendChild(h('label', { class: 'gs-label', htmlFor: name }, [labelText(q)]));
+      var step = q.step || 1;
+      var unit = q.unit ? ' ' + q.unit : '';
+      // Start in the middle; it only counts as answered once the player moves it.
+      var start = q.min + Math.round((q.max - q.min) / 2 / step) * step;
+      var value = h('output', { class: 'gs-slider-value', htmlFor: name, text: 'Sleep de schuif' });
+      var range = h('input', {
+        type: 'range',
+        id: name,
+        name: name,
+        min: q.min,
+        max: q.max,
+        step: step,
+        value: start,
+        class: 'gs-slider-input',
+      });
+      function paint() {
+        var pct = ((Number(range.value) - q.min) / (q.max - q.min)) * 100;
+        range.style.setProperty('--gs-fill', pct + '%');
+      }
+      range.addEventListener('input', function () {
+        range.dataset.touched = 'true';
+        value.textContent = range.value + unit;
+        paint();
+      });
+      wrap.appendChild(
+        h('div', { class: 'gs-slider' }, [
+          value,
+          range,
+          h('div', { class: 'gs-slider-ends' }, [
+            h('span', { text: q.min + unit }),
+            h('span', { text: q.max + unit }),
+          ]),
+        ]),
+      );
     } else if (q.type === 'boolean') {
       wrap = h('fieldset', { class: 'gs-q' });
       wrap.appendChild(h('legend', {}, [labelText(q)]));
@@ -115,6 +165,9 @@
       } else if (q.type === 'scale') {
         var s = form.querySelector('input[name="' + name + '"]:checked');
         if (s) answers[q.id] = Number(s.value);
+      } else if (q.type === 'slider') {
+        var r = form.querySelector('input[name="' + name + '"]');
+        if (r && r.dataset.touched) answers[q.id] = Number(r.value);
       } else if (q.type === 'boolean') {
         var b = form.querySelector('input[name="' + name + '"]:checked');
         if (b) answers[q.id] = b.value === 'true';

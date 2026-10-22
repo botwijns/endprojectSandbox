@@ -156,6 +156,10 @@ npm run export -- --out full-dump.json
     { "id": "played", "type": "multi", "required": true, "options": ["…"] },
     { "id": "enjoyment", "type": "scale", "required": true,
       "min": 1, "max": 5, "minLabel": "Niet leuk", "maxLabel": "Heel leuk" },
+    { "id": "age", "type": "scale", "required": true, "min": 8, "max": 13,
+      "minOptionLabel": "8 of jonger", "maxOptionLabel": "13 of ouder" }, // end buttons' text; value stays 8 / 13
+    { "id": "length", "type": "slider", "required": true,  // only answered once moved
+      "min": 0, "max": 60, "step": 1, "unit": "minuten" },
     { "id": "would_recommend", "type": "boolean", "required": true },
     { "id": "why", "type": "text", "required": true,   // only asked after "Ja"
       "showIf": { "question": "would_recommend", "equals": true } },

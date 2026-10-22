@@ -52,30 +52,106 @@
 }
 .game-survey label.gs-option input { margin-top: 3px; }
 
+/* fieldsets default to min-width: min-content, which lets wide rows overflow the card */
+.game-survey fieldset.gs-q { min-width: 0; }
+
 .game-survey .gs-scale {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-.game-survey .gs-scale .gs-scale-label { font-size: 0.85rem; color: var(--gs-muted); }
-.game-survey .gs-scale label {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(var(--gs-scale-count, 5), minmax(0, 1fr));
   gap: 4px;
-  min-width: 40px;
-  padding: 6px 4px;
+}
+.game-survey .gs-scale label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 2px;
   border: 1px solid var(--gs-border);
   border-radius: 8px;
+  text-align: center;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  hyphens: auto;
   cursor: pointer;
 }
+.game-survey .gs-scale .gs-scale-text { font-size: 0.8rem; }
+.game-survey .gs-scale-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+}
+.game-survey .gs-scale-label { font-size: 0.85rem; color: var(--gs-muted); }
+.game-survey .gs-scale-ends .gs-scale-label:last-child { text-align: right; }
 .game-survey .gs-scale label:has(input:checked) {
   border-color: var(--gs-accent);
   background: var(--gs-accent);
   color: var(--gs-bg);
 }
 .game-survey .gs-scale input { position: absolute; opacity: 0; pointer-events: none; }
+
+.game-survey .gs-slider { padding: 4px 2px 0; }
+.game-survey .gs-slider-value {
+  display: block;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 10px;
+}
+.game-survey .gs-slider:has(.gs-slider-input:not([data-touched])) .gs-slider-value {
+  color: var(--gs-muted);
+  font-size: 1rem;
+  font-weight: 400;
+}
+.game-survey .gs-slider-input {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.game-survey .gs-slider-input::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--gs-accent) var(--gs-fill, 50%), var(--gs-border) var(--gs-fill, 50%));
+}
+.game-survey .gs-slider-input::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--gs-accent) var(--gs-fill, 50%), var(--gs-border) var(--gs-fill, 50%));
+}
+.game-survey .gs-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -9px;
+  border-radius: 50%;
+  border: 3px solid var(--gs-accent);
+  background: var(--gs-bg);
+}
+.game-survey .gs-slider-input::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid var(--gs-accent);
+  background: var(--gs-bg);
+}
+/* until the player moves it, the track shows no fill */
+.game-survey .gs-slider-input:not([data-touched]) { --gs-fill: 0%; }
+.game-survey .gs-slider-input:focus-visible { outline: 2px solid var(--gs-accent); outline-offset: 4px; border-radius: 4px; }
+.game-survey .gs-slider-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--gs-muted);
+  margin-top: 4px;
+}
 
 .game-survey textarea {
   width: 100%;
