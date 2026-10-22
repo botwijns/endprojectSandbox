@@ -4,6 +4,7 @@ import { Howl, Howler } from "howler";
 import { generateDrumPattern, type DrumPattern } from "./music.ts";
 import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts";
 import { speak, earcon, setSpeechEnabled, stopSpeech } from "./speech.ts";
+import { BRIEF_LINES, GAME_LINES, INSTRUMENT_LINES, STEP_LINES, TRACK_COUNT_LINES, TRACK_NUMBER_LINES, numbered } from "./voiceLines.ts";
 import { createIntroLevel, type IntroGate, type IntroLevel } from "./intro/introLevel.ts";
 import "webaudiofont";
 import { FONT_VARS } from "./fonts.ts";
@@ -342,7 +343,7 @@ function updateHud(): void {
             bpmEl.textContent = instrumentEl.textContent = backingEl.textContent = "";
             break;
         case "composing":
-            phaseEl.textContent = introMode ? "Oefenlevel — volg de aanwijzingen" : `Opdracht: ${currentBrief.say}`;
+            phaseEl.textContent = introMode ? "Oefenlevel — volg de aanwijzingen" : `Opdracht: ${BRIEF_LINES[currentBrief.id].say.text}`;
             bpmEl.textContent = `${Math.round(bpm / SLOWDOWN)} BPM (langzaam)`;
             instrumentEl.textContent = `instrument: ${INSTRUMENT_LABEL_NL[currentInstrument]}`;
             backingEl.textContent = drumPattern ? `beat: ${drumPattern.name}` : "";
@@ -504,7 +505,7 @@ function removeNote(): void {
     if (!canCompose() || !tutorialAllows("remove")) return;
     const entry = placedNoteStack.pop();
     if (!entry) {
-        if (!introMode) speak("nog geen noot geplaatst");
+        if (!introMode) speak(GAME_LINES.nothingPlaced);
         log("nog geen noot geplaatst");
         return;
     }
@@ -515,7 +516,12 @@ function removeNote(): void {
     const msg = had
         ? `stap ${step + 1} gewist (${INSTRUMENT_LABEL_NL[instrument]})`
         : `stap ${step + 1} was al leeg`;
-    if (!introMode) speak(msg); // in the intro the fisherman reacts instead
+    const stepLine = numbered(STEP_LINES, step + 1, `stap ${step + 1}`);
+    // in the intro the fisherman reacts instead
+    if (!introMode) {
+        if (had) speak(stepLine, GAME_LINES.erased, INSTRUMENT_LINES[instrument]);
+        else speak(stepLine, GAME_LINES.alreadyEmpty);
+    }
     log(msg);
     renderGrid();
     if (introMode) intro?.notify("remove");
@@ -527,7 +533,7 @@ function switchInstrument(): void {
     const i = (options.indexOf(currentInstrument) + 1) % options.length;
     currentInstrument = options[i];
     earcon(ctx, "instrument");
-    speak(INSTRUMENT_LABEL_NL[currentInstrument]);
+    speak(INSTRUMENT_LINES[currentInstrument]);
     updateHud();
     renderGrid();
 }
@@ -551,7 +557,8 @@ function loadBrief(index: number): void {
     startSequencer();                 // (re)start at composer speed for the new brief
     updateHud();
     renderGrid();
-    speak(`Nummer ${mixtape.length + 1}. ${currentBrief.say}`);
+    const n = mixtape.length + 1;
+    speak(numbered(TRACK_NUMBER_LINES, n, `Nummer ${n}.`), BRIEF_LINES[currentBrief.id].say);
 }
 
 function finishTrack(): void {
@@ -579,7 +586,7 @@ function finishTrack(): void {
     persistMixtape();
 
     earcon(ctx, "done");
-    speak(currentBrief.praise);
+    speak(BRIEF_LINES[currentBrief.id].praise);
     log(`nummer ${mixtape.length} opgeslagen`);
 
     // clear the melody so the next brief starts on a blank canvas
@@ -601,7 +608,8 @@ function endSession(): void {
     stopSequencer();
     updateHud();
     renderGrid();
-    speak(`Je mixtape is klaar, met ${mixtape.length} nummers. Luister maar.`);
+    const count = mixtape.length;
+    speak(GAME_LINES.mixtapeReady, numbered(TRACK_COUNT_LINES, count, `${count} nummers.`), GAME_LINES.listen);
     const medleySeconds = playMedley();
     // hand back to the combined/ shell once the medley has played out
     if (embed) window.setTimeout(() => embedDone({ tracks: mixtape.length }), (medleySeconds + 1.5) * 1000);
@@ -800,7 +808,7 @@ gameBtn.addEventListener("click", () => {
     startNoteEl.classList.add("hidden");
     showGameScreen();
     updateHud();
-    speak("Tik drie keer om te beginnen.");
+    speak(GAME_LINES.tapToStart);
 });
 stopBtn.addEventListener("click", stopGame);
 

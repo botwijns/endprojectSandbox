@@ -787,7 +787,7 @@ function resolveReel(): void {
             await playGameLine("dayDone");
             if (!alive()) return;
             if (state.day >= DAY_CONFIG.days) {
-                await playGameLine("gameDone");
+                if (!embed) await playGameLine("gameDone");
                 if (alive()) finishGame();
             } else {
                 await wait(800);
