@@ -38,6 +38,22 @@ let pendingTimer = 0;
 // stops the sentence being said right now (its recording, or its timers)
 let cancelCurrent: (() => void) | null = null;
 
+/** Anything with a mouth to animate while a line is spoken (the intro's quiz host). */
+export interface Talker {
+    talk(ms: number): unknown;
+    stopTalking(): void;
+}
+let talker: Talker | null = null;
+// rough length of a spoken line; the mouth moves for at most about twice this,
+// in case a sentence never reports that it ended
+const MS_PER_CHAR = 65;
+
+/** Move `t`'s mouth along with every line spoken from now on (null: nobody). */
+export function setTalker(t: Talker | null): void {
+    talker?.stopTalking();
+    talker = t;
+}
+
 /**
  * Stop whatever this page is saying (and drop a line waiting to be spoken).
  * Only cancels speechSynthesis when this page actually has speech going: in the
@@ -50,6 +66,7 @@ export function stopSpeech(): void {
     const cancel = cancelCurrent;
     cancelCurrent = null;
     cancel?.();
+    talker?.stopTalking();
     if (typeof speechSynthesis === "undefined") return;
     if (!speechSynthesis.speaking && !speechSynthesis.pending) return;
     speechSynthesis.cancel();
@@ -162,7 +179,10 @@ export function speak(...lines: VoiceLine[]): Promise<boolean> {
             const howl = howlFor(l);
             return howl ? recordingPart(l, howl) : ttsPart(l.text);
         });
-    return new Promise<boolean>(resolve => {
+    // the host talks until the sentence has been said (stopSpeech() cuts him off)
+    const chars = lines.reduce((n, l) => n + l.text.length, 0);
+    void talker?.talk(Math.max(500, chars * MS_PER_CHAR) * 2 + 2000);
+    const said = new Promise<boolean>(resolve => {
         let current: { stop(): void } | null = null;
         let over = false;
         const cancel = () => {
@@ -183,6 +203,8 @@ export function speak(...lines: VoiceLine[]): Promise<boolean> {
         };
         next(0);
     });
+    void said.then(ok => { if (ok && gen === generation) talker?.stopTalking(); });
+    return said;
 }
 
 export type Earcon =
