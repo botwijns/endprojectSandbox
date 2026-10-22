@@ -32,6 +32,7 @@ import { Howl } from "howler";
 const QUIZ_LENGTH = num(embed, "questions", 8, 1, 30); // the combined/ shell can override it
 const PROMPT_READ_MS = 2600; // rough time to speak the question before the piece plays
 const OPTION_READ_GAP_MS = 1900; // spacing when reading the four options in a row
+const OPTION_AFTER_MS = 350;     // ...but at least this much silence after a long one
 const RESULT_ADVANCE_MS = 3200; // delay before the next question after an answer
 
 type Phase = "prestart" | "listening" | "answered" | "done";
@@ -261,35 +262,43 @@ function playPiece(): number {
 
 // Announces one answer option: either the spoken text or - for "hear the
 // note" questions - the position name followed by the actual tone.
-function announceOption(index: AnswerIndex, zone: AnswerZone): void {
+// Resolves true once the option has been heard, false when it was cut off.
+function announceOption(index: AnswerIndex, zone: AnswerZone): Promise<boolean> {
     const q = currentQuestion();
-    if (!q) return;
+    if (!q) return Promise.resolve(false);
     const audio = q.audioOptions?.[index];
     hostPoint(index, q.options.length);
     if (audio) {
-        speak(letterLine(zone.letter));
-        later(() => {
+        const said = speak(letterLine(zone.letter));
+        return new Promise(res => later(() => {
             playNote(audio.instrument, audio.pitch);
             void hostScene?.playMusic(NOTE_MUSIC_MS);
-        }, 470);
-    } else {
-        speak(letterLine(zone.letter), answerLine(q.options[index]));
+            void said.then(res);
+        }, 470));
     }
+    return speak(letterLine(zone.letter), answerLine(q.options[index]));
 }
 
-function readOptions(): void {
+let readId = 0; // bumped by every readOptions(), so an older read-out stops
+
+/** Read every option in turn: each starts once the previous one has been
+ *  said, and never sooner than OPTION_READ_GAP_MS after it. */
+async function readOptions(): Promise<void> {
     const q = currentQuestion();
     if (!q) return;
+    const myRead = ++readId;
     const zones = zonesFor(q.options.length);
-    zones.forEach((zone, i) => {
-        later(() => announceOption(i, zone), i * OPTION_READ_GAP_MS);
-    });
-    if (introMode) {
-        // all options heard - now it's the player's turn to tap
-        later(() => {
-            if (introStep === "listen") setIntroStep("tap");
-        }, zones.length * OPTION_READ_GAP_MS);
+    for (let i = 0; i < zones.length; i++) {
+        const startedAt = performance.now();
+        const heard = await announceOption(i, zones[i]);
+        // cut off: the player tapped an option, or the question moved on
+        if (!heard || myRead !== readId || currentQuestion() !== q) return;
+        const wait = Math.max(OPTION_AFTER_MS, OPTION_READ_GAP_MS - (performance.now() - startedAt));
+        await new Promise<void>(res => later(res, wait)); // a cleared timer ends the read-out here
+        if (myRead !== readId || currentQuestion() !== q) return;
     }
+    // all options heard - now it's the player's turn to tap
+    if (introMode && introStep === "listen") setIntroStep("tap");
 }
 
 function setAnswerLayoutClass(count: number): void {
@@ -674,14 +683,16 @@ function presentQuestion(): void {
     renderHud();
     updateIntroUI();
 
-    // Speech is fire-and-forget status; fixed timers drive the flow so a missing
-    // or slow speech-synthesis engine never stalls the quiz.
-    speak(...prompt);
+    // The piece starts once the question has been said, and no sooner than
+    // readMs. speak() never stalls on a missing or slow speech engine, and a
+    // question that is cut off (asked again, the round stopped) plays nothing.
+    const said = speak(...prompt);
     const startPiece = () => {
         const ms = playPiece();
-        later(readOptions, ms + 700);
+        later(() => void readOptions(), ms + 700);
     };
-    later(() => {
+    later(() => void said.then(ok => {
+        if (!ok || currentQuestion() !== q) return;
         if (experiment > 0 && !gorillaPlayed && !introMode && session?.progress.current === GORILLA_QUESTION) {
             gorillaPlayed = true;
             const gorilla = gorillaSounds[experiment - 1];
@@ -693,7 +704,7 @@ function presentQuestion(): void {
         } else {
             startPiece();
         }
-    }, readMs);
+    }), readMs);
 }
 
 /** The player asked to hear the question again. */
@@ -853,7 +864,7 @@ readOptionsBtn.addEventListener("click", () => {
     if (phase !== "listening") return;
     clearPending();
     stopAudio();
-    readOptions();
+    void readOptions();
 });
 
 input.start();

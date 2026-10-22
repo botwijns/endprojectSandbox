@@ -96,8 +96,18 @@ const ttsPart = (text: string): Part => (gen, done) => {
         window.clearTimeout(timer);
         done();
     };
-    // a missing or silent speech engine never stalls the flow
-    const timer = window.setTimeout(finish, Math.max(1500, text.length * 75));
+    // A missing or silent speech engine never stalls the flow: after the line's
+    // rough length it counts as said. But a voice slower than the guess is
+    // still talking then, and whatever comes next would cut it off - so wait
+    // while the engine is busy, up to a hard limit in case `end` never comes.
+    const estimate = Math.max(1500, text.length * 75);
+    const giveUpAt = performance.now() + estimate * 2 + 3000;
+    const check = () => {
+        const busy = typeof speechSynthesis !== "undefined" && (speechSynthesis.speaking || speechSynthesis.pending);
+        if (busy && gen === generation && performance.now() < giveUpAt) timer = window.setTimeout(check, 250);
+        else finish();
+    };
+    let timer = window.setTimeout(check, estimate);
     if (typeof speechSynthesis !== "undefined") {
         try {
             const u = new SpeechSynthesisUtterance(text);
