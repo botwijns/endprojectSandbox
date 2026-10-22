@@ -774,7 +774,7 @@ function resolveReel(): void {
         state.caughtToday.push(def.id);
         state.score++;
         soundCaught.stop()
-        soundCatching.play("success")
+        // soundCatching.play("success")
         log(`${def.label} gevangen! Die stond op je lijstje.`);
         const dayDone = remainingFish().length === 0;
         track("catch_result", { day: state.day, fish: def.id, outcome: "caught", correct: true, score: state.score });

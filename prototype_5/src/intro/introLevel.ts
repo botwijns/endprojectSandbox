@@ -201,7 +201,7 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         if (destroyed) return;
         await sleep(bite() + 1200);
         if (destroyed) return;
-        water.showEscape(); // this one gets away, so the player can hook the next
+        // water.showEscape(); // this one gets away, so the player can hook the next
         await sleep(2000);
         if (destroyed) return;
 
@@ -266,7 +266,7 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         if (destroyed) return;
         setCaption("");
         water.land();
-        sounds.catching.play("success");
+        // sounds.catching.play("success");
         await sleep(2500);
         if (destroyed) return;
 
