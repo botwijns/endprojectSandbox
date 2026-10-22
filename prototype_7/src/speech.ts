@@ -32,6 +32,21 @@ let lastCancelAt = -Infinity;
 let generation = 0;
 let pendingTimer = 0;
 
+/** Anything with a mouth to animate while a line is spoken (the intro's quiz host). */
+export interface Talker {
+    talk(ms: number): unknown;
+    stopTalking(): void;
+}
+let talker: Talker | null = null;
+// rough length of a spoken line: how long the mouth moves if `end` never fires
+const MS_PER_CHAR = 65;
+
+/** Move `t`'s mouth along with every line spoken from now on (null: nobody). */
+export function setTalker(t: Talker | null): void {
+    talker?.stopTalking();
+    talker = t;
+}
+
 /**
  * Stop whatever this page is saying (and drop a line waiting to be spoken).
  * Only cancels when this page actually has speech going: in the combined/ shell
@@ -41,6 +56,7 @@ let pendingTimer = 0;
 export function stopSpeech(): void {
     generation++;
     window.clearTimeout(pendingTimer);
+    talker?.stopTalking();
     if (typeof speechSynthesis === "undefined") return;
     if (!speechSynthesis.speaking && !speechSynthesis.pending) return;
     speechSynthesis.cancel();
@@ -75,6 +91,12 @@ export function speak(text: string): SpeechSynthesisUtterance | null {
         u.pitch = 1;
         let retried = false;
         u.onstart = () => console.debug("[p7 speech] start:", text);
+        // the host talks for the line's rough length, and stops as soon as it
+        // has really been said (listeners, so callers can still set onend)
+        const estimate = Math.max(500, text.length * MS_PER_CHAR);
+        talker?.talk(estimate);
+        u.addEventListener("start", () => { if (gen === generation) talker?.talk(estimate); });
+        u.addEventListener("end", () => { if (gen === generation) talker?.stopTalking(); });
         u.onerror = e => {
             console.warn(`[p7 speech] ${e.error}:`, text);
             // cut off by someone else (another frame's cancel, a hiccup in the

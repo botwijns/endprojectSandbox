@@ -1,6 +1,7 @@
 import { QuizSession } from "./quizEngine.ts";
 import { initAudio, getAudioContext, playSong, playNote, stopAudio, fontsReady } from "./audioPlayback.ts";
-import { speak, stopSpeech, earcon } from "./speech.ts";
+import { speak, stopSpeech, earcon, setTalker } from "./speech.ts";
+import { createQuizHostScene, type QuizHostScene, type PointTarget } from "./intro/quizHostScene.ts";
 import { InputHandler, zonesFor, type QuizAction, type AnswerIndex, type AnswerZone } from "./inputHandler.ts";
 import { KNOWN_SONGS } from "./knownSongs.ts";
 import { generateQuestion, generatePreviewSong } from "./questionGenerator.ts";
@@ -82,6 +83,71 @@ const previewNextBtn = document.getElementById("preview-next-btn") as HTMLButton
 const practiceAssistEl = document.getElementById("practice-assist")!;
 const repeatQuestionBtn = document.getElementById("repeat-question-btn") as HTMLButtonElement;
 const readOptionsBtn = document.getElementById("read-options-btn") as HTMLButtonElement;
+const introStageEl = document.getElementById("intro-stage")!;
+const introSceneEl = document.getElementById("intro-scene")!;
+const zoneEls = ["zone-a", "zone-b", "zone-c", "zone-d"].map(id => document.getElementById(id)!);
+
+// ── Quiz host (intro only) ──────────────────────────────────────────────────
+// During the oefenlevel the quiz show host (intro/quizHostScene.ts) stands
+// behind the screen: he talks along with every spoken line, the stage
+// speakers play along with every piece, he points at each answer's side or
+// corner as it is read out (and that zone's outline lights up), and the
+// audience claps for a right answer and goes "awww" for a wrong one.
+let hostScene: QuizHostScene | null = null;
+let pointCount = 0; // bumped by every hostPoint(), so only the latest one turns its outline off
+const HOST_POINT_MS = OPTION_READ_GAP_MS - 300; // put the arm down just before the next option
+const NOTE_MUSIC_MS = 700;                      // speakers pulse this long for one answer note
+
+const POINT_TARGETS: Record<2 | 4, PointTarget[]> = {
+    2: ["left", "right"],
+    4: ["top-left", "top-right", "bottom-left", "bottom-right"],
+};
+
+function showHostScene(): void {
+    hideHostScene();
+    introStageEl.hidden = false;
+    document.body.classList.add("intro-scene");
+    hostScene = createQuizHostScene(introSceneEl);
+    setTalker(hostScene);
+}
+
+function hideHostScene(): void {
+    if (!hostScene) return;
+    setTalker(null);
+    hostScene.destroy();
+    hostScene = null;
+    introStageEl.hidden = true;
+    document.body.classList.remove("intro-scene");
+    litZone(null);
+}
+
+/** Outline one answer zone brighter while the host points at it (or none). */
+function litZone(index: number | null): void {
+    zoneEls.forEach((el, i) => el.classList.toggle("zone-lit", i === index));
+}
+
+/** The host points at answer `index` of a `count`-answer layout, and its zone lights up. */
+function hostPoint(index: number, count: number, holdMs = HOST_POINT_MS): void {
+    if (!hostScene) return;
+    const target = POINT_TARGETS[count <= 2 ? 2 : 4][index];
+    if (!target) return;
+    litZone(index);
+    // the outline goes out with the arm - unless a newer point took over
+    const myPoint = ++pointCount;
+    void hostScene.point(target, holdMs).then(() => { if (myPoint === pointCount) litZone(null); });
+}
+
+/** Play a whole piece (the stage speakers play along). Returns its duration in ms. */
+function playSongOnStage(song: GeneratedSong): number {
+    const ms = playSong(song);
+    void hostScene?.playMusic(ms);
+    return ms;
+}
+
+/** The ms a Howl lasts, or `fallback` while its length isn't known yet. */
+function soundMs(sound: Howl, fallback: number): number {
+    return sound.duration() > 0 ? sound.duration() * 1000 : fallback;
+}
 
 // ── HUD (sighted debug aid only) ─────────────────────────────────────────────
 const hud = {
@@ -157,6 +223,10 @@ function silenceEverything(): void {
     applauseSound.stop();
     awwSound.stop();
     stopSpeech();
+    hostScene?.stopMusic();
+    hostScene?.stopPointing();
+    hostScene?.stopAudience();
+    litZone(null);
 }
 
 /**
@@ -192,7 +262,7 @@ function playPiece(): number {
     const q = currentQuestion();
     if (!q) return 0;
     stopAudio();
-    const ms = playSong(q.song);
+    const ms = playSongOnStage(q.song);
     later(() => cue("listen"), ms + 120);
     return ms;
 }
@@ -203,9 +273,13 @@ function announceOption(index: AnswerIndex, zone: AnswerZone): void {
     const q = currentQuestion();
     if (!q) return;
     const audio = q.audioOptions?.[index];
+    hostPoint(index, q.options.length);
     if (audio) {
         speak(`${zone.letter}.`);
-        later(() => playNote(audio.instrument, audio.pitch), 470);
+        later(() => {
+            playNote(audio.instrument, audio.pitch);
+            void hostScene?.playMusic(NOTE_MUSIC_MS);
+        }, 470);
     } else {
         speak(`${zone.letter}. ${q.options[index]}`);
     }
@@ -275,7 +349,8 @@ const PRACTICE: { traitId: string; leadIn: string }[] = [
 ];
 
 type PreviewIcon = "drums" | "no-drums" | "zones-2" | "zones-4";
-interface PreviewStep { icon: PreviewIcon; caption: string; play: () => number; }
+/** `zones`: the answer layout this step shows (and the host points out). */
+interface PreviewStep { icon: PreviewIcon; caption: string; play: () => number; zones?: 2 | 4; }
 
 const ZONE_CUE_GAP_MS = 1400;
 
@@ -283,22 +358,24 @@ const PREVIEW_STEPS: PreviewStep[] = [
     {
         icon: "drums",
         caption: "Luister eerst. Dit is een stukje muziek mét drums.",
-        play: () => playSong(previewSong!),
+        play: () => playSongOnStage(previewSong!),
     },
     {
         icon: "no-drums",
         caption: "En dit is hetzelfde stukje zónder drums.",
-        play: () => playSong({ ...previewSong!, drums: undefined }),
+        play: () => playSongOnStage({ ...previewSong!, drums: undefined }),
     },
     {
         icon: "zones-2",
         caption: "Soms zijn er twee antwoorden: links en rechts.",
         play: () => playZoneCues(2),
+        zones: 2,
     },
     {
         icon: "zones-4",
         caption: "Soms zijn er vier antwoorden, één in elke hoek.",
         play: () => playZoneCues(4),
+        zones: 4,
     },
 ];
 
@@ -308,6 +385,7 @@ function playZoneCues(count: number): number {
     zones.forEach((zone, i) => {
         later(() => {
             setLitZone(i);
+            hostPoint(i, count, ZONE_CUE_GAP_MS - 300);
             speak(zone.letter);
         }, i * ZONE_CUE_GAP_MS);
     });
@@ -392,8 +470,10 @@ function updateIntroUI(): void {
     // phone, and by then the player repeats the question by shaking instead
     const lastPractice = practiceIndex >= PRACTICE.length - 2;
     practiceAssistEl.hidden = !(introMode && !introDemoActive && phase === "listening" && !lastPractice);
-    // the dashed answer guides only matter while a question can be answered
-    document.body.classList.toggle("no-zones", startScreenEl.hidden === false || introDemoActive);
+    // the dashed answer guides only matter while a question can be answered -
+    // or while the preview's host points out where the answers sit
+    const previewZones = introDemoActive && PREVIEW_STEPS[previewIndex]?.zones !== undefined;
+    document.body.classList.toggle("no-zones", startScreenEl.hidden === false || (introDemoActive && !previewZones));
 }
 
 function setIntroStep(step: IntroStep): void {
@@ -408,7 +488,9 @@ function showPreviewStep(index: number, myRun: number): void {
     previewIndex = index;
     const step = PREVIEW_STEPS[index];
     renderPreviewIcon(step.icon);
+    if (step.zones) setAnswerLayoutClass(step.zones);
     updateInstruction(step.caption);
+    updateIntroUI();
     renderHud();
     speakThen(step.caption, () => {
         if (previewIndex === index) playPreviewStep(myRun);
@@ -498,6 +580,7 @@ function showGameScreen(): void {
 function stopGame(): void {
     runId++; // invalidate any in-flight preview / timers
     silenceEverything();
+    hideHostScene();
     if (fontPoll !== null) { window.clearInterval(fontPoll); fontPoll = null; }
     loading = false;
     introMode = false;
@@ -570,6 +653,7 @@ async function startGame(asIntro: boolean): Promise<void> {
         input.setActive(false);
         previewSong = generatePreviewSong();
         previewPanelEl.hidden = false;
+        showHostScene();
         updateIntroUI();
         showPreviewStep(0, myRun);
         return;
@@ -646,10 +730,12 @@ function giveFeedback(q: Question, correct: boolean): void {
     if (correct) {
         cue("correct");
         applauseSound.play();
+        void hostScene?.clap(soundMs(applauseSound, 3000));
         return;
     }
     cue("wrong");
     awwSound.play();
+    void hostScene?.awww(soundMs(awwSound, 2200));
     const correctAudio = q.audioOptions?.[q.options.indexOf(q.correctAnswer)];
     if (correctAudio) {
         later(() => speak("Dit was de juiste noot:"), FEEDBACK_SOUND_MS);
