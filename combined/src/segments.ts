@@ -28,18 +28,42 @@ export interface ProtoDef {
     params: Record<Mode, ParamDef[]>;
 }
 
-/** The "gorilla" experiment every game has: an unexpected sound, played once. */
-function experimentParam(when: string): ParamDef {
-    return {
-        key: "experiment", label: "Experiment (onverwacht geluid)", type: "select", default: 1,
-        options: [
-            { value: 0, label: "uit" },
-            { value: 1, label: "miauw" },
-            { value: 2, label: "blaf" },
-            { value: 3, label: "boing" },
-        ],
-        help: when,
-    };
+// ── Gorilla experiment ───────────────────────────────────────────────────────
+// Every game has an unexpected sound, played once. The flow picks one sound for
+// the whole session (or "random": the player page draws one, or none, per
+// player); each game segment only switches it on or off. The prototypes still
+// read `experiment` (0 = off, 1–3 = sound), which segmentUrl() fills in.
+
+export type GorillaSound = 0 | 1 | 2 | 3;
+export type GorillaChoice = GorillaSound | "random";
+
+export const GORILLA_SOUNDS: { value: GorillaSound; label: string }[] = [
+    { value: 0, label: "uit" },
+    { value: 1, label: "miauw" },
+    { value: 2, label: "blaf" },
+    { value: 3, label: "boing" },
+];
+
+function isGorillaSound(v: unknown): v is GorillaSound {
+    return v === 0 || v === 1 || v === 2 || v === 3;
+}
+
+/** The sound this player hears: "random" draws uniformly from uit/miauw/blaf/boing. */
+export function resolveGorilla(choice: GorillaChoice): GorillaSound {
+    return choice === "random" ? GORILLA_SOUNDS[Math.floor(Math.random() * GORILLA_SOUNDS.length)].value : choice;
+}
+
+export function gorillaLabel(sound: GorillaSound): string {
+    return GORILLA_SOUNDS.find(s => s.value === sound)!.label;
+}
+
+/** Per game segment: the session's sound on/off, plus which day / song / question (1-based) it plays in. */
+function experimentParams(unit: string, units: string, max: number, when: string): ParamDef[] {
+    return [
+        { key: "gorilla", label: "Onverwacht geluid in dit onderdeel", type: "bool", default: true, help: when },
+        { key: "gorillaAt", label: `Experiment klinkt in ${unit}`, type: "number", default: 2, min: 1, max,
+          help: `meer dan het aantal ${units} = klinkt nooit` },
+    ];
 }
 
 export const PROTOS: ProtoDef[] = [
@@ -54,7 +78,7 @@ export const PROTOS: ProtoDef[] = [
                 { key: "fishFirstDay", label: "Vissen op het lijstje op dag 1", type: "number", default: 3, min: 1, max: 12 },
                 { key: "maxExtraPerDay", label: "Max. extra vissen per dag", type: "number", default: 1, min: 0, max: 5,
                   help: "elke volgende dag komen er 0 t/m dit aantal bij" },
-                experimentParam("klinkt op dag 2, bij de laatste vis van het lijstje (vanaf 2 dagen)"),
+                ...experimentParams("dag", "dagen", 10, "klinkt bij de laatste vis van het lijstje"),
             ],
         },
     },
@@ -73,7 +97,7 @@ export const PROTOS: ProtoDef[] = [
                   help: "leeg = standaardvolgorde; de lijst herhaalt als er meer nummers zijn" },
                 { key: "speech", label: "Spraak (voice-over)", type: "bool", default: true },
                 { key: "randomNote", label: "Willekeurige toonhoogte bij plaatsen", type: "bool", default: false },
-                experimentParam("vervangt een drumslag tijdens het 2e nummer (vanaf 2 nummers)"),
+                ...experimentParams("nummer", "nummers", 20, "vervangt een drumslag (vanaf de 4e herhaling)"),
             ],
         },
     },
@@ -87,7 +111,7 @@ export const PROTOS: ProtoDef[] = [
                 { key: "questions", label: "Aantal vragen", type: "number", default: 8, min: 1, max: 30 },
                 { key: "carryRatings", label: "Spelersniveau overnemen van vorige quiz", type: "bool", default: true,
                   help: "start met de ratings waarop een eerder quizdeel in deze flow eindigde" },
-                experimentParam("klinkt bij vraag 2, vóór de muziek (vanaf 2 vragen)"),
+                ...experimentParams("vraag", "vragen", 30, "klinkt vóór de muziek"),
             ],
         },
     },
@@ -114,6 +138,8 @@ export interface Flow {
     surveyAtEnd?: boolean;
     /** games borrow the shell's audio/speech/motion, so only the very first tap is needed (src/embedShared.ts) */
     sharedAudio?: boolean;
+    /** the unexpected sound for the whole session; segments switch it on/off */
+    gorilla?: GorillaChoice;
     segments: Segment[];
 }
 
@@ -135,21 +161,34 @@ export function sanitizeFlow(raw: unknown): Flow | null {
     const r = raw as Partial<Flow>;
     if (!Array.isArray(r.segments)) return null;
     const segments: Segment[] = [];
+    // older flows chose a sound per segment (params.experiment 0–3): keep the
+    // first one as the session's sound, and "on" wherever it wasn't 0
+    let legacySound: GorillaSound | undefined;
     for (const s of r.segments) {
         if (!s || !PROTOS.some(p => p.id === s.proto)) continue;
         const mode: Mode = s.mode === "intro" ? "intro" : "game";
         const params = defaultParams(s.proto, mode);
+        const raw: Record<string, unknown> = { ...s.params };
+        if (isGorillaSound(raw.experiment)) {
+            if (raw.gorilla === undefined) raw.gorilla = raw.experiment > 0;
+            if (raw.experiment > 0) legacySound ??= raw.experiment;
+        }
         for (const def of protoDef(s.proto).params[mode]) {
-            const v = s.params?.[def.key];
+            const v = raw[def.key];
             if (v === undefined) continue;
-            if (def.type === "list" ? Array.isArray(v) : typeof v === typeof def.default) params[def.key] = v;
+            if (def.type === "list" ? Array.isArray(v) : typeof v === typeof def.default) params[def.key] = v as ParamValue;
         }
         segments.push({ proto: s.proto, mode, title: typeof s.title === "string" ? s.title : undefined, params });
     }
+    const hadLegacy = r.segments.some(s => isGorillaSound((s as Partial<Segment> | null)?.params?.experiment));
+    const gorilla: GorillaChoice = r.gorilla === "random" || isGorillaSound(r.gorilla) ? r.gorilla
+        : hadLegacy ? legacySound ?? 0
+        : "random";
     return {
         name: typeof r.name === "string" ? r.name : "flow",
         surveyAtEnd: !!r.surveyAtEnd,
         sharedAudio: !!r.sharedAudio,
+        gorilla,
         segments,
     };
 }
@@ -187,16 +226,23 @@ export interface ServerSession {
     number: number | -1;
 }
 
+/** The params a segment's game gets: its own, the gorilla `experiment` sound (0 when off), and `extra`. */
+export function segmentParams(seg: Segment, sound: GorillaSound, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    const gorilla = "gorilla" in seg.params ? { experiment: seg.params.gorilla === true ? sound : 0 } : {};
+    return { ...seg.params, ...gorilla, ...extra };
+}
+
 /**
- * The URL a segment's iframe loads. `extra` adds runtime-only params (e.g. carried-over
- * ratings); `shared` makes the game borrow the shell's audio instead of showing its tap screen.
+ * The URL a segment's iframe loads. `sound` is this player's gorilla sound
+ * (see resolveGorilla); `extra` adds runtime-only params (e.g. carried-over ratings);
+ * `shared` makes the game borrow the shell's audio instead of showing its tap screen.
  */
-export function segmentUrl(seg: Segment, session: ServerSession, extra: Record<string, unknown> = {}, shared = false): string {
+export function segmentUrl(seg: Segment, session: ServerSession, sound: GorillaSound, extra: Record<string, unknown> = {}, shared = false): string {
     const q = new URLSearchParams({
         embed: "1",
         mode: seg.mode,
         title: segmentTitle(seg),
-        params: JSON.stringify({ ...seg.params, ...extra }),
+        params: JSON.stringify(segmentParams(seg, sound, extra)),
         sid: String(session.id),
         snum: String(session.number),
     });

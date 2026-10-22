@@ -6,6 +6,8 @@
 // question (prompt + song). Layout fractions live here and are mirrored by the
 // dashed guides in index.html.
 
+import { ShakeDetector } from "../../src/shake.ts";
+
 export type AnswerIndex = number;
 
 export interface AnswerZone {
@@ -14,15 +16,15 @@ export interface AnswerZone {
 }
 
 const SIDES_2: AnswerZone[] = [
-  { index: 0, letter: "Links" }, // links
-  { index: 1, letter: "Rechts" }, // rechts
+  { index: 0, letter: "A" }, // links
+  { index: 1, letter: "B" }, // rechts
 ];
 
 const CORNERS_4: AnswerZone[] = [
-  { index: 0, letter: "Linksboven" }, // linksboven
-  { index: 1, letter: "Rechtsboven" }, // rechtsboven
-  { index: 2, letter: "Linksonder" }, // linksonder
-  { index: 3, letter: "Rechtsonder" }, // rechtsonder
+  { index: 0, letter: "A" }, // linksboven
+  { index: 1, letter: "B" }, // rechtsboven
+  { index: 2, letter: "C" }, // linksonder
+  { index: 3, letter: "D" }, // rechtsonder
 ];
 
 /** The active set of answer zones for a question with `count` options (2 or 4). */
@@ -40,9 +42,6 @@ type ActionCallback = (action: QuizAction) => void;
 
 const TAP_MAX_GAP_MS = 1500; // taps further apart than this reset the start-tap sequence
 const SELECT_WINDOW_MS = 1500; // a second tap on the same corner within this commits it
-
-const SHAKE_THRESHOLD = 15; // m/s² jump between consecutive samples - tune against a real device
-const SHAKE_COOLDOWN_MS = 1200; // ignore further shakes for this long after one fires
 
 type Zone =
     | { kind: "answer"; index: AnswerIndex }
@@ -63,9 +62,14 @@ export class InputHandler {
     private armedIndex: AnswerIndex | null = null;
     private armedAt = 0;
 
-    // Shake detection.
-    private lastMotionMagnitude: number | null = null;
-    private lastShakeAt = 0;
+    // Shake detection - shared with prototype 6 so a shake feels the same in both.
+    private shake = new ShakeDetector();
+
+    constructor() {
+        this.shake.onShake(() => {
+            if (this.active) this.emit({ type: "repeat" });
+        });
+    }
 
     start(): void {
         document.body.addEventListener("pointerdown", this.handlePointerDown);
@@ -73,7 +77,7 @@ export class InputHandler {
 
     stop(): void {
         document.body.removeEventListener("pointerdown", this.handlePointerDown);
-        window.removeEventListener("devicemotion", this.handleMotion);
+        this.shake.stop();
     }
 
     onAction(cb: ActionCallback): void {
@@ -110,16 +114,7 @@ export class InputHandler {
      * explicit permission prompt.
      */
     async enableMotion(): Promise<void> {
-        const DME = (window as any).DeviceMotionEvent;
-        if (DME && typeof DME.requestPermission === "function") {
-            try {
-                const result = await DME.requestPermission();
-                if (result !== "granted") return;
-            } catch {
-                return; // not actually iOS, or the prompt was denied/unsupported
-            }
-        }
-        window.addEventListener("devicemotion", this.handleMotion);
+        await this.shake.start();
     }
 
     private emit(action: QuizAction): void {
@@ -169,21 +164,6 @@ export class InputHandler {
             this.armedIndex = zone.index;
             this.armedAt = now;
             this.emit({ type: "optionPreview", index: zone.index });
-        }
-    };
-
-    private handleMotion = (e: DeviceMotionEvent): void => {
-        if (!this.active) return;
-        const acc = e.acceleration ?? e.accelerationIncludingGravity;
-        if (!acc) return;
-        const magnitude = Math.sqrt((acc.x ?? 0) ** 2 + (acc.y ?? 0) ** 2 + (acc.z ?? 0) ** 2);
-        const delta = this.lastMotionMagnitude === null ? 0 : Math.abs(magnitude - this.lastMotionMagnitude);
-        this.lastMotionMagnitude = magnitude;
-
-        const now = performance.now();
-        if (delta > SHAKE_THRESHOLD && now - this.lastShakeAt > SHAKE_COOLDOWN_MS) {
-            this.lastShakeAt = now;
-            this.emit({ type: "repeat" });
         }
     };
 }

@@ -13,6 +13,16 @@
       "options": ["(Bijna) nooit", "Een paar keer per maand", "Wekelijks", "Dagelijks"]
     },
     {
+      "id": "age",
+      "type": "scale",
+      "label": "Hoe oud ben je?",
+      "required": true,
+      "min": 8,
+      "max": 13,
+      "minOptionLabel": "8 of jonger",
+      "maxOptionLabel": "13 of ouder"
+    },
+    {
       "id": "favorite_prototype",
       "type": "single",
       "label": "Welk deel van het spel vond je het leukst?",
@@ -25,10 +35,13 @@
     },
     {
       "id": "length",
-      "type": "text",
+      "type": "slider",
       "label": "Hoeveel minuten denk je dat je gespeeld hebt?",
       "required": true,
-      "placeholder": "Typ hier je antwoord"
+      "min": 0,
+      "max": 60,
+      "step": 1,
+      "unit": "minuten"
     },
     {
       "id": "gorrilla_noticed",
@@ -44,10 +57,22 @@
       "required": true,
       "showIf": { "question": "gorrilla_noticed", "equals": true },
       "options": [
-        "Een miauw van een kat",
-        "Een flits van een camera",
-        "Een rubber eendje dat piept",
-        "Ik heb geen geluid gehoord"
+        "Een kat die miauwt",
+        "Een hond die blaft",
+        "Een boing van een veer",
+        "Ik heb een ander geluid gehoord"
+      ]
+    },
+    {
+      "id": "gorrilla_when",
+      "type": "multi",
+      "label": "Tijdens wel spel heb je dit geluid gehoord?",
+      "required": true,
+      "showIf": { "question": "gorrilla_noticed", "equals": true },
+      "options": [
+        "1 - Hengelen naar instrumenten",
+        "2 - Muziek maken",
+        "3 - De muziek quiz"
       ]
     },
     {

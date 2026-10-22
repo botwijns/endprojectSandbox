@@ -15,8 +15,11 @@ COPY scripts ./scripts
 COPY public ./public
 COPY survey-template.json ./
 
-# The SQLite file lives here; mount a volume on it to keep data across restarts.
-RUN mkdir -p /app/data && chown node:node /app/data
+# COPY keeps the host's file modes, so a checkout made with a strict umask
+# (e.g. files 600, owned by root) is unreadable to the node user. Make the app
+# readable for everyone; it stays owned by root, so node still can't modify it.
+# The SQLite file lives in /app/data; mount a volume on it to keep data across restarts.
+RUN chmod -R a+rX /app && mkdir -p /app/data && chown node:node /app/data
 VOLUME ["/app/data"]
 
 USER node

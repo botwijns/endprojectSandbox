@@ -70,6 +70,8 @@
       method: opts.method || 'GET',
       headers: { 'Content-Type': 'application/json' },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
+      // lets a last write finish while the page is being left (e.g. on to the survey)
+      keepalive: !!opts.body,
     }).then(function (res) {
       if (res.status === 204) return null;
       return res.text().then(function (text) {

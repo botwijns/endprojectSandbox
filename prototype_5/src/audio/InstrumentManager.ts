@@ -1,6 +1,10 @@
 // @ts-ignore
 import WebAudioFontPlayer from "webaudiofont";
 import * as synth from "./fishSynth.ts";
+import { decodeFonts, loadFonts } from "../../../src/fonts.ts";
+
+/** extra gain for the synthesised (fishSynth.ts) voices, on top of each fish's own volume */
+const SYNTH_BOOST = 2;
 
 /** One step of a melody: a MIDI pitch (null = rest), its length in beats and an optional velocity 0..1. */
 export interface Note {
@@ -11,7 +15,7 @@ export interface Note {
 
 export type Voice =
     /** a webaudiofont instrument playing a melody */
-    | { kind: "font"; file: string; variable: string; notes: Note[]; bpm: number; legato?: number }
+    | { kind: "font"; variable: string; notes: Note[]; bpm: number; legato?: number }
     /** webaudiofont drum samples: each hit picks its own kit piece (variable null = rest) */
     | { kind: "kit"; hits: { variable: string | null; p: number; d: number; v?: number }[]; bpm: number }
     /** synthesised with Web Audio (see fishSynth.ts) */
@@ -30,8 +34,7 @@ export interface FishDef {
 
 // Instrument samples shipped in /public/fonts (GeneralUserGS + Chaos soundfonts,
 // shared with the other prototypes). Loading them locally means no network and
-// no external dependency. File names are <GM program><variant>.
-const FONTS = `${import.meta.env.BASE_URL}fonts/`;
+// no external dependency. Each file defines one global variable (see src/fonts.ts).
 const SOUNDS = `${import.meta.env.BASE_URL}sounds/`;
 
 const KICK = "_drum_36_1_Chaos_sf2_file";
@@ -46,7 +49,7 @@ export const FISH: FishDef[] = [
         // fanfare: short-short-LONG, upward
         id: "trumpetfish", label: "Trompetvis", volume: 0.8,
         voice: {
-            kind: "font", file: FONTS + "0560_GeneralUserGS_sf2_file.js", variable: "_tone_0560_GeneralUserGS_sf2_file",
+            kind: "font", variable: "_tone_0560_GeneralUserGS_sf2_file",
             bpm: 160, notes: [n(67, 0.5), n(67, 0.5), n(72, 1.5), n(null, 0.25), n(76, 0.5), n(79, 1.75)],
         },
     },
@@ -54,7 +57,7 @@ export const FISH: FishDef[] = [
         // fast rolling arpeggio up and back down
         id: "guitarfish", label: "Gitaarvis", volume: 0.85,
         voice: {
-            kind: "font", file: FONTS + "0241_GeneralUserGS_sf2_file.js", variable: "_tone_0241_GeneralUserGS_sf2_file",
+            kind: "font", variable: "_tone_0241_GeneralUserGS_sf2_file",
             bpm: 170, legato: 1.6,
             notes: [52, 55, 59, 64, 67, 71, 76, 71, 67, 64, 59, 55].map(p => n(p, 0.25)).concat(n(52, 1)),
         },
@@ -63,7 +66,7 @@ export const FISH: FishDef[] = [
         // slow, long legato notes sliding downward
         id: "fiddlerray", label: "Vioolrog", volume: 0.75,
         voice: {
-            kind: "font", file: FONTS + "0401_GeneralUserGS_sf2_file.js", variable: "_tone_0401_GeneralUserGS_sf2_file",
+            kind: "font", variable: "_tone_0401_GeneralUserGS_sf2_file",
             bpm: 96, legato: 1.1, notes: [n(81, 1), n(79, 0.5), n(77, 0.5), n(76, 1), n(72, 1.5)],
         },
     },
@@ -71,7 +74,7 @@ export const FISH: FishDef[] = [
         // low, bouncy walking line with gaps
         id: "seabass", label: "Zeebaars", volume: 1,
         voice: {
-            kind: "font", file: FONTS + "0321_GeneralUserGS_sf2_file.js", variable: "_tone_0321_GeneralUserGS_sf2_file",
+            kind: "font", variable: "_tone_0321_GeneralUserGS_sf2_file",
             bpm: 132,
             notes: [n(40, 0.5), n(null, 0.5), n(40, 0.25), n(43, 0.25), n(45, 0.5), n(null, 0.25), n(47, 0.25), n(45, 0.5), n(40, 1)],
         },
@@ -105,14 +108,12 @@ export function fishById(id: string): FishDef | undefined {
     return FISH.find(f => f.id === id);
 }
 
-// every distinct webaudiofont file that has to be downloaded/decoded
-const REQUIRED_FONTS: { file: string; variable: string }[] = [
-    ...FISH.flatMap(f => f.voice.kind === "font" ? [{file: f.voice.file, variable: f.voice.variable}] : []),
-    {file: FONTS + "12836_1_Chaos_sf2_file.js", variable: KICK},
-    {file: FONTS + "12838_1_Chaos_sf2_file.js", variable: SNARE},
-    {file: FONTS + "12842_1_Chaos_sf2_file.js", variable: HAT},
-    {file: FONTS + "12864_0_Chaos_sf2_file.js", variable: CONGA},
-];
+// every distinct webaudiofont instrument that has to be downloaded/decoded
+// (the combined/ shell preloads these for the whole flow — see src/fonts.ts)
+export const FONT_VARIABLES: string[] = [...new Set([
+    ...FISH.flatMap(f => f.voice.kind === "font" ? [f.voice.variable] : []),
+    KICK, SNARE, HAT, CONGA,
+])];
 
 export class InstrumentManager {
     private player: any;
@@ -139,11 +140,8 @@ export class InstrumentManager {
 
     /** Download + decode every instrument sample and recording. Resolves when all are ready. */
     preload(): Promise<void> {
-        const fonts = new Promise<void>((resolve) => {
-            REQUIRED_FONTS.forEach(({file, variable}) =>
-                this.player.loader.startLoad(this.ctx, file, variable));
-            this.player.loader.waitLoad(() => resolve());
-        });
+        // already decoded when the combined shell handed them over
+        const fonts = loadFonts(FONT_VARIABLES).then(() => decodeFonts(this.player, this.ctx, FONT_VARIABLES));
         const recordings = FISH.flatMap(f => f.voice.kind === "sample" ? [f.voice.src] : []).map(async src => {
             try {
                 const data = await (await fetch(src)).arrayBuffer();
@@ -196,7 +194,11 @@ export class InstrumentManager {
             });
             duration = t - start;
         } else if (voice.kind === "synth") {
-            duration = voice.play(this.ctx, out, start, track);
+            // the synthesised voices come out quieter than the samples — lift them
+            const boost = this.ctx.createGain();
+            boost.gain.value = SYNTH_BOOST;
+            boost.connect(out);
+            duration = voice.play(this.ctx, boost, start, track);
         } else {
             const buffer = this.samples.get(voice.src);
             if (buffer) {

@@ -135,6 +135,44 @@
       .icon-tap .ripple { opacity: 0.6; }
     }
 
+    /* ── Intro (oefenlevel only): the quiz show host ── */
+    /* Fills the screen behind the zones and the game screen; every tap falls
+       through to the answer zones. The text sits at the top and the buttons at
+       the bottom, so the host stays visible in between. */
+    #intro-stage {
+      position: fixed; inset: 0; z-index: 3; pointer-events: none;
+      background: linear-gradient(#211a6a 0%, #171553 50%, #0f1344 50%, #0f1344 100%);
+    }
+    #intro-stage[hidden] { display: none; }
+    #intro-scene { position: absolute; inset: 0; }
+    #intro-scene .quizhost-svg { display: block; width: 100%; height: 100%; }
+    #intro-spacer { display: none; }
+    body.intro-scene #intro-spacer { display: block; flex: 1; }
+    body.intro-scene #game-screen { color: #fff; }
+    body.intro-scene #instruction:not(:empty) {
+      background: rgb(8 10 40 / 0.72); border-radius: 12px; padding: 0.5rem 0.9rem;
+      box-sizing: border-box; text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+    }
+    /* the host shows what to do now, so the tutorial icons step aside */
+    body.intro-scene #step-icon, body.intro-scene #preview-icon-slot { display: none; }
+    /* on the dark stage the answer outlines need light ink */
+    body.intro-scene .zone {
+      border-color: rgb(255 255 255 / 0.4); color: rgb(255 255 255 / 0.75);
+      font-size: 18px; font-weight: 700;
+    }
+    /* the zone the host is pointing at */
+    body.intro-scene .zone.zone-lit {
+      border: 3px solid #ffd35a; color: #ffe9a8;
+      animation: zone-pulse 0.8s ease-in-out infinite;
+    }
+    @keyframes zone-pulse {
+      0%, 100% { background: rgb(255 211 90 / 0.08); }
+      50%      { background: rgb(255 211 90 / 0.3); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      body.intro-scene .zone.zone-lit { animation: none; background: rgb(255 211 90 / 0.2); }
+    }
+
     /* ── Phones in landscape ── */
     /* Very little height: tighten spacing so the text fits, and let the start
        screen scroll as a last resort rather than clipping it. */
@@ -161,6 +199,11 @@
   <select id="hud-song-picker" data-ui title="dwing een specifiek lied af (dev preview)"></select>
 </div>
 
+<!-- the oefenlevel's quiz show host (src/intro/); sits behind the zones -->
+<div id="intro-stage" hidden>
+  <div id="intro-scene"></div>
+</div>
+
 <div id="zone-a" class="zone">A</div>
 <div id="zone-b" class="zone">B</div>
 <div id="zone-c" class="zone">C</div>
@@ -182,6 +225,7 @@
 <div id="game-screen" hidden>
   <div id="step-icon" aria-hidden="true"></div>
   <div id="instruction" aria-live="polite"></div>
+  <div id="intro-spacer" aria-hidden="true"></div>
 
   <div id="preview-panel" hidden>
     <div id="preview-icon-slot" aria-hidden="true"></div>
@@ -199,33 +243,9 @@
   <button id="stop-btn" data-ui>Stop &mdash; terug naar startscherm</button>
 </div>
 
-<!-- WebAudioFont instrument + drum banks live in the shared repo-root /public/fonts
-     folder (wired up via `publicDir` in vite.prototype_7.config.ts). Paths are
-     relative so they resolve under the deployed sub-path for both dev and Pages.
-     The player library itself comes from the `webaudiofont` npm package (see
-     src/audioPlayback.ts), not a <script> tag. -->
-<script src="fonts/0000_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0241_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0271_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0282_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0321_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0331_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0340_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0382_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0401_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0421_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0430_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0560_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0650_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0851_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/0882_GeneralUserGS_sf2_file.js"></script>
-<script src="fonts/12836_1_Chaos_sf2_file.js"></script>
-<script src="fonts/12838_1_Chaos_sf2_file.js"></script>
-<script src="fonts/12842_1_Chaos_sf2_file.js"></script>
-<script src="fonts/12864_0_Chaos_sf2_file.js"></script>
-<script src="fonts/12868_0_Chaos_sf2_file.js"></script>
-<script src="fonts/12869_0_Chaos_sf2_file.js"></script>
-
+<!-- The WebAudioFont instruments (repo-root /public/fonts) are listed in
+     src/fonts.ts and loaded by the shared ../src/fonts.ts, so the combined/ shell
+     can hand over its already-decoded copies instead of each page loading them. -->
 <script type="module" src="src/main.ts"></script>
 </body>
 </html>

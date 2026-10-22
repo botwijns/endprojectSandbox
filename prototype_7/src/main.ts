@@ -3,7 +3,9 @@
 import "../../src/embedShared.ts";
 import { QuizSession } from "./quizEngine.ts";
 import { initAudio, getAudioContext, playSong, playNote, stopAudio, fontsReady } from "./audioPlayback.ts";
-import { speak, earcon } from "./speech.ts";
+import { speak, stopSpeech, earcon, setTalker } from "./speech.ts";
+import { createQuizHostScene, type QuizHostScene, type PointTarget } from "./intro/quizHostScene.ts";
+import { GAME_LINES, INTRO_LINES, answerLine, letterLine, questionLine, type VoiceLine } from "./voiceLines.ts";
 import { InputHandler, zonesFor, type QuizAction, type AnswerIndex, type AnswerZone } from "./inputHandler.ts";
 import { KNOWN_SONGS } from "./knownSongs.ts";
 import { generateQuestion, generatePreviewSong } from "./questionGenerator.ts";
@@ -13,7 +15,7 @@ import {
     DRUMS_SVG, EAR_SVG, PHONE_ZONES_2_SVG, PHONE_ZONES_4_SVG, TAP_SVG, DOUBLE_TAP_SVG, SHAKE_SVG,
 } from "./introIcons.ts";
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { getEmbed, setupEmbedStart, embedDone, onEmbedStop, num, numRecord } from "../../src/embed.ts";
+import { getEmbed, setupEmbedStart, embedDone, onEmbedStop, num, numRecord, track, EXPERIMENT_SOUNDS } from "../../src/embed.ts";
 
 // set when the combined/ shell runs this page as one segment of a longer flow
 const embed = getEmbed();
@@ -50,14 +52,23 @@ let fontPoll: number | null = null;
 // ── Gorilla experiment ───────────────────────────────────────────────────────
 // Like prototype 5: an unexpected sound slipped into the game. `experiment`
 // picks which one (0 = off, 1 = meow, 2 = bark, 3 = boing). It plays once, on
-// the second question, after the question is spoken and before the music.
+// the second question (or the `gorillaAt`th), after the question is spoken and
+// before the music.
 let experiment = num(embed, "experiment", 1, 0, 3);
+const GORILLA_QUESTION = num(embed, "gorillaAt", 2, 1, 30);
 const gorillaSounds: Howl[] = [
     new Howl({ src: "sounds/meow.mp3" }),
     new Howl({ src: "sounds/bark.mp3" }),
     new Howl({ src: "sounds/boing.mp3" }),
 ];
 let gorillaPlayed = false;
+
+// answer feedback: applause for a right answer, an "aww" for a wrong one
+const applauseSound = new Howl({ src: "sounds/applause.mp3" });
+const awwSound = new Howl({ src: "sounds/aww.mp3" });
+const FEEDBACK_SOUND_MS = 1500; // let the aww mostly finish before revealing the answer
+// how often the player asked for the current question again (telemetry)
+let repeats = 0;
 const GORILLA_GAP_MS = 400; // silence between the gorilla sound and the piece
 
 // ── Screens ─────────────────────────────────────────────────────────────────
@@ -76,6 +87,71 @@ const previewNextBtn = document.getElementById("preview-next-btn") as HTMLButton
 const practiceAssistEl = document.getElementById("practice-assist")!;
 const repeatQuestionBtn = document.getElementById("repeat-question-btn") as HTMLButtonElement;
 const readOptionsBtn = document.getElementById("read-options-btn") as HTMLButtonElement;
+const introStageEl = document.getElementById("intro-stage")!;
+const introSceneEl = document.getElementById("intro-scene")!;
+const zoneEls = ["zone-a", "zone-b", "zone-c", "zone-d"].map(id => document.getElementById(id)!);
+
+// ── Quiz host (intro only) ──────────────────────────────────────────────────
+// During the oefenlevel the quiz show host (intro/quizHostScene.ts) stands
+// behind the screen: he talks along with every spoken line, the stage
+// speakers play along with every piece, he points at each answer's side or
+// corner as it is read out (and that zone's outline lights up), and the
+// audience claps for a right answer and goes "awww" for a wrong one.
+let hostScene: QuizHostScene | null = null;
+let pointCount = 0; // bumped by every hostPoint(), so only the latest one turns its outline off
+const HOST_POINT_MS = OPTION_READ_GAP_MS - 300; // put the arm down just before the next option
+const NOTE_MUSIC_MS = 700;                      // speakers pulse this long for one answer note
+
+const POINT_TARGETS: Record<2 | 4, PointTarget[]> = {
+    2: ["left", "right"],
+    4: ["top-left", "top-right", "bottom-left", "bottom-right"],
+};
+
+function showHostScene(): void {
+    hideHostScene();
+    introStageEl.hidden = false;
+    document.body.classList.add("intro-scene");
+    hostScene = createQuizHostScene(introSceneEl);
+    setTalker(hostScene);
+}
+
+function hideHostScene(): void {
+    if (!hostScene) return;
+    setTalker(null);
+    hostScene.destroy();
+    hostScene = null;
+    introStageEl.hidden = true;
+    document.body.classList.remove("intro-scene");
+    litZone(null);
+}
+
+/** Outline one answer zone brighter while the host points at it (or none). */
+function litZone(index: number | null): void {
+    zoneEls.forEach((el, i) => el.classList.toggle("zone-lit", i === index));
+}
+
+/** The host points at answer `index` of a `count`-answer layout, and its zone lights up. */
+function hostPoint(index: number, count: number, holdMs = HOST_POINT_MS): void {
+    if (!hostScene) return;
+    const target = POINT_TARGETS[count <= 2 ? 2 : 4][index];
+    if (!target) return;
+    litZone(index);
+    // the outline goes out with the arm - unless a newer point took over
+    const myPoint = ++pointCount;
+    void hostScene.point(target, holdMs).then(() => { if (myPoint === pointCount) litZone(null); });
+}
+
+/** Play a whole piece (the stage speakers play along). Returns its duration in ms. */
+function playSongOnStage(song: GeneratedSong): number {
+    const ms = playSong(song);
+    void hostScene?.playMusic(ms);
+    return ms;
+}
+
+/** The ms a Howl lasts, or `fallback` while its length isn't known yet. */
+function soundMs(sound: Howl, fallback: number): number {
+    return sound.duration() > 0 ? sound.duration() * 1000 : fallback;
+}
 
 // ── HUD (sighted debug aid only) ─────────────────────────────────────────────
 const hud = {
@@ -148,25 +224,22 @@ function silenceEverything(): void {
     clearPending();
     stopAudio();
     gorillaSounds.forEach(s => s.stop());
-    if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    applauseSound.stop();
+    awwSound.stop();
+    stopSpeech();
+    hostScene?.stopMusic();
+    hostScene?.stopPointing();
+    hostScene?.stopAudience();
+    litZone(null);
 }
 
 /**
- * Speak, then run `fn` once the speech ends - or after a length-based
- * fallback, so a missing/silent speech engine never stalls the flow. `fn` runs
- * at most once (a cancelled utterance can still fire onend), and the fallback
- * is a pending timer, so silenceEverything() drops it.
+ * Speak, then run `fn` once the speech ends (speak() never stalls on a
+ * missing/silent speech engine). `fn` doesn't run when the line is cut off,
+ * e.g. by silenceEverything().
  */
-function speakThen(text: string, fn: () => void): void {
-    let fired = false;
-    const go = () => {
-        if (fired) return;
-        fired = true;
-        fn();
-    };
-    const u = speak(text);
-    if (u) u.onend = go;
-    later(go, Math.max(1500, text.length * 75));
+function speakThen(line: VoiceLine, fn: () => void): void {
+    void speak(line).then(said => { if (said) fn(); });
 }
 
 // ── Audio helpers ───────────────────────────────────────────────────────────
@@ -184,7 +257,7 @@ function playPiece(): number {
     const q = currentQuestion();
     if (!q) return 0;
     stopAudio();
-    const ms = playSong(q.song);
+    const ms = playSongOnStage(q.song);
     later(() => cue("listen"), ms + 120);
     return ms;
 }
@@ -195,11 +268,15 @@ function announceOption(index: AnswerIndex, zone: AnswerZone): void {
     const q = currentQuestion();
     if (!q) return;
     const audio = q.audioOptions?.[index];
+    hostPoint(index, q.options.length);
     if (audio) {
-        speak(`${zone.letter}.`);
-        later(() => playNote(audio.instrument, audio.pitch), 470);
+        speak(letterLine(zone.letter));
+        later(() => {
+            playNote(audio.instrument, audio.pitch);
+            void hostScene?.playMusic(NOTE_MUSIC_MS);
+        }, 470);
     } else {
-        speak(`${zone.letter}. ${q.options[index]}`);
+        speak(letterLine(zone.letter), answerLine(q.options[index]));
     }
 }
 
@@ -257,40 +334,39 @@ const INTRO_STEPS: Record<IntroStep, string> = {
 const PRACTICE_RATING = BASE_RATING - 200; // aim well below neutral: the easiest songs the generator can make
 const PRACTICE_MAX_BARS = 3;                // ...but keep them short - for some traits "easiest" means "longest"
 
-const PRACTICE: { traitId: string; leadIn: string }[] = [
-    { traitId: "has-drums", leadIn: "Eerste oefenvraag." },
-    {
-        traitId: "melody-instrument-family",
-        leadIn: "Nu zijn er vier antwoorden, één in elke hoek. " +
-            "Wil je de vraag nog eens horen? Schud dan je telefoon.",
-    },
+const PRACTICE: { traitId: string; leadIn: VoiceLine }[] = [
+    { traitId: "has-drums", leadIn: INTRO_LINES.practice1 },
+    { traitId: "melody-instrument-family", leadIn: INTRO_LINES.practice2 },
 ];
 
 type PreviewIcon = "drums" | "no-drums" | "zones-2" | "zones-4";
-interface PreviewStep { icon: PreviewIcon; caption: string; play: () => number; }
+/** `zones`: the answer layout this step shows (and the host points out). */
+interface PreviewStep { icon: PreviewIcon; caption: VoiceLine; play: () => number; zones?: 2 | 4; }
 
 const ZONE_CUE_GAP_MS = 1400;
 
 const PREVIEW_STEPS: PreviewStep[] = [
     {
         icon: "drums",
-        caption: "Luister eerst. Dit is een stukje muziek mét drums.",
-        play: () => playSong(previewSong!),
+        caption: INTRO_LINES.previewDrums,
+        play: () => playSongOnStage(previewSong!),
     },
     {
         icon: "no-drums",
-        caption: "En dit is hetzelfde stukje zónder drums.",
-        play: () => playSong({ ...previewSong!, drums: undefined }),
+        caption: INTRO_LINES.previewNoDrums,
+        play: () => playSongOnStage({ ...previewSong!, drums: undefined }),
     },
     {
         icon: "zones-2",
-        caption: "Soms zijn er twee antwoorden: links en rechts.",
+        caption: INTRO_LINES.previewTwoZones,
         play: () => playZoneCues(2),
+        zones: 2,
     },
     {
         icon: "zones-4",
-        caption: "Soms zijn er vier antwoorden, één in elke hoek.",
+        caption: INTRO_LINES.previewFourZones,
         play: () => playZoneCues(4),
+        zones: 4,
     },
 ];
 
@@ -300,7 +376,8 @@ function playZoneCues(count: number): number {
     zones.forEach((zone, i) => {
         later(() => {
             setLitZone(i);
-            speak(zone.letter);
+            hostPoint(i, count, ZONE_CUE_GAP_MS - 300);
+            speak(letterLine(zone.letter));
         }, i * ZONE_CUE_GAP_MS);
     });
     later(() => setLitZone(null), zones.length * ZONE_CUE_GAP_MS);
@@ -384,8 +461,10 @@ function updateIntroUI(): void {
     // phone, and by then the player repeats the question by shaking instead
     const lastPractice = practiceIndex >= PRACTICE.length - 2;
     practiceAssistEl.hidden = !(introMode && !introDemoActive && phase === "listening" && !lastPractice);
-    // the dashed answer guides only matter while a question can be answered
-    document.body.classList.toggle("no-zones", startScreenEl.hidden === false || introDemoActive);
+    // the dashed answer guides only matter while a question can be answered -
+    // or while the preview's host points out where the answers sit
+    const previewZones = introDemoActive && PREVIEW_STEPS[previewIndex]?.zones !== undefined;
+    document.body.classList.toggle("no-zones", startScreenEl.hidden === false || (introDemoActive && !previewZones));
 }
 
 function setIntroStep(step: IntroStep): void {
@@ -400,7 +479,9 @@ function showPreviewStep(index: number, myRun: number): void {
     previewIndex = index;
     const step = PREVIEW_STEPS[index];
     renderPreviewIcon(step.icon);
-    updateInstruction(step.caption);
+    if (step.zones) setAnswerLayoutClass(step.zones);
+    updateInstruction(step.caption.text);
+    updateIntroUI();
     renderHud();
     speakThen(step.caption, () => {
         if (previewIndex === index) playPreviewStep(myRun);
@@ -431,9 +512,8 @@ function advancePreview(myRun: number): void {
     previewIndex = PREVIEW_STEPS.length; // ignores further Herhaal/Volgende clicks
     previewPanelEl.hidden = true;
     renderPreviewIcon(null);
-    const text = "Klaar? Daar gaan we — volg de aanwijzingen.";
-    updateInstruction(text);
-    speakThen(text, () => startPractice(myRun));
+    updateInstruction(INTRO_LINES.ready.text);
+    speakThen(INTRO_LINES.ready, () => startPractice(myRun));
 }
 
 function startPractice(myRun: number): void {
@@ -465,7 +545,7 @@ function finishIntro(): void {
     input.setActive(false);
     setIntroStep("done");
     cue("done");
-    later(() => speak(embed ? "Goed gedaan! Je kent nu de quiz." : "Goed gedaan! Je kent nu de quiz. Terug naar het startscherm."), 400);
+    later(() => embed ? speak(INTRO_LINES.done) : speak(INTRO_LINES.done, INTRO_LINES.backToStart), 400);
     later(() => {
         if (myRun !== runId) return;
         stopGame();
@@ -490,6 +570,7 @@ function showGameScreen(): void {
 function stopGame(): void {
     runId++; // invalidate any in-flight preview / timers
     silenceEverything();
+    hideHostScene();
     if (fontPoll !== null) { window.clearInterval(fontPoll); fontPoll = null; }
     loading = false;
     introMode = false;
@@ -541,7 +622,7 @@ async function startGame(asIntro: boolean): Promise<void> {
         gameBtn.disabled = true;
         startNoteEl.hidden = false;
         startNoteEl.textContent = "Instrumenten laden…";
-        speak("Instrumenten laden, momentje.");
+        speak(GAME_LINES.loading);
         await waitForFonts();
         if (myRun !== runId) return;
         loading = false;
@@ -562,6 +643,7 @@ async function startGame(asIntro: boolean): Promise<void> {
         input.setActive(false);
         previewSong = generatePreviewSong();
         previewPanelEl.hidden = false;
+        showHostScene();
         updateIntroUI();
         showPreviewStep(0, myRun);
         return;
@@ -581,14 +663,14 @@ function presentQuestion(): void {
     input.setAnswerCount(q.options.length);
     setAnswerLayoutClass(q.options.length);
 
-    let prompt = q.prompt;
+    const prompt: VoiceLine[] = [questionLine(q.traitId, q.prompt)];
     let readMs = PROMPT_READ_MS;
     if (introMode) {
-        const leadIn = leadInPending ? PRACTICE[practiceIndex].leadIn : "";
+        const leadIn = leadInPending ? PRACTICE[practiceIndex].leadIn : null;
         leadInPending = false;
         if (leadIn) {
-            prompt = `${leadIn} ${prompt}`;
-            readMs += leadIn.length * 65;
+            prompt.unshift(leadIn);
+            readMs += leadIn.text.length * 65;
         }
         setIntroStep(practiceIndex === 0 ? "listen" : "corners");
     }
@@ -597,23 +679,30 @@ function presentQuestion(): void {
 
     // Speech is fire-and-forget status; fixed timers drive the flow so a missing
     // or slow speech-synthesis engine never stalls the quiz.
-    speak(prompt);
+    speak(...prompt);
     const startPiece = () => {
         const ms = playPiece();
         later(readOptions, ms + 700);
     };
     later(() => {
-        if (experiment > 0 && !gorillaPlayed && !introMode && session?.progress.current === 2) {
+        if (experiment > 0 && !gorillaPlayed && !introMode && session?.progress.current === GORILLA_QUESTION) {
             gorillaPlayed = true;
             const gorilla = gorillaSounds[experiment - 1];
             gorilla.volume(0.5);
             gorilla.play();
+            track("gorilla", { sound: EXPERIMENT_SOUNDS[experiment - 1], question: session.progress.current });
             const gorillaMs = gorilla.duration() > 0 ? gorilla.duration() * 1000 : 1500;
             later(startPiece, gorillaMs + GORILLA_GAP_MS);
         } else {
             startPiece();
         }
     }, readMs);
+}
+
+/** The player asked to hear the question again. */
+function repeatQuestion(): void {
+    repeats++;
+    presentQuestion();
 }
 
 function previewOption(index: AnswerIndex): void {
@@ -626,20 +715,23 @@ function previewOption(index: AnswerIndex): void {
     if (introMode && (introStep === "listen" || introStep === "tap")) setIntroStep("commit");
 }
 
-/** Spoken + earcon feedback after an answer. */
+/** Applause/aww + earcon feedback after an answer; a wrong answer also reveals the right one. */
 function giveFeedback(q: Question, correct: boolean): void {
     if (correct) {
         cue("correct");
-        speak("Goed.");
+        applauseSound.play();
+        void hostScene?.clap(soundMs(applauseSound, 3000));
         return;
     }
     cue("wrong");
+    awwSound.play();
+    void hostScene?.awww(soundMs(awwSound, 2200));
     const correctAudio = q.audioOptions?.[q.options.indexOf(q.correctAnswer)];
     if (correctAudio) {
-        later(() => speak("Fout. Dit was de juiste noot:"), 500);
-        later(() => playNote(correctAudio.instrument, correctAudio.pitch), 1300);
+        later(() => speak(GAME_LINES.rightNote), FEEDBACK_SOUND_MS);
+        later(() => playNote(correctAudio.instrument, correctAudio.pitch), FEEDBACK_SOUND_MS + 800);
     } else {
-        later(() => speak(`Fout. Het was ${q.correctAnswer}.`), 500);
+        later(() => speak(GAME_LINES.itWas, answerLine(q.correctAnswer)), FEEDBACK_SOUND_MS);
     }
 }
 
@@ -656,8 +748,8 @@ function commitOption(index: AnswerIndex): void {
         giveFeedback(q, correct);
         if (!correct) {
             // same kind of question again, with a fresh song
-            later(() => speak("Probeer het nog eens met een nieuw stukje."), 2600);
-            later(() => { nextPracticeQuestion(false); presentQuestion(); }, 5200);
+            later(() => speak(INTRO_LINES.tryAgain), 3600);
+            later(() => { nextPracticeQuestion(false); presentQuestion(); }, 6200);
         } else if (practiceIndex + 1 < PRACTICE.length) {
             later(() => { practiceIndex++; nextPracticeQuestion(true); presentQuestion(); }, RESULT_ADVANCE_MS);
         } else {
@@ -668,6 +760,23 @@ function commitOption(index: AnswerIndex): void {
 
     if (!session) return;
     const answered = session.submitAnswer(chosen);
+    track("question_answered", {
+        number: session.history.length,
+        total: session.progress.total,
+        category: q.category,
+        traitId: q.traitId,
+        difficulty: q.difficulty,
+        prompt: q.prompt,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        chosenAnswer: chosen,
+        correct: answered.correct,
+        repeats,
+        songRating: q.songRating,
+        correctSoFar: session.score,
+        ratings: session.ratings,
+    });
+    repeats = 0;
     renderHud();
     giveFeedback(q, answered.correct);
 
@@ -676,7 +785,8 @@ function commitOption(index: AnswerIndex): void {
         if (session.isFinished) endQuiz();
         else presentQuestion();
     };
-    later(advance, RESULT_ADVANCE_MS);
+    // a wrong answer gets the aww plus the right answer, so give it a bit longer
+    later(advance, answered.correct ? RESULT_ADVANCE_MS : RESULT_ADVANCE_MS + 1000);
 }
 
 function beginQuiz(): void {
@@ -684,8 +794,10 @@ function beginQuiz(): void {
     // in the combined flow, start from the ratings a previous quiz part ended on
     session = new QuizSession(QUIZ_LENGTH, songPicker.value || undefined, numRecord(embed, "ratings") ?? undefined);
     gorillaPlayed = false;
+    repeats = 0;
+    track("game_start", { questions: QUIZ_LENGTH, experiment, startRatings: session.ratings });
     input.setQuizEnabled(true);
-    speak("Daar gaan we. Luister goed.");
+    speak(GAME_LINES.quizStart);
     later(presentQuestion, 1600);
 }
 
@@ -697,15 +809,11 @@ function endQuiz(): void {
     const total = session.history.length;
     const score = session.score;
     lastResultsSummary = session.performanceSummary().filter(s => s.avgDelta > 0);
+    track("game_end", { score, total, ratings: session.ratings });
     renderHud();
     cue("done");
-    later(() => speak(`Klaar. Je had ${score} van de ${total} goed.`), 500);
-    if (lastResultsSummary.length > 0) {
-        const names = lastResultsSummary.slice(0, 3).map(s => s.category).join(", ");
-        later(() => speak(`Je scoorde het best op: ${names}.`), 3200);
-    }
-    // hand back to the combined/ shell once the results have been read out,
-    // with the ratings so a later quiz part can carry on from them
+    // hand back to the combined/ shell after the closing cue (and the last
+    // answer's feedback), with the ratings so a later quiz part can carry on from them
     if (embed) {
         const myRun = runId;
         const ratings = session.ratings;
@@ -713,7 +821,7 @@ function endQuiz(): void {
             if (myRun !== runId) return;
             stopGame();
             embedDone({ score, total, ratings });
-        }, lastResultsSummary.length > 0 ? 7500 : 4000);
+        }, 2500);
     }
 }
 
@@ -732,7 +840,7 @@ input.onAction((action: QuizAction) => {
             commitOption(action.index);
             return;
         case "repeat":
-            if (phase === "listening") presentQuestion();
+            if (phase === "listening") repeatQuestion();
             return;
     }
 });
@@ -743,7 +851,7 @@ gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterF
 stopBtn.addEventListener("click", () => stopGame());
 previewRepeatBtn.addEventListener("click", () => playPreviewStep(runId));
 previewNextBtn.addEventListener("click", () => advancePreview(runId));
-repeatQuestionBtn.addEventListener("click", () => { if (phase === "listening") presentQuestion(); });
+repeatQuestionBtn.addEventListener("click", () => { if (phase === "listening") repeatQuestion(); });
 readOptionsBtn.addEventListener("click", () => {
     if (phase !== "listening") return;
     clearPending();

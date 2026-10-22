@@ -2,15 +2,18 @@
 // the shell's audio, speech and motion before anything creates its own
 import "../../src/embedShared.ts";
 import { InputHandler, SCALE_DEGREES } from "./inputHandler.ts";
-import { ShakeDetector } from "./shake.ts";
+import { ShakeDetector } from "../../src/shake.ts";
 import { Howl, Howler } from "howler";
 import { generateDrumPattern, type DrumPattern } from "./music.ts";
 import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts";
 import { speak, earcon, setSpeechEnabled, stopSpeech } from "./speech.ts";
+import { BRIEF_LINES, GAME_LINES, INSTRUMENT_LINES, STEP_LINES, TRACK_COUNT_LINES, TRACK_NUMBER_LINES, numbered } from "./voiceLines.ts";
 import { createIntroLevel, type IntroGate, type IntroLevel } from "./intro/introLevel.ts";
 import "webaudiofont";
+import { FONT_VARS } from "./fonts.ts";
+import { loadFonts } from "../../src/fonts.ts";
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { getEmbed, setupEmbedStart, embedDone, onEmbedStop, num, bool, strList } from "../../src/embed.ts";
+import { getEmbed, setupEmbedStart, embedDone, onEmbedStop, num, bool, strList, track, EXPERIMENT_SOUNDS } from "../../src/embed.ts";
 
 // set when the combined/ shell runs this page as one segment of a longer flow
 const embed = getEmbed();
@@ -24,30 +27,13 @@ function briefFor(index: number): Brief {
     return BRIEF_ORDER.length ? BRIEF_ORDER[index % BRIEF_ORDER.length] : briefAt(index);
 }
 declare const WebAudioFontPlayer: any;
-// Each WebAudioFont file assigns one global var (loaded via a <script> tag in
-// index.html) — this table maps our instrument keys to those var names, so
-// adding an instrument is just one new entry + one new <script> tag instead
-// of a hand-written `declare const` per font.
 declare global { interface Window { [fontVar: string]: unknown } }
-const FONT_VARS = {
-    piano:            "_tone_0000_GeneralUserGS_sf2_file",
-    electricPiano:    "_tone_0040_GeneralUserGS_sf2_file",
-    distortionGuitar: "_tone_0301_GeneralUserGS_sf2_file",
-    electricBass:     "_tone_0331_GeneralUserGS_sf2_file",
-    slapBass:         "_tone_0361_GeneralUserGS_sf2_file",
-    cello:            "_tone_0421_GeneralUserGS_sf2_file",
-    contrabass:       "_tone_0430_GeneralUserGS_sf2_file",
-    trumpet:          "_tone_0560_GeneralUserGS_sf2_file",
-    synthPad:         "_tone_0882_GeneralUserGS_sf2_file",
-    steelDrums:       "_tone_1140_Chaos_sf2_file",
-    kick:             "_drum_36_1_Chaos_sf2_file",
-    snare:            "_drum_38_1_Chaos_sf2_file",
-    highHat:          "_drum_42_1_Chaos_sf2_file",
-} as const;
 type Instrument = keyof typeof FONT_VARS;
 const INSTRUMENTS = Object.keys(FONT_VARS) as Instrument[];
 
 // ── WebAudioFont setup ────────────────────────────────────────────────────────
+// standalone this downloads the fonts; in the combined/ shell they come pre-decoded
+await loadFonts(Object.values(FONT_VARS));
 const ctx = new AudioContext();
 const player = new WebAudioFontPlayer();
 
@@ -55,7 +41,7 @@ for (const fontVar of Object.values(FONT_VARS)) player.loader.decodeAfterLoading
 const instruments = Object.fromEntries(
     Object.entries(FONT_VARS).map(([key, fontVar]) => [key, window[fontVar]]),
 ) as Record<Instrument, any>;
-
+var backgroundSound = new Howl({src: "sounds/campfire.mp3"})
 // The drums are generated automatically, so the player only cycles the melodic voices.
 const MELODIC_INSTRUMENTS: MelodicInstrument[] = [
     "piano", "electricPiano", "distortionGuitar", "electricBass", "slapBass",
@@ -124,9 +110,10 @@ window.addEventListener("pointerdown", () => {
 // ── Gorilla experiment ───────────────────────────────────────────────────────
 // Like prototype 5: an unexpected sound slipped into the game. `experiment`
 // picks which one (0 = off, 1 = meow, 2 = bark, 3 = boing). It replaces one
-// background drum hit during the second melody — not before its fourth loop and
-// not on the bar's first drum hit — once per game.
+// background drum hit during the second melody (or the `gorillaAt`th) — not
+// before its fourth loop and not on the bar's first drum hit — once per game.
 let experiment = num(embed, "experiment", 1, 0, 3);
+const GORILLA_SONG = num(embed, "gorillaAt", 2, 1, 20) - 1; // briefIndex is 0-based
 const gorillaSounds: Howl[] = [
     new Howl({ src: "sounds/meow.mp3" }),
     new Howl({ src: "sounds/bark.mp3" }),
@@ -242,6 +229,7 @@ let briefIndex = 0;
 let currentBrief: Brief = BRIEFS[0];
 let drumPattern: DrumPattern | null = null;
 let briefLoop = 0;                    // full bars played in the current brief (1 = first loop)
+let briefStartedAt = 0;               // Date.now() when the current brief began (telemetry)
 
 interface MixtapeTrack {
     brief: string;
@@ -279,6 +267,9 @@ const pitchBottomEl = document.getElementById("pitch-edge-bottom")!;
 
 function log(msg: string) { logEl.textContent = msg; }
 
+// Track counts follow the constants, so the grid always fills the whole pad.
+gridEl.style.gridTemplateColumns = `repeat(${STEPS}, 1fr)`;
+gridEl.style.gridTemplateRows = `repeat(${SCALE_DEGREES}, 1fr)`;
 const cellEls: HTMLDivElement[][] = [];
 for (let s = 0; s < STEPS; s++) {
     cellEls.push([]);
@@ -291,21 +282,61 @@ for (let s = 0; s < STEPS; s++) {
         cellEls[s].push(cell);
     }
 }
+// The sweeping line of the intro's grid overlay (see movePlayhead()).
+const playheadEl = document.createElement("div");
+playheadEl.id = "playhead";
+gridEl.appendChild(playheadEl);
 
-// The grid stays hidden — all feedback is audio (and, in the intro, the
-// campfire scene). It's kept in the DOM as a debugging aid.
+// Tile colours for the intro overlay, taken from the campfire's flames so they
+// sit in the scene instead of on top of it.
+const INTRO_TILE_COLOR: Partial<Record<MelodicInstrument, string>> = {
+    piano:            "#ffd35a",
+    distortionGuitar: "#ff6a2a",
+};
+
+// The grid stays hidden in the real game — all feedback is audio. Only the
+// intro shows it, as a see-through overlay on the campfire scene while the
+// beat runs: a line sweeps along the steps and placed notes light up as tiles.
 function renderGrid(): void {
-    gridEl.style.display = "none";
+    const show = introMode && stepIntervalId !== null;
+    gridEl.style.display = show ? "" : "none";
+    gridEl.classList.toggle("intro-grid", show);
+    if (!show) return;
     for (let s = 0; s < STEPS; s++) {
-        const slot = pattern[currentInstrument][s];
+        // The current instrument's note wins; otherwise show the other one, so
+        // the piano notes stay visible after switching to the guitar.
+        const slot = pattern[currentInstrument][s]
+            ?? INTRO_INSTRUMENTS.map(id => pattern[id][s]).find(x => x) ?? null;
         for (let r = 0; r < SCALE_DEGREES; r++) {
             const cell = cellEls[s][r];
             const filled = !!slot && slot.note === r;
-            const onPlayhead = s === currentStep && phase === "composing";
-            cell.classList.toggle("current", onPlayhead);
-            cell.style.background = filled ? INSTRUMENT_COLOR[slot!.instrument] : "";
+            cell.classList.toggle("current", s === currentStep);
+            cell.classList.toggle("filled", filled);
+            if (filled) cell.style.setProperty("--tile", INTRO_TILE_COLOR[slot!.instrument as MelodicInstrument] ?? INSTRUMENT_COLOR[slot!.instrument]);
         }
     }
+}
+
+// The line glides across each step's column during that step, so it moves
+// smoothly in time with the beat; at the wrap it jumps back to the left edge.
+function movePlayhead(step: number): void {
+    const width = 100 / STEPS;
+    if (step === 0) {
+        playheadEl.style.transition = "none";
+        playheadEl.style.left = "0%";
+        void playheadEl.offsetWidth; // apply the jump before the next glide starts
+    }
+    playheadEl.style.transition = `left ${currentStepMs()}ms linear`;
+    playheadEl.style.left = `${(step + 1) * width}%`;
+}
+
+/** A short burst on a tile the player just tapped. */
+function flashCell(step: number, note: number): void {
+    const cell = cellEls[step]?.[note];
+    if (!cell || !introMode) return;
+    cell.classList.remove("pop");
+    void cell.offsetWidth; // restart the animation on repeated taps
+    cell.classList.add("pop");
 }
 
 function updateHud(): void {
@@ -315,7 +346,7 @@ function updateHud(): void {
             bpmEl.textContent = instrumentEl.textContent = backingEl.textContent = "";
             break;
         case "composing":
-            phaseEl.textContent = introMode ? "Oefenlevel — volg de aanwijzingen" : `Opdracht: ${currentBrief.say}`;
+            phaseEl.textContent = introMode ? "Oefenlevel — volg de aanwijzingen" : `Opdracht: ${BRIEF_LINES[currentBrief.id].say.text}`;
             bpmEl.textContent = `${Math.round(bpm / SLOWDOWN)} BPM (langzaam)`;
             instrumentEl.textContent = `instrument: ${INSTRUMENT_LABEL_NL[currentInstrument]}`;
             backingEl.textContent = drumPattern ? `beat: ${drumPattern.name}` : "";
@@ -355,9 +386,9 @@ function hasDrumHit(step: number): boolean {
 }
 
 // The gorilla takes the place of a drum hit on the fourth loop (or later) of
-// the second melody, and never the bar's first drum hit.
+// the GORILLA_SONG melody, and never the bar's first drum hit.
 function gorillaReplacesDrums(step: number): boolean {
-    if (experiment <= 0 || gorillaPlayed || introMode || briefIndex !== 1 || briefLoop < 4) return false;
+    if (experiment <= 0 || gorillaPlayed || introMode || briefIndex !== GORILLA_SONG || briefLoop < 4) return false;
     if (!hasDrumHit(step)) return false;
     for (let s = 0; s < step; s++) if (hasDrumHit(s)) return true;
     return false;
@@ -371,6 +402,7 @@ function playStep(step: number): void {
         gorilla.volume(0.5);
         gorilla.play();
         gorillaPlayed = true;
+        track("gorilla", { sound: EXPERIMENT_SOUNDS[experiment - 1], songIndex: briefIndex, loop: briefLoop, step });
     }
     for (const instrument of INSTRUMENTS) {
         const slot = pattern[instrument][step];
@@ -400,10 +432,12 @@ function tick(): void {
     }
     playStep(currentStep);
     drumAlong(currentStep);
+    if (introMode) movePlayhead(currentStep);
     renderGrid();
     if (replayStepsLeft > 0 && --replayStepsLeft === 0) {
         // let the last step ring out before the intro moves on
         stopSequencer();
+        renderGrid();
         const done = replayDone;
         replayDone = null;
         window.setTimeout(() => done?.(), currentStepMs());
@@ -442,6 +476,7 @@ function setNote(note: number): void {
     earcon(ctx, "place");
     log(`stap ${step + 1}: noot ${note + 1} (${INSTRUMENT_LABEL_NL[currentInstrument]})`);
     renderGrid();
+    flashCell(step, note);
     if (introMode) {
         intro?.notify("place");
         if (currentInstrument !== INTRO_INSTRUMENTS[0]) intro?.notify("placeOther");
@@ -473,7 +508,7 @@ function removeNote(): void {
     if (!canCompose() || !tutorialAllows("remove")) return;
     const entry = placedNoteStack.pop();
     if (!entry) {
-        if (!introMode) speak("nog geen noot geplaatst");
+        if (!introMode) speak(GAME_LINES.nothingPlaced);
         log("nog geen noot geplaatst");
         return;
     }
@@ -484,7 +519,12 @@ function removeNote(): void {
     const msg = had
         ? `stap ${step + 1} gewist (${INSTRUMENT_LABEL_NL[instrument]})`
         : `stap ${step + 1} was al leeg`;
-    if (!introMode) speak(msg); // in the intro the fisherman reacts instead
+    const stepLine = numbered(STEP_LINES, step + 1, `stap ${step + 1}`);
+    // in the intro the fisherman reacts instead
+    if (!introMode) {
+        if (had) speak(stepLine, GAME_LINES.erased, INSTRUMENT_LINES[instrument]);
+        else speak(stepLine, GAME_LINES.alreadyEmpty);
+    }
     log(msg);
     renderGrid();
     if (introMode) intro?.notify("remove");
@@ -496,7 +536,7 @@ function switchInstrument(): void {
     const i = (options.indexOf(currentInstrument) + 1) % options.length;
     currentInstrument = options[i];
     earcon(ctx, "instrument");
-    speak(INSTRUMENT_LABEL_NL[currentInstrument]);
+    speak(INSTRUMENT_LINES[currentInstrument]);
     updateHud();
     renderGrid();
 }
@@ -511,6 +551,7 @@ function loadBrief(index: number): void {
     placedNoteStack.length = 0; // the previous brief's pattern is about to be cleared
     trackSubmitted = false;
     briefLoop = 0;
+    briefStartedAt = Date.now();
 
     // fresh groove for the new vibe; the player's melody is kept
     drumPattern = generateDrumPattern(STEPS, currentBrief.grooveStyle);
@@ -519,7 +560,8 @@ function loadBrief(index: number): void {
     startSequencer();                 // (re)start at composer speed for the new brief
     updateHud();
     renderGrid();
-    speak(`Nummer ${mixtape.length + 1}. ${currentBrief.say}`);
+    const n = mixtape.length + 1;
+    speak(numbered(TRACK_NUMBER_LINES, n, `Nummer ${n}.`), BRIEF_LINES[currentBrief.id].say);
 }
 
 function finishTrack(): void {
@@ -535,10 +577,19 @@ function finishTrack(): void {
         });
     }
     mixtape.push({ brief: currentBrief.id, notes, groove: drumPattern, volume: currentVolume });
+    track("song_finished", {
+        index: briefIndex,
+        brief: currentBrief.id,
+        notes,
+        instruments: [...new Set(notes.map(([, , id]) => id))],
+        noteCount: notes.length,
+        loops: briefLoop,
+        durationMs: Date.now() - briefStartedAt,
+    });
     persistMixtape();
 
     earcon(ctx, "done");
-    speak(currentBrief.praise);
+    speak(BRIEF_LINES[currentBrief.id].praise);
     log(`nummer ${mixtape.length} opgeslagen`);
 
     // clear the melody so the next brief starts on a blank canvas
@@ -556,10 +607,12 @@ function finishTrack(): void {
 
 function endSession(): void {
     phase = "done";
+    track("game_end", { tracks: mixtape.length });
     stopSequencer();
     updateHud();
     renderGrid();
-    speak(`Je mixtape is klaar, met ${mixtape.length} nummers. Luister maar.`);
+    const count = mixtape.length;
+    speak(GAME_LINES.mixtapeReady, numbered(TRACK_COUNT_LINES, count, `${count} nummers.`), GAME_LINES.listen);
     const medleySeconds = playMedley();
     // hand back to the combined/ shell once the medley has played out
     if (embed) window.setTimeout(() => embedDone({ tracks: mixtape.length }), (medleySeconds + 1.5) * 1000);
@@ -619,6 +672,9 @@ function startIntro(): void {
     currentVolume = brief.volume;
     currentInstrument = INTRO_INSTRUMENTS[0];
     placedNoteStack.length = 0;
+    backgroundSound.play();
+    backgroundSound.loop(true);
+    backgroundSound.volume(0.4);
 
     drumPattern = generateDrumPattern(STEPS, brief.grooveStyle);
     applyDrumPattern(drumPattern);
@@ -665,6 +721,8 @@ function endIntro(): void {
     replayDone = null;
     introStageEl.hidden = true;
     hudEl.classList.remove("hidden");
+    renderGrid();
+    backgroundSound.stop();
 }
 
 function finishIntro(): void {
@@ -715,6 +773,7 @@ function stopGame(): void {
     stopSpeech();
     showStartScreen();
     startNoteEl.classList.add("hidden");
+    backgroundSound.stop();
 }
 
 function applyStartOptions(): void {
@@ -752,7 +811,7 @@ gameBtn.addEventListener("click", () => {
     startNoteEl.classList.add("hidden");
     showGameScreen();
     updateHud();
-    speak("Tik drie keer om te beginnen.");
+    speak(GAME_LINES.tapToStart);
 });
 stopBtn.addEventListener("click", stopGame);
 
@@ -761,7 +820,9 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
     // blend the player's tapped tempo with the brief's target so it stays on-vibe
     bpm = Math.round((tappedBpm + briefFor(0).tempo) / 2);
     stepDurationMs = (60000 / bpm) / 2;
-
+    backgroundSound.play();
+    backgroundSound.loop(true);
+    backgroundSound.volume(0.4);
     phase = "composing";
     trackSubmitted = false;
     currentStep = -1;
@@ -775,6 +836,11 @@ function startGame(tappedBpm: number, asIntro: boolean): void {
         startIntro();
     } else {
         introMode = false;
+        track("game_start", {
+            bpm, songCount: SONG_COUNT,
+            briefs: Array.from({ length: SONG_COUNT }, (_, i) => briefFor(i).id),
+            experiment, randomNote: randomNoteMode,
+        });
         loadBrief(0);   // starts the sequencer
     }
     earcon(ctx, "start");

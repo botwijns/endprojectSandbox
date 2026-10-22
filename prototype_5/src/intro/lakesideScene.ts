@@ -173,9 +173,19 @@ export function createLakesideScene(host: HTMLElement): LakesideScene {
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
     const smooth = (t: number) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
     const f = (v: number) => v.toFixed(1);
+    // Every frame rewrites the animated attributes; skip the ones whose value
+    // didn't change, so the browser doesn't re-lay out and repaint the SVG for nothing.
+    const attrCache = new WeakMap<Element, Record<string, string>>();
+    function setAttr(e: Element, name: string, value: string): void {
+        let c = attrCache.get(e);
+        if (!c) attrCache.set(e, c = {});
+        if (c[name] === value) return;
+        c[name] = value;
+        e.setAttribute(name, value);
+    }
     function mk(tag: string, attrs: Record<string, string | number>, parent?: Element): SVGElement {
         const e = document.createElementNS(NS, tag);
-        for (const k in attrs) e.setAttribute(k, String(attrs[k]));
+        for (const k in attrs) setAttr(e, k, String(attrs[k]));
         if (parent) parent.appendChild(e);
         return e;
     }
@@ -508,48 +518,48 @@ export function createLakesideScene(host: HTMLElement): LakesideScene {
         if (n.y < 0) { n.x = -n.x; n.y = -n.y; }
 
         /* rod */
-        el.shaft.setAttribute("d", "M" + f(g.butt.x) + " " + f(g.butt.y) + " Q" + f(g.ctrl.x) + " " + f(g.ctrl.y) + " " + f(g.tip.x) + " " + f(g.tip.y));
-        el.handle.setAttribute("x1", f(g.butt.x)); el.handle.setAttribute("y1", f(g.butt.y));
-        el.handle.setAttribute("x2", f(g.P.x + u.x * 26)); el.handle.setAttribute("y2", f(g.P.y + u.y * 26));
-        el.reel.setAttribute("transform", "translate(" + f(g.butt.x + u.x * 34 + n.x * 7) + " " + f(g.butt.y + u.y * 34 + n.y * 7) + ") rotate(" + f(reelRot * 57.3) + ")");
+        setAttr(el.shaft, "d", "M" + f(g.butt.x) + " " + f(g.butt.y) + " Q" + f(g.ctrl.x) + " " + f(g.ctrl.y) + " " + f(g.tip.x) + " " + f(g.tip.y));
+        setAttr(el.handle, "x1", f(g.butt.x)); setAttr(el.handle, "y1", f(g.butt.y));
+        setAttr(el.handle, "x2", f(g.P.x + u.x * 26)); setAttr(el.handle, "y2", f(g.P.y + u.y * 26));
+        setAttr(el.reel, "transform", "translate(" + f(g.butt.x + u.x * 34 + n.x * 7) + " " + f(g.butt.y + u.y * 34 + n.y * 7) + ") rotate(" + f(reelRot * 57.3) + ")");
 
         /* arms */
         const H = g.P, H2 = { x: H.x - 12 * u.x, y: H.y - 12 * u.y };
         const e1 = elbow(SH, H, 34), e2 = elbow(SH2, H2, 34);
-        el.armF.setAttribute("d", "M" + f(SH.x) + " " + f(SH.y) + " L" + f(e1.x) + " " + f(e1.y) + " L" + f(H.x) + " " + f(H.y));
-        el.armR.setAttribute("d", "M" + f(SH2.x) + " " + f(SH2.y) + " L" + f(e2.x) + " " + f(e2.y) + " L" + f(H2.x) + " " + f(H2.y));
-        el.handF.setAttribute("cx", f(H.x)); el.handF.setAttribute("cy", f(H.y));
-        el.handR.setAttribute("cx", f(H2.x)); el.handR.setAttribute("cy", f(H2.y));
+        setAttr(el.armF, "d", "M" + f(SH.x) + " " + f(SH.y) + " L" + f(e1.x) + " " + f(e1.y) + " L" + f(H.x) + " " + f(H.y));
+        setAttr(el.armR, "d", "M" + f(SH2.x) + " " + f(SH2.y) + " L" + f(e2.x) + " " + f(e2.y) + " L" + f(H2.x) + " " + f(H2.y));
+        setAttr(el.handF, "cx", f(H.x)); setAttr(el.handF, "cy", f(H.y));
+        setAttr(el.handR, "cx", f(H2.x)); setAttr(el.handR, "cy", f(H2.y));
 
         /* float + line */
         const C = flt.C, tilt = flt.tilt, tip = g.tip;
         const A = { x: C.x + 18 * Math.sin(tilt), y: C.y - 18 * Math.cos(tilt) };
-        el.bobber.setAttribute("transform", "translate(" + f(C.x) + " " + f(C.y) + ") rotate(" + f(tilt / D2R) + ")");
-        el.lineP.setAttribute("d", "M" + f(tip.x) + " " + f(tip.y) + " Q" + f((tip.x + A.x) / 2) + " " + f((tip.y + A.y) / 2 + flt.sag) + " " + f(A.x) + " " + f(A.y));
+        setAttr(el.bobber, "transform", "translate(" + f(C.x) + " " + f(C.y) + ") rotate(" + f(tilt / D2R) + ")");
+        setAttr(el.lineP, "d", "M" + f(tip.x) + " " + f(tip.y) + " Q" + f((tip.x + A.x) / 2) + " " + f((tip.y + A.y) / 2 + flt.sag) + " " + f(A.x) + " " + f(A.y));
 
         const landed = flt.mode === "landed", tau = clock - flt.t0;
-        el.ring.setAttribute("opacity", landed ? (0.7 * smooth(tau / 0.1)).toFixed(2) : "0");
-        el.ring.setAttribute("rx", f(9 + dip * 0.5));
-        el.refl.setAttribute("opacity", landed ? (0.3 * smooth(tau / 0.3)).toFixed(2) : "0");
-        el.refl.setAttribute("cx", f(T.x + 1.2 * Math.sin(clock * 2.1)));
+        setAttr(el.ring, "opacity", landed ? (0.7 * smooth(tau / 0.1)).toFixed(2) : "0");
+        setAttr(el.ring, "rx", f(9 + dip * 0.5));
+        setAttr(el.refl, "opacity", landed ? (0.3 * smooth(tau / 0.3)).toFixed(2) : "0");
+        setAttr(el.refl, "cx", f(T.x + 1.2 * Math.sin(clock * 2.1)));
 
         /* ripples */
         for (let i = 0; i < ripples.length; i++) {
             const r = ripples[i], p = (clock - r.t0) / r.life, e = rippleEls[i];
-            if (p <= 0 || p >= 1) { e.setAttribute("opacity", "0"); continue; }
+            if (p <= 0 || p >= 1) { setAttr(e, "opacity", "0"); continue; }
             const rad = r.max * (1 - Math.pow(1 - p, 2));
-            e.setAttribute("rx", f(rad)); e.setAttribute("ry", f(rad * 0.2));
-            e.setAttribute("opacity", (0.85 * Math.pow(1 - p, 1.5)).toFixed(2));
-            e.setAttribute("stroke-width", (1.6 * (1 - p) + 0.5).toFixed(2));
+            setAttr(e, "rx", f(rad)); setAttr(e, "ry", f(rad * 0.2));
+            setAttr(e, "opacity", (0.85 * Math.pow(1 - p, 1.5)).toFixed(2));
+            setAttr(e, "stroke-width", (1.6 * (1 - p) + 0.5).toFixed(2));
         }
 
         /* splash */
         const ts = clock - splashT;
         if (ts > 0 && ts < 0.8) {
-            el.crown.setAttribute("rx", f(40 * smooth(ts / 0.4)));
-            el.crown.setAttribute("ry", f(40 * smooth(ts / 0.4) * 0.2));
-            el.crown.setAttribute("opacity", (0.9 * (1 - clamp(ts / 0.5, 0, 1))).toFixed(2));
-        } else el.crown.setAttribute("opacity", "0");
+            setAttr(el.crown, "rx", f(40 * smooth(ts / 0.4)));
+            setAttr(el.crown, "ry", f(40 * smooth(ts / 0.4) * 0.2));
+            setAttr(el.crown, "opacity", (0.9 * (1 - clamp(ts / 0.5, 0, 1))).toFixed(2));
+        } else setAttr(el.crown, "opacity", "0");
         for (let i = 0; i < dropEls.length; i++) {
             const d = dropEls[i];
             let shown = false;
@@ -557,55 +567,55 @@ export function createLakesideScene(host: HTMLElement): LakesideScene {
                 const vx = (i - 4.5) * 13 + Math.sin(i * 7) * 7, vy = -(120 + (i % 3) * 32);
                 const dxp = T.x + vx * ts, dyp = T.y + vy * ts + 0.5 * 560 * ts * ts;
                 if (dyp < T.y + 2) {
-                    d.setAttribute("cx", f(dxp)); d.setAttribute("cy", f(dyp));
-                    d.setAttribute("opacity", (1 - ts / 0.75).toFixed(2));
+                    setAttr(d, "cx", f(dxp)); setAttr(d, "cy", f(dyp));
+                    setAttr(d, "opacity", (1 - ts / 0.75).toFixed(2));
                     shown = true;
                 }
             }
-            if (!shown) d.setAttribute("opacity", "0");
+            if (!shown) setAttr(d, "opacity", "0");
         }
 
         /* face: gaze follows the float, mouth follows speech */
-        el.eye.setAttribute("cx", f(198.5 + clamp((C.x - 199) / 250, -1, 1.6) * 1.1));
-        el.eye.setAttribute("cy", f(236.5 + clamp((C.y - 237) / 300, -1, 1) * 0.9));
+        setAttr(el.eye, "cx", f(198.5 + clamp((C.x - 199) / 250, -1, 1.6) * 1.1));
+        setAttr(el.eye, "cy", f(236.5 + clamp((C.y - 237) / 300, -1, 1) * 0.9));
         const ov = mouth.v;
         if (ov > 0.1) {
             const ry = 0.5 + ov * 3.4, rx = 2.3 + ov * 0.9, cy = 247.3 + ov * 1.1;
-            el.mouthLine.setAttribute("opacity", "0");
-            el.mouthO.setAttribute("opacity", "1");
-            el.mouthO.setAttribute("rx", f(rx)); el.mouthO.setAttribute("ry", f(ry)); el.mouthO.setAttribute("cy", f(cy));
-            el.tongue.setAttribute("opacity", ov > 0.45 ? "1" : "0");
-            el.tongue.setAttribute("cy", f(cy + ry * 0.45)); el.tongue.setAttribute("rx", f(rx * 0.55)); el.tongue.setAttribute("ry", f(ry * 0.4));
+            setAttr(el.mouthLine, "opacity", "0");
+            setAttr(el.mouthO, "opacity", "1");
+            setAttr(el.mouthO, "rx", f(rx)); setAttr(el.mouthO, "ry", f(ry)); setAttr(el.mouthO, "cy", f(cy));
+            setAttr(el.tongue, "opacity", ov > 0.45 ? "1" : "0");
+            setAttr(el.tongue, "cy", f(cy + ry * 0.45)); setAttr(el.tongue, "rx", f(rx * 0.55)); setAttr(el.tongue, "ry", f(ry * 0.4));
         } else {
-            el.mouthLine.setAttribute("opacity", "1");
-            el.mouthO.setAttribute("opacity", "0");
-            el.tongue.setAttribute("opacity", "0");
+            setAttr(el.mouthLine, "opacity", "1");
+            setAttr(el.mouthO, "opacity", "0");
+            setAttr(el.tongue, "opacity", "0");
         }
-        el.beard.setAttribute("transform", "translate(0 " + f(ov * 2.2) + ")");
-        el.head.setAttribute("transform", "translate(0 " + f(-0.5 * ov) + ") rotate(" + f(-1.8 * ov + 1.0 * ov * Math.sin(clock * 5.2)) + " 186 254)");
+        setAttr(el.beard, "transform", "translate(0 " + f(ov * 2.2) + ")");
+        setAttr(el.head, "transform", "translate(0 " + f(-0.5 * ov) + ") rotate(" + f(-1.8 * ov + 1.0 * ov * Math.sin(clock * 5.2)) + " 186 254)");
 
         /* fade in at load */
-        el.fade.setAttribute("opacity", (1 - smooth(clock / 0.7)).toFixed(2));
+        setAttr(el.fade, "opacity", (1 - smooth(clock / 0.7)).toFixed(2));
     }
 
     /* ambient motion runs on the same clock but is independent of the actions */
     function ambient() {
-        for (const c of clouds) c.el.setAttribute("transform", "translate(" + f(((c.x + clock * c.sp) % 1000) - 100) + " " + c.y + ")");
-        for (const b of birds) b.el.setAttribute("transform", "translate(" + f(((b.x + clock * b.sp) % 900) - 50) + " " + f(b.y + Math.sin(clock * 0.8 + b.ph) * 4) + ") scale(1 " + (0.3 + 0.9 * Math.sin(clock * 6 + b.ph)).toFixed(2) + ")");
+        for (const c of clouds) setAttr(c.el, "transform", "translate(" + f(((c.x + clock * c.sp) % 1000) - 100) + " " + c.y + ")");
+        for (const b of birds) setAttr(b.el, "transform", "translate(" + f(((b.x + clock * b.sp) % 900) - 50) + " " + f(b.y + Math.sin(clock * 0.8 + b.ph) * 4) + ") scale(1 " + (0.3 + 0.9 * Math.sin(clock * 6 + b.ph)).toFixed(2) + ")");
         for (const s of shim) {
-            s.el.setAttribute("x", f(((s.x + clock * s.sp) % 900) - 50));
-            s.el.setAttribute("y", f(s.y));
-            s.el.setAttribute("width", f(s.w));
-            s.el.setAttribute("opacity", (s.base * (0.55 + 0.45 * Math.sin(clock * 1.4 + s.ph))).toFixed(2));
+            setAttr(s.el, "x", f(((s.x + clock * s.sp) % 900) - 50));
+            setAttr(s.el, "y", f(s.y));
+            setAttr(s.el, "width", f(s.w));
+            setAttr(s.el, "opacity", (s.base * (0.55 + 0.45 * Math.sin(clock * 1.4 + s.ph))).toFixed(2));
         }
         for (let i = 0; i < sunDash.length; i++) {
             const w = 10 + i * 5.2;
-            sunDash[i].setAttribute("x", f(565 - w / 2 + Math.sin(clock * 1.1 + i) * 3));
-            sunDash[i].setAttribute("y", f(270 + i * 5.5));
-            sunDash[i].setAttribute("width", f(w));
+            setAttr(sunDash[i], "x", f(565 - w / 2 + Math.sin(clock * 1.1 + i) * 3));
+            setAttr(sunDash[i], "y", f(270 + i * 5.5));
+            setAttr(sunDash[i], "width", f(w));
         }
-        for (const r of reeds) r.g.setAttribute("transform", "translate(" + r.x + " " + r.y + ") rotate(" + f(Math.sin(clock * 0.9 + r.ph) * 2.6) + ")");
-        el.mist.setAttribute("transform", "translate(" + f(Math.sin(clock * 0.12) * 30) + " 0)");
+        for (const r of reeds) setAttr(r.g, "transform", "translate(" + r.x + " " + r.y + ") rotate(" + f(Math.sin(clock * 0.9 + r.ph) * 2.6) + ")");
+        setAttr(el.mist, "transform", "translate(" + f(Math.sin(clock * 0.12) * 30) + " 0)");
     }
 
     /* ---------- actions (each one is a small async routine over the channels) ---------- */

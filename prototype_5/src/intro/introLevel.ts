@@ -72,9 +72,11 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
     let destroyed = false;
     const timers = new Set<ReturnType<typeof setTimeout>>();
 
-    preloadLines();
+    preloadLines(); // only the intro's own lines; the game's load when first played
     const fisherman: LakesideScene = createLakesideScene(deps.land);
     const water: HookReelScene = createHookReelScene(deps.water);
+    // only the scene on screen animates: drawing both every frame made the intro lag
+    water.setPaused(true);
 
     function sleep(ms: number): Promise<void> {
         return new Promise(res => {
@@ -134,13 +136,16 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
 
         // show: he pulls the rod back while explaining it
         const windLine = playLine("castWindUp", fisherman);
-        await sleep(2000);
+        await sleep(7000);
         if (destroyed) return;
         sounds.throw.play();
         await castWithSounds();
+        sounds.reel.play()
+        await fisherman.reelIn();
+        sounds.reel.stop();
         await windLine;
         if (destroyed) return;
-        await fisherman.lower();
+
         if (destroyed) return;
 
         // practise: the player tilts back, he copies it
@@ -185,16 +190,18 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
     // --- 2. under water: explain, show and practise the bite and the reeling --
     async function explainWater(): Promise<void> {
         deps.goUnderwater();
+        water.setPaused(false);
         showLayer("water");
         await sleep(1000);
         if (destroyed) return;
+        fisherman.setPaused(true); // faded out by now (0.8s cross-fade)
 
         // show: what a biting fish sounds like
         await playLine("fishSounds");
         if (destroyed) return;
         await sleep(bite() + 1200);
         if (destroyed) return;
-        water.showEscape(); // this one gets away, so the player can hook the next
+        // water.showEscape(); // this one gets away, so the player can hook the next
         await sleep(2000);
         if (destroyed) return;
 
@@ -259,7 +266,7 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         if (destroyed) return;
         setCaption("");
         water.land();
-        sounds.catching.play("success");
+        // sounds.catching.play("success");
         await sleep(2500);
         if (destroyed) return;
 

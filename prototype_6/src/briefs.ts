@@ -11,6 +11,7 @@
 // hits hard.
 
 import type { GrooveStyle } from "./music.ts";
+import type { BriefId } from "./voiceLines.ts";
 
 export type MelodicInstrument =
     | "piano" | "electricPiano"
@@ -21,11 +22,8 @@ export type MelodicInstrument =
     | "steelDrums";
 
 export interface Brief {
-    id: string;
-    /** spoken when the brief starts, and again on a single top-right tap */
-    say: string;
-    /** spoken warmly when the player finishes the track */
-    praise: string;
+    /** also picks its spoken lines (the brief and the praise) in voiceLines.ts */
+    id: BriefId;
     /** semitone offsets from the root, one per pad row (low → high) */
     scale: number[];
     /** BPM the brief pulls toward (the player's tap-tempo is blended in) */
@@ -47,50 +45,36 @@ const HARMONIC_MINOR   = [0, 2, 3, 5, 7, 8, 11, 12]; // eerie, "spookachtig"
 export const BRIEFS: Brief[] = [
     {
         id: "vrolijk",
-        say: "Maak iets vrolijks. Een liedje voor een zonnige dag.",
-        praise: "Mooi! Dat klinkt lekker vrolijk.",
         scale: MAJOR_PENTATONIC, tempo: 85, grooveStyle: "backbeat",
         instruments: ["piano", "steelDrums"], volume: 0.8,
     },
     {
         id: "stoer",
-        say: "Maak iets stoers. Muziek voor een held.",
-        praise: "Vet. Dat is echt stoer.",
         scale: MINOR_PENTATONIC, tempo: 78, grooveStyle: "syncopated",
         instruments: ["distortionGuitar", "electricBass"], volume: 0.9,
     },
     {
         id: "spannend",
-        say: "Nu iets spannends. Alsof er zo iets gaat gebeuren.",
-        praise: "Kippenvel! Lekker spannend.",
         scale: PHRYGIAN, tempo: 74, grooveStyle: "driving",
         instruments: ["cello", "contrabass"], volume: 0.85,
     },
     {
         id: "spookachtig",
-        say: "Maak iets spookachtigs. Muziek voor een spookhuis.",
-        praise: "Brr. Daar krijg ik de rillingen van.",
         scale: HARMONIC_MINOR, tempo: 63, grooveStyle: "half-time",
         instruments: ["piano", "synthPad"], volume: 0.6,
     },
     {
         id: "onderwater",
-        say: "Maak muziek voor onder water. Rustig en dromerig.",
-        praise: "Het klinkt of ik echt onder water zwem.",
         scale: MAJOR_PENTATONIC, tempo: 59, grooveStyle: "backbeat",
         instruments: ["electricPiano", "synthPad"], volume: 0.55,
     },
     {
         id: "feest",
-        say: "Maak feestmuziek. Iets om lekker op te dansen.",
-        praise: "Feest! Iedereen gaat dansen.",
         scale: MAJOR, tempo: 94, grooveStyle: "driving",
         instruments: ["trumpet", "slapBass"], volume: 1,
     },
     {
         id: "slaapliedje",
-        say: "Maak een slaapliedje. Heel rustig en zacht.",
-        praise: "Zo rustig. Daar word je slaperig van.",
         scale: MAJOR_PENTATONIC, tempo: 47, grooveStyle: "half-time",
         instruments: ["piano", "electricPiano"], volume: 0.4,
     },

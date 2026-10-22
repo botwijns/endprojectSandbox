@@ -6,8 +6,9 @@
 // display number, both -1 when the shell couldn't reach the server. Opened without ?embed, getEmbed() returns
 // null and the prototype behaves exactly as it does standalone.
 //
-// The iframe is not granted fullscreen (the shell holds it), so the prototypes'
-// own enterFullscreen() calls quietly no-op and their fullscreen button hides.
+// The iframe is not granted fullscreen (allow="fullscreen 'none'": the shell
+// holds it), so the prototypes' own enterFullscreen() calls quietly no-op and
+// their fullscreen button hides. Instrument fonts come from the shell too (src/fonts.ts).
 
 export type EmbedMode = "intro" | "game";
 
@@ -119,6 +120,19 @@ let sharedActive = false;
 export function markSharedActive(): void { sharedActive = true; }
 export function isSharedActive(): boolean { return sharedActive; }
 
+/** The gorilla experiment's sounds, by `experiment` value - 1 (0 = off). */
+export const EXPERIMENT_SOUNDS = ["meow", "bark", "boing"] as const;
+
+/**
+ * Telemetry: one game event, forwarded by the shell to the game server under
+ * the flow's session. Only game segments log — standalone pages and oefenlevels
+ * send nothing (the shell itself logs when an oefenlevel starts and ends).
+ */
+export function track(type: string, payload: Record<string, unknown> = {}): void {
+    if (getEmbed()?.mode !== "game") return;
+    post("event", { event: { type, payload, at: Date.now() } });
+}
+
 let doneSent = false;
 /** The segment is over — the shell moves on to the next one. Sent once. */
 export function embedDone(result: Record<string, unknown> = {}): void {
@@ -173,6 +187,7 @@ export function setupEmbedStart(embed: Embed, onStart: () => void): void {
     btn.addEventListener("click", (e) => {
         e.stopPropagation();
         btn.remove();
+        post("start");
         onStart();
     }, { once: true });
 

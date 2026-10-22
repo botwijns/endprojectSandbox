@@ -2,8 +2,8 @@
 // one's parameters, then hand out a player link or export the flow as a preset.
 
 import {
-    PROTOS, PRESETS, MODE_LABEL, protoDef, defaultParams, sanitizeFlow, encodeFlow, segmentTitle,
-    type Flow, type Mode, type ParamDef, type ProtoId, type Segment,
+    PROTOS, PRESETS, MODE_LABEL, GORILLA_SOUNDS, protoDef, defaultParams, sanitizeFlow, encodeFlow, segmentTitle,
+    type Flow, type GorillaChoice, type Mode, type ParamDef, type ProtoId, type Segment,
 } from "./segments.ts";
 
 const STORAGE_KEY = "combined_flow";
@@ -14,7 +14,7 @@ function loadDraft(): Flow {
         if (saved) return saved;
     } catch { /* no storage / bad JSON */ }
     const first = Object.values(PRESETS)[0];
-    return first ? structuredClone(first) : { name: "nieuwe-flow", surveyAtEnd: false, segments: [] };
+    return first ? structuredClone(first) : { name: "nieuwe-flow", surveyAtEnd: false, gorilla: "random", segments: [] };
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -57,6 +57,19 @@ export function runEditor(root: HTMLElement): void {
     const sharedBox = el("input", { type: "checkbox", checked: !!flow.sharedAudio });
     sharedBox.addEventListener("change", () => { flow.sharedAudio = sharedBox.checked; save(); });
 
+    // one unexpected sound for the whole session; each game segment switches it on/off
+    const gorillaChoices: { value: GorillaChoice; label: string }[] = [
+        { value: "random", label: "willekeurig (per speler, ook 'uit' mogelijk)" },
+        ...GORILLA_SOUNDS,
+    ];
+    const gorillaSelect = el("select");
+    for (const o of gorillaChoices) gorillaSelect.append(el("option", { value: String(o.value), textContent: o.label }));
+    gorillaSelect.value = String(flow.gorilla ?? "random");
+    gorillaSelect.addEventListener("change", () => {
+        flow.gorilla = gorillaChoices.find(o => String(o.value) === gorillaSelect.value)?.value ?? "random";
+        save();
+    });
+
     const presetSelect = el("select", {}, el("option", { value: "", textContent: "— kies een preset —" }));
     for (const id of Object.keys(PRESETS)) presetSelect.append(el("option", { value: id, textContent: id }));
     const loadPresetBtn = el("button", { type: "button", textContent: "Laden" });
@@ -84,6 +97,8 @@ export function runEditor(root: HTMLElement): void {
 
     const header = el("section", { className: "panel" },
         el("label", { className: "row" }, el("span", { textContent: "Naam" }), nameInput),
+        el("label", { className: "row" }, el("span", { textContent: "Onverwacht geluid (hele sessie)" }), gorillaSelect,
+            el("small", { textContent: "zelfde geluid in alle spellen; per onderdeel aan/uit te zetten" })),
         el("label", { className: "row check" }, surveyBox, el("span", { textContent: "Na afloop naar de vragenlijst (/survey/)" })),
         el("label", { className: "row check" }, sharedBox,
             el("span", { textContent: "Geen tik per spel: alleen de eerste tik, daarna starten de spellen vanzelf (gedeelde audio — test op je toestel)" })),
@@ -233,6 +248,7 @@ export function runEditor(root: HTMLElement): void {
         nameInput.value = flow.name;
         surveyBox.checked = !!flow.surveyAtEnd;
         sharedBox.checked = !!flow.sharedAudio;
+        gorillaSelect.value = String(flow.gorilla ?? "random");
         save();
         renderSegments();
     }
