@@ -28,9 +28,9 @@
       "label": "Welk deel van het spel vond je het leukst?",
       "required": false,
       "options": [
-        "1 - Hengelen naar instrumenten",
-        "2 - Muziek maken",
-        "3 - De muziek quiz"
+        "Vissen met victor",
+        "Muziek maken met Mike",
+        "De Quiz met Quinten"
       ]
     },
     {
@@ -39,7 +39,7 @@
       "label": "Hoeveel minuten denk je dat je gespeeld hebt?",
       "required": true,
       "min": 0,
-      "max": 60,
+      "max": 30,
       "step": 1,
       "unit": "minuten"
     },
@@ -70,9 +70,9 @@
       "required": true,
       "showIf": { "question": "gorrilla_noticed", "equals": true },
       "options": [
-        "1 - Hengelen naar instrumenten",
-        "2 - Muziek maken",
-        "3 - De muziek quiz"
+        "Vissen met victor",
+        "Muziek maken met Mike",
+        "De Quiz met Quinten"
       ]
     },
     {
@@ -94,7 +94,7 @@
     {
       "id": "comments",
       "type": "text",
-      "label": "zijn er nog dingen die verbeterd kunnen worden(optioneel)",
+      "label": "Als je een ding zou willen veranderen aan het spel, wat zou dat dan zijn?",
       "required": false,
       "maxLength": 2000,
       "placeholder": "Wat viel je op? Wat kon beter?"
