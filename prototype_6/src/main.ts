@@ -808,6 +808,9 @@ gameBtn.addEventListener("click", () => {
     void enterFullscreen();
     applyStartOptions();
     pendingIntro = false;
+    // ask for iOS motion access now: the 3-tap start that follows is a
+    // pointerdown, which iOS doesn't count as a gesture for the prompt
+    void shake.start();
     startNoteEl.classList.add("hidden");
     showGameScreen();
     updateHud();
