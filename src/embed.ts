@@ -1,7 +1,7 @@
 // Shared "embed mode" for prototypes that the combined/ shell strings together.
 //
 // The shell loads a prototype's real page in an <iframe> with
-//   ?embed=1&mode=intro|game&title=...&params=<json>&sid=<id>&snum=<number>
+//   ?embed=1&mode=intro|game&title=...&params=<json>&sid=<id>&snum=<number>[&shared=1]
 // and waits for a "done" message. sid/snum are the game server's session id and
 // display number, both -1 when the shell couldn't reach the server. Opened without ?embed, getEmbed() returns
 // null and the prototype behaves exactly as it does standalone.
@@ -23,6 +23,8 @@ export interface Embed {
     title: string;
     params: Record<string, unknown>;
     session: EmbedSession;
+    /** the flow asked for shared audio/speech/motion (no tap per game), see src/embedShared.ts */
+    shared: boolean;
 }
 
 let cached: Embed | null | undefined;
@@ -46,6 +48,7 @@ export function getEmbed(): Embed | null {
             id: sid && sid !== "-1" ? sid : -1,
             number: Number.isInteger(snum) && snum > 0 ? snum : -1,
         },
+        shared: q.get("shared") === "1",
     });
 }
 
@@ -95,6 +98,28 @@ function post(type: string, data: Record<string, unknown> = {}): void {
     window.parent.postMessage({ source: "combined-embed", type, ...data }, location.origin);
 }
 
+// ── Messages from the shell ──────────────────────────────────────────────────
+// Before the shell removes this page (segment over, or skipped) it sends "stop",
+// so the game can run its own stopGame() and silence what it knows about.
+const stopHandlers: (() => void)[] = [];
+export function onEmbedStop(fn: () => void): void {
+    stopHandlers.push(fn);
+}
+window.addEventListener("message", (e) => {
+    if (e.origin !== location.origin || e.source !== window.parent) return;
+    const data = e.data as { source?: string; type?: string };
+    if (data?.source !== "combined-shell" || data.type !== "stop") return;
+    for (const fn of stopHandlers) {
+        try { fn(); } catch (err) { console.warn("[embed] stop handler failed", err); }
+    }
+});
+
+// Set by src/embedShared.ts when this page borrows the shell's audio, speech and
+// motion sensors — then no tap is needed and the start overlay is skipped.
+let sharedActive = false;
+export function markSharedActive(): void { sharedActive = true; }
+export function isSharedActive(): boolean { return sharedActive; }
+
 /** The gorilla experiment's sounds, by `experiment` value - 1 (0 = off). */
 export const EXPERIMENT_SOUNDS = ["meow", "bark", "boing"] as const;
 
@@ -120,6 +145,8 @@ export function embedDone(result: Record<string, unknown> = {}): void {
 // Each page needs its own tap to unlock audio / motion permission (a tap in the
 // shell doesn't count inside the iframe), so the start screen is replaced by
 // one full-screen tap target. `onStart` runs inside that user gesture.
+// With the flow's shared-audio option (see src/embedShared.ts) there's nothing
+// to unlock, so the game starts straight away instead.
 const STYLE = `
 #embed-start {
   position: fixed; inset: 0; z-index: 2000; margin: 0; border: 0; width: 100%; height: 100%;
@@ -172,6 +199,12 @@ export function setupEmbedStart(embed: Embed, onStart: () => void): void {
     console.info("[embed] session", embed.session);
 
     const mount = () => {
+        if (sharedActive) {
+            document.body.append(badge);
+            post("ready");
+            onStart();
+            return;
+        }
         document.body.append(btn, badge);
         btn.focus();
         post("ready");

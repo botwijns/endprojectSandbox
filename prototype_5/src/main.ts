@@ -1,3 +1,6 @@
+// must come first: in the combined flow's no-tap mode it makes this page borrow
+// the shell's audio, speech and motion before anything creates its own
+import "../../src/embedShared.ts";
 import {GameLoop} from "./gameLoop.ts";
 import {InputHandler} from "./inputHandler.ts";
 import {createInitialState, generateNumberSequence, generateSequence, type State} from "./gameState.ts";
@@ -5,7 +8,7 @@ import {SynthManager} from "./audio/SynthManager.ts";
 import {InstrumentManager, FISH, fishById, type FishDef} from "./audio/InstrumentManager.ts";
 import {Howl, Howler} from "howler";
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { getEmbed, setupEmbedStart, embedDone, num, track, EXPERIMENT_SOUNDS } from "../../src/embed.ts";
+import { getEmbed, setupEmbedStart, embedDone, onEmbedStop, num, track, EXPERIMENT_SOUNDS } from "../../src/embed.ts";
 import {createIntroLevel, type IntroLevel, type Gesture, type GestureOptions} from "./intro/introLevel.ts";
 import {FISH_NAME_LINES, playGameLine, playSpeech, stopLine} from "./intro/speech.ts";
 
@@ -881,6 +884,8 @@ taskListBtn.addEventListener("click", () => onTaskListTap());
 
 // run by the combined/ shell: skip the menu, start straight into the requested mode
 if (embed) {
+    // the shell sends "stop" before removing this page (segment over or skipped)
+    onEmbedStop(stopGame);
     stopBtn.hidden = true;
     setupEmbedStart(embed, () => startGame(embed.mode === "intro"));
 }

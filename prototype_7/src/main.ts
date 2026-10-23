@@ -1,3 +1,6 @@
+// must come first: in the combined flow's no-tap mode it makes this page borrow
+// the shell's audio, speech and motion before anything creates its own
+import "../../src/embedShared.ts";
 import { QuizSession } from "./quizEngine.ts";
 import { initAudio, getAudioContext, playSong, playNote, stopAudio, fontsReady } from "./audioPlayback.ts";
 import { speak, stopSpeech, earcon, setTalker } from "./speech.ts";
@@ -12,7 +15,7 @@ import {
     DRUMS_SVG, EAR_SVG, PHONE_ZONES_2_SVG, PHONE_ZONES_4_SVG, TAP_SVG, DOUBLE_TAP_SVG, SHAKE_SVG,
 } from "./introIcons.ts";
 import { enterFullscreen } from "../../src/fullscreen.ts";
-import { getEmbed, setupEmbedStart, embedDone, num, numRecord, track, EXPERIMENT_SOUNDS } from "../../src/embed.ts";
+import { getEmbed, setupEmbedStart, embedDone, onEmbedStop, num, numRecord, track, EXPERIMENT_SOUNDS } from "../../src/embed.ts";
 
 // set when the combined/ shell runs this page as one segment of a longer flow
 const embed = getEmbed();
@@ -862,6 +865,8 @@ renderHud();
 
 // run by the combined/ shell: skip the menu, start straight into the requested mode
 if (embed) {
+    // the shell sends "stop" before removing this page (segment over or skipped)
+    onEmbedStop(stopGame);
     songPicker.hidden = true;
     stopBtn.hidden = true;
     setupEmbedStart(embed, () => (embed.mode === "intro" ? introBtn : gameBtn).click());

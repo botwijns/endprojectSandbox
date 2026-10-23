@@ -54,6 +54,9 @@ export function runEditor(root: HTMLElement): void {
     const surveyBox = el("input", { type: "checkbox", checked: !!flow.surveyAtEnd });
     surveyBox.addEventListener("change", () => { flow.surveyAtEnd = surveyBox.checked; save(); });
 
+    const sharedBox = el("input", { type: "checkbox", checked: !!flow.sharedAudio });
+    sharedBox.addEventListener("change", () => { flow.sharedAudio = sharedBox.checked; save(); });
+
     // one unexpected sound for the whole session; each game segment switches it on/off
     const gorillaChoices: { value: GorillaChoice; label: string }[] = [
         { value: "random", label: "willekeurig (per speler, ook 'uit' mogelijk)" },
@@ -97,6 +100,8 @@ export function runEditor(root: HTMLElement): void {
         el("label", { className: "row" }, el("span", { textContent: "Onverwacht geluid (hele sessie)" }), gorillaSelect,
             el("small", { textContent: "zelfde geluid in alle spellen; per onderdeel aan/uit te zetten" })),
         el("label", { className: "row check" }, surveyBox, el("span", { textContent: "Na afloop naar de vragenlijst (/survey/)" })),
+        el("label", { className: "row check" }, sharedBox,
+            el("span", { textContent: "Geen tik per spel: alleen de eerste tik, daarna starten de spellen vanzelf (gedeelde audio — test op je toestel)" })),
         el("div", { className: "row" }, presetSelect, loadPresetBtn, importBtn, importInput),
     );
 
@@ -242,6 +247,7 @@ export function runEditor(root: HTMLElement): void {
         flow = next;
         nameInput.value = flow.name;
         surveyBox.checked = !!flow.surveyAtEnd;
+        sharedBox.checked = !!flow.sharedAudio;
         gorillaSelect.value = String(flow.gorilla ?? "random");
         save();
         renderSegments();

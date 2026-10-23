@@ -136,6 +136,8 @@ export interface Flow {
     name: string;
     /** send the player to the /survey/ page after the last segment */
     surveyAtEnd?: boolean;
+    /** games borrow the shell's audio/speech/motion, so only the very first tap is needed (src/embedShared.ts) */
+    sharedAudio?: boolean;
     /** the unexpected sound for the whole session; segments switch it on/off */
     gorilla?: GorillaChoice;
     segments: Segment[];
@@ -182,7 +184,13 @@ export function sanitizeFlow(raw: unknown): Flow | null {
     const gorilla: GorillaChoice = r.gorilla === "random" || isGorillaSound(r.gorilla) ? r.gorilla
         : hadLegacy ? legacySound ?? 0
         : "random";
-    return { name: typeof r.name === "string" ? r.name : "flow", surveyAtEnd: !!r.surveyAtEnd, gorilla, segments };
+    return {
+        name: typeof r.name === "string" ? r.name : "flow",
+        surveyAtEnd: !!r.surveyAtEnd,
+        sharedAudio: !!r.sharedAudio,
+        gorilla,
+        segments,
+    };
 }
 
 // ── URL encoding (UTF-8 safe base64url) ─────────────────────────────────────
@@ -226,9 +234,10 @@ export function segmentParams(seg: Segment, sound: GorillaSound, extra: Record<s
 
 /**
  * The URL a segment's iframe loads. `sound` is this player's gorilla sound
- * (see resolveGorilla); `extra` adds runtime-only params (e.g. carried-over ratings).
+ * (see resolveGorilla); `extra` adds runtime-only params (e.g. carried-over ratings);
+ * `shared` makes the game borrow the shell's audio instead of showing its tap screen.
  */
-export function segmentUrl(seg: Segment, session: ServerSession, sound: GorillaSound, extra: Record<string, unknown> = {}): string {
+export function segmentUrl(seg: Segment, session: ServerSession, sound: GorillaSound, extra: Record<string, unknown> = {}, shared = false): string {
     const q = new URLSearchParams({
         embed: "1",
         mode: seg.mode,
@@ -237,5 +246,6 @@ export function segmentUrl(seg: Segment, session: ServerSession, sound: GorillaS
         sid: String(session.id),
         snum: String(session.number),
     });
+    if (shared) q.set("shared", "1");
     return `${protoDef(seg.proto).path}?${q}`;
 }
