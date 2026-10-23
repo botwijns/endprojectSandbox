@@ -129,6 +129,8 @@ export interface Segment {
     mode: Mode;
     /** shown on the segment's tap-to-start screen and spoken between segments */
     title?: string;
+    /** cover the screen with black while this game runs (taps still reach it), so players can't peek for hints */
+    blackout?: boolean;
     params: Record<string, ParamValue>;
 }
 
@@ -140,6 +142,8 @@ export interface Flow {
     sharedAudio?: boolean;
     /** the unexpected sound for the whole session; segments switch it on/off */
     gorilla?: GorillaChoice;
+    /** black screen between the games too (the walk + announcement), not just during the ones with `blackout` */
+    blackoutBetween?: boolean;
     segments: Segment[];
 }
 
@@ -178,7 +182,11 @@ export function sanitizeFlow(raw: unknown): Flow | null {
             if (v === undefined) continue;
             if (def.type === "list" ? Array.isArray(v) : typeof v === typeof def.default) params[def.key] = v as ParamValue;
         }
-        segments.push({ proto: s.proto, mode, title: typeof s.title === "string" ? s.title : undefined, params });
+        segments.push({
+            proto: s.proto, mode, title: typeof s.title === "string" ? s.title : undefined,
+            ...(s.blackout === true ? { blackout: true } : {}),
+            params,
+        });
     }
     const hadLegacy = r.segments.some(s => isGorillaSound((s as Partial<Segment> | null)?.params?.experiment));
     const gorilla: GorillaChoice = r.gorilla === "random" || isGorillaSound(r.gorilla) ? r.gorilla
@@ -189,6 +197,7 @@ export function sanitizeFlow(raw: unknown): Flow | null {
         surveyAtEnd: !!r.surveyAtEnd,
         sharedAudio: !!r.sharedAudio,
         gorilla,
+        blackoutBetween: !!r.blackoutBetween,
         segments,
     };
 }
