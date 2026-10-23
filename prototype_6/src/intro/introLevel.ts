@@ -99,8 +99,8 @@ export function createIntroLevel(deps: IntroDeps): IntroLevel {
         deps.showPitchEdges(true);
         await say(LINES.pitch);
         if (destroyed) return;
-        await say(LINES.more);
-        if (destroyed) return;
+        // await say(LINES.more);
+        // if (destroyed) return;
         await waitFor("place", MORE_NOTES, afterFirst);
         if (destroyed) return;
         deps.showPitchEdges(false);

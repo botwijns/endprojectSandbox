@@ -31,13 +31,13 @@ export const INTRO_LINES = {
     // TODO(speech): record → sounds/sfeer_intro_5.mp3
     pitch:      { text: "Juist! Deze noot kan hoog en laag zijn, afhankelijk van hoe hoog je op het scherm tikt.", src: "sounds/sfeer_intro_5.mp3" },
     // TODO(speech): record → sounds/sfeer_intro_6.mp3 (then waits for two more notes)
-    more:       { text: "Probeer maar wat meer noten toe te voegen!", src: "sounds/sfeer_intro_6.mp3" },
+    // more:       { text: "Probeer maar wat meer noten toe te voegen!", src: "sounds/sfeer_intro_6.mp3" },
     // TODO(speech): record → sounds/sfeer_intro_7.mp3 (then waits for a note with another instrument)
-    switch:     { text: "Juist! Nou, als je een ander instrument wil, moet je rechtsonder in de hoek klikken om te wisselen. Plaats ook wat noten met de gitaar!", src: "sounds/sfeer_intro_7.mp3" },
+    switch:     { text: "Juist! Nou, als je een ander instrument wil, moet je rechtsonder in de hoek klikken om te wisselen. Plaats ook wat noten met de gitaar!", src: "sounds/sfeer_intro_6.mp3" },
     // TODO(speech): record → sounds/sfeer_intro_8.mp3 (then waits for a remove)
-    remove:     { text: "Kijk! Dat begint al ergens op te lijken. Als laatste kan je linksonder de laatste noot die je geplaatst hebt wissen. Probeer dat ook even!", src: "sounds/sfeer_intro_8.mp3" },
+    remove:     { text: "Kijk! Dat begint al ergens op te lijken. Als laatste kan je linksonder de laatste noot die je geplaatst hebt wissen. Probeer dat ook even!", src: "sounds/sfeer_intro_7.mp3" },
     // TODO(speech): record → sounds/sfeer_intro_9.mp3 (then waits for a shake)
-    shake:      { text: "Laatste noot is gewist! Top! Als je klaar bent, schud de telefoon heen en weer. Dan is het nummer af.", src: "sounds/sfeer_intro_9.mp3" },
+    shake:      { text: "Laatste noot is gewist! Top! Als je klaar bent, schud de telefoon heen en weer. Dan is het nummer af.", src: "sounds/sfeer_intro_8.mp3" },
     // TODO(speech): record → sounds/sfeer_intro_10.mp3 (after the finished song has played back)
     outro:      { text: "Dat klinkt erg goed!", src: "sounds/sfeer_intro_10.mp3" },
 } satisfies Record<string, VoiceLine>;
