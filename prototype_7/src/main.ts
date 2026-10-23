@@ -5,15 +5,12 @@ import { QuizSession } from "./quizEngine.ts";
 import { initAudio, getAudioContext, playSong, playNote, stopAudio, fontsReady } from "./audioPlayback.ts";
 import { speak, stopSpeech, earcon, setTalker } from "./speech.ts";
 import { createQuizHostScene, type QuizHostScene, type PointTarget } from "./intro/quizHostScene.ts";
-import { GAME_LINES, INTRO_LINES, answerLine, letterLine, questionLine, type VoiceLine } from "./voiceLines.ts";
+import { GAME_LINES, INTRO_LINES, POSITION_LINES, answerLine, letterLine, positionLine, questionLine, type VoiceLine } from "./voiceLines.ts";
 import { InputHandler, zonesFor, type QuizAction, type AnswerIndex, type AnswerZone } from "./inputHandler.ts";
 import { KNOWN_SONGS } from "./knownSongs.ts";
 import { generateQuestion, generatePreviewSong } from "./questionGenerator.ts";
 import { BASE_RATING } from "./rating.ts";
 import type { GeneratedSong, Question } from "./types.ts";
-import {
-    DRUMS_SVG, EAR_SVG, PHONE_ZONES_2_SVG, PHONE_ZONES_4_SVG, TAP_SVG, DOUBLE_TAP_SVG, SHAKE_SVG,
-} from "./introIcons.ts";
 import { enterFullscreen } from "../../src/fullscreen.ts";
 import { getEmbed, setupEmbedStart, embedDone, onEmbedStop, num, numRecord, track, EXPERIMENT_SOUNDS } from "../../src/embed.ts";
 
@@ -28,7 +25,7 @@ import { Howl } from "howler";
 // corners or split left/right (matching the question's option count), each
 // read out by its position name. Shaking the phone repeats the current question.
 //
-// A start screen offers a guided "oefenlevel" (introduction) next to the real
+// A start screen offers a scripted "oefenlevel" (introduction) next to the real
 // quiz - see the introduction section below. Tapping 3× anywhere outside the
 // buttons still starts the quiz, so it stays playable without looking.
 
@@ -79,14 +76,6 @@ const introBtn = document.getElementById("intro-btn") as HTMLButtonElement;
 const gameBtn = document.getElementById("game-btn") as HTMLButtonElement;
 const stopBtn = document.getElementById("stop-btn") as HTMLButtonElement;
 const instructionEl = document.getElementById("instruction")!;
-const stepIconEl = document.getElementById("step-icon")!;
-const previewPanelEl = document.getElementById("preview-panel")!;
-const previewIconSlotEl = document.getElementById("preview-icon-slot")!;
-const previewRepeatBtn = document.getElementById("preview-repeat-btn") as HTMLButtonElement;
-const previewNextBtn = document.getElementById("preview-next-btn") as HTMLButtonElement;
-const practiceAssistEl = document.getElementById("practice-assist")!;
-const repeatQuestionBtn = document.getElementById("repeat-question-btn") as HTMLButtonElement;
-const readOptionsBtn = document.getElementById("read-options-btn") as HTMLButtonElement;
 const introStageEl = document.getElementById("intro-stage")!;
 const introSceneEl = document.getElementById("intro-scene")!;
 const zoneEls = ["zone-a", "zone-b", "zone-c", "zone-d"].map(id => document.getElementById(id)!);
@@ -174,9 +163,9 @@ for (const song of KNOWN_SONGS) {
 function renderHud(): void {
     if (introMode) {
         hud.phase.textContent = "oefenlevel";
-        hud.progress.textContent = introDemoActive
-            ? `voorbeeld ${Math.min(previewIndex + 1, PREVIEW_STEPS.length)} / ${PREVIEW_STEPS.length}`
-            : `oefenvraag ${Math.min(practiceIndex + 1, PRACTICE.length)} / ${PRACTICE.length}`;
+        hud.progress.textContent = introQuestion
+            ? `oefenvraag ${Math.min(practiceIndex + 1, PRACTICE.length)} / ${PRACTICE.length}`
+            : "uitleg";
         hud.score.textContent = "";
         hud.tier.textContent = "";
         hud.results.textContent = "";
@@ -257,7 +246,16 @@ function playPiece(): number {
     const q = currentQuestion();
     if (!q) return 0;
     stopAudio();
-    const ms = playSongOnStage(q.song);
+    let ms: number;
+    if (introMode && introPair) {
+        // the drums question: the same piece twice, with and without drums
+        const [first, second] = introPair;
+        const firstMs = playSongOnStage(first);
+        later(() => playSongOnStage(second), firstMs + PAIR_GAP_MS);
+        ms = firstMs * 2 + PAIR_GAP_MS; // both halves are the same piece, so equally long
+    } else {
+        ms = playSongOnStage(q.song);
+    }
     later(() => cue("listen"), ms + 120);
     return ms;
 }
@@ -269,14 +267,16 @@ function announceOption(index: AnswerIndex, zone: AnswerZone): void {
     if (!q) return;
     const audio = q.audioOptions?.[index];
     hostPoint(index, q.options.length);
+    // the intro names the position ("links: ..."), the quiz its letter ("A. ...")
+    const position = introMode ? positionLine(index, q.options.length) : letterLine(zone.letter);
     if (audio) {
-        speak(letterLine(zone.letter));
+        speak(position);
         later(() => {
             playNote(audio.instrument, audio.pitch);
             void hostScene?.playMusic(NOTE_MUSIC_MS);
         }, 470);
     } else {
-        speak(letterLine(zone.letter), answerLine(q.options[index]));
+        speak(position, answerLine(q.options[index]));
     }
 }
 
@@ -287,12 +287,7 @@ function readOptions(): void {
     zones.forEach((zone, i) => {
         later(() => announceOption(i, zone), i * OPTION_READ_GAP_MS);
     });
-    if (introMode) {
-        // all options heard - now it's the player's turn to tap
-        later(() => {
-            if (introStep === "listen") setIntroStep("tap");
-        }, zones.length * OPTION_READ_GAP_MS);
-    }
+    if (introMode) later(armAnswerHint, zones.length * OPTION_READ_GAP_MS);
 }
 
 function setAnswerLayoutClass(count: number): void {
@@ -301,240 +296,151 @@ function setAnswerLayoutClass(count: number): void {
 }
 
 // ── Introduction level ──────────────────────────────────────────────────────
-// A guided tutorial, in the same shape as prototype 5's: first a player-paced
-// preview (Herhaal / Volgende) that lets the player hear a piece with and
-// without drums and learn where the answers sit, then two real
-// practice questions - one with two answers (left/right), one with four
-// (corners) - with a "Stap X van 4" instruction and icon for each step. A
-// wrong answer is explained and asked again with a fresh song; answering both
+// A scripted tutorial: the quiz host welcomes the player and explains how to
+// answer (lighting up the left and right side as he names them) and how to
+// hear a question again, then asks two practice questions - "which piece has
+// drums?" (two answers: the first or the second time the piece plays) and
+// "how many notes?" (four answers, one in each corner, which he points out
+// first). If the player doesn't answer, a hint appears on screen. A wrong
+// answer is explained and asked again with a fresh song; answering both
 // correctly completes the intro and returns to the start screen.
 let introMode = false;       // currently playing the guided tutorial
-let introDemoActive = false; // in the player-paced preview
-let previewIndex = 0;        // index into PREVIEW_STEPS while introDemoActive is true
-let previewSong: GeneratedSong | null = null;
+let introZones = false;      // the host has pointed out the answer zones, so show them
 let practiceIndex = 0;       // index into PRACTICE
 let introQuestion: Question | null = null;
-let leadInPending = false;   // speak the practice question's lead-in on its first ask only
-
-type IntroStep = "listen" | "tap" | "commit" | "corners" | "done";
-let introStep: IntroStep | null = null;
-let lastRenderedStepIcon: IntroStep | null = null; // avoids restarting ambient icon loops
+// the drums question's two plays: [first, second], one of them without drums
+let introPair: [GeneratedSong, GeneratedSong] | null = null;
+let hintTimer: number | null = null;
 
 const INTRO_DONE_TEXT = "🎉 Goed gedaan! Je kent nu de quiz. Terug naar het startscherm...";
-
-// what to do right now, keyed by step
-const INTRO_STEPS: Record<IntroStep, string> = {
-    listen:  "Stap 1 van 4 — Luister naar de vraag, het stukje muziek en de antwoorden.",
-    tap:     "Stap 2 van 4 — Tik één keer op een kant om dat antwoord te horen.",
-    commit:  "Stap 3 van 4 — Tik twee keer op dezelfde kant om het te kiezen.",
-    corners: "Stap 4 van 4 — Nu zijn er vier hoeken. Schud je telefoon om de vraag opnieuw te horen.",
-    done:    INTRO_DONE_TEXT,
-};
+const PAIR_GAP_MS = 900;         // silence between the two plays of the drums question
+const ANSWER_HINT_MS = 6000;     // no answer this long after the options: show the hint
+const PREVIEW_BARS = 2;          // keeps the drums question's two plays short
 
 const PRACTICE_RATING = BASE_RATING - 200; // aim well below neutral: the easiest songs the generator can make
 const PRACTICE_MAX_BARS = 3;                // ...but keep them short - for some traits "easiest" means "longest"
 
-const PRACTICE: { traitId: string; leadIn: VoiceLine }[] = [
-    { traitId: "has-drums", leadIn: INTRO_LINES.practice1 },
-    { traitId: "melody-instrument-family", leadIn: INTRO_LINES.practice2 },
-];
-
-type PreviewIcon = "drums" | "no-drums" | "zones-2" | "zones-4";
-/** `zones`: the answer layout this step shows (and the host points out). */
-interface PreviewStep { icon: PreviewIcon; caption: VoiceLine; play: () => number; zones?: 2 | 4; }
-
-const ZONE_CUE_GAP_MS = 1400;
-
-const PREVIEW_STEPS: PreviewStep[] = [
+/** The practice questions: what the host asks, and the on-screen hint when no answer comes. */
+const PRACTICE: { prompt: VoiceLine; make: () => Question; hint: string }[] = [
     {
-        icon: "drums",
-        caption: INTRO_LINES.previewDrums,
-        play: () => playSongOnStage(previewSong!),
+        prompt: INTRO_LINES.drumsQuestion,
+        make: drumsQuestion,
+        hint: "Klik twee keer links of rechts om antwoord te geven en schud om de vraag opnieuw te horen.",
     },
     {
-        icon: "no-drums",
-        caption: INTRO_LINES.previewNoDrums,
-        play: () => playSongOnStage({ ...previewSong!, drums: undefined }),
-    },
-    {
-        icon: "zones-2",
-        caption: INTRO_LINES.previewTwoZones,
-        play: () => playZoneCues(2),
-        zones: 2,
-    },
-    {
-        icon: "zones-4",
-        caption: INTRO_LINES.previewFourZones,
-        play: () => playZoneCues(4),
-        zones: 4,
+        prompt: INTRO_LINES.notesQuestion,
+        make: () => generateQuestion({
+            playerRatings: {},
+            forcedTraitId: "melody-note-count",
+            targetRating: PRACTICE_RATING,
+            maxBars: PRACTICE_MAX_BARS,
+        }),
+        hint: "Klik twee keer op een hoek om antwoord te geven en schud om de vraag opnieuw te horen.",
     },
 ];
 
-/** Speaks every zone's name in turn, lighting it up on the icon. Returns the duration in ms. */
-function playZoneCues(count: number): number {
-    const zones = zonesFor(count);
-    zones.forEach((zone, i) => {
-        later(() => {
-            setLitZone(i);
-            hostPoint(i, count, ZONE_CUE_GAP_MS - 300);
-            speak(letterLine(zone.letter));
-        }, i * ZONE_CUE_GAP_MS);
-    });
-    later(() => setLitZone(null), zones.length * ZONE_CUE_GAP_MS);
-    return zones.length * ZONE_CUE_GAP_MS;
+/** "In welk liedje zitten er drums?": one short piece, played with and without drums in a random order. */
+function drumsQuestion(): Question {
+    const song = generatePreviewSong(PREVIEW_BARS);
+    const noDrums: GeneratedSong = { ...song, drums: undefined };
+    const drumsFirst = Math.random() < 0.5;
+    introPair = drumsFirst ? [song, noDrums] : [noDrums, song];
+    const options = [INTRO_LINES.firstSong.text, INTRO_LINES.secondSong.text];
+    return {
+        id: `intro-drums-${Date.now()}`,
+        traitId: "intro-drums",
+        category: "Ritme",
+        difficulty: "easy",
+        prompt: INTRO_LINES.drumsQuestion.text,
+        options,
+        correctAnswer: options[drumsFirst ? 0 : 1],
+        song,
+        songRating: PRACTICE_RATING,
+    };
 }
 
-function setLitZone(index: number | null): void {
-    for (let i = 0; i < 4; i++) previewIconSlotEl.classList.toggle(`lit-${i}`, i === index);
+/** Show the dashed answer zones whenever an answer can be given - or the host is pointing them out. */
+function updateZones(): void {
+    document.body.classList.toggle("no-zones", !startScreenEl.hidden || (introMode && !introZones));
 }
 
-/** Remove+re-add a class via a forced reflow so its CSS animation restarts
- *  even when the class was already present (a plain re-add is a no-op). */
-function restartAnimation(el: Element, className: string): void {
-    el.classList.remove(className);
-    void (el as HTMLElement).offsetWidth;
-    el.classList.add(className);
+/** Clear the on-screen answer hint (and its timer). */
+function clearAnswerHint(): void {
+    if (hintTimer !== null) window.clearTimeout(hintTimer);
+    hintTimer = null;
+    if (introMode) instructionEl.textContent = "";
 }
 
-const PREVIEW_ICON_SVG: Record<PreviewIcon, string> = {
-    "drums": DRUMS_SVG,
-    "no-drums": DRUMS_SVG,
-    "zones-2": PHONE_ZONES_2_SVG,
-    "zones-4": PHONE_ZONES_4_SVG,
-};
-const PREVIEW_ICON_CLASS: Record<PreviewIcon, string> = {
-    "drums": "icon-drums",
-    "no-drums": "icon-drums crossed",
-    "zones-2": "icon-zones",
-    "zones-4": "icon-zones",
-};
-
-/** Icon shown in the player-paced preview panel. */
-function renderPreviewIcon(kind: PreviewIcon | null): void {
-    previewIconSlotEl.innerHTML = kind === null ? "" : PREVIEW_ICON_SVG[kind];
-    previewIconSlotEl.className = kind === null ? "" : PREVIEW_ICON_CLASS[kind];
-}
-
-/** Toggle the preview icon's "currently playing" animation. */
-function setPreviewIconPlaying(playing: boolean): void {
-    if (playing) restartAnimation(previewIconSlotEl, "playing");
-    else previewIconSlotEl.classList.remove("playing");
+/** (Re)start the countdown to the on-screen hint for the current practice question. */
+function armAnswerHint(): void {
+    if (hintTimer !== null) window.clearTimeout(hintTimer);
+    const myRun = runId;
+    hintTimer = window.setTimeout(() => {
+        hintTimer = null;
+        if (myRun !== runId || !introMode || phase !== "listening") return;
+        instructionEl.textContent = PRACTICE[practiceIndex].hint;
+    }, ANSWER_HINT_MS);
 }
 
 /**
- * Persistent icon shown above the instruction during the practice questions -
- * ear while listening, a tapping finger, a double tap, and a shaking phone for
- * the four-corner question. Only re-injected when the step actually changes,
- * so the ambient loops don't restart on every update.
+ * Say a sentence piece by piece; a piece with a `zone` lights that answer zone
+ * up (and the host points at it) as it starts, and it stays lit until the next
+ * one. Resolves false when cut off (the intro was stopped).
  */
-function renderStepIcon(): void {
-    const step = introMode && !introDemoActive ? introStep : null;
-    if (step === lastRenderedStepIcon) return;
-    lastRenderedStepIcon = step;
-    const icons: Record<IntroStep, [string, string]> = {
-        listen:  [EAR_SVG, "icon-ear listening"],
-        tap:     [TAP_SVG, "icon-tap"],
-        commit:  [DOUBLE_TAP_SVG, "icon-tap"],
-        corners: [SHAKE_SVG, "icon-shake"],
-        done:    ["", ""],
-    };
-    const [svg, cls] = step ? icons[step] : ["", ""];
-    stepIconEl.innerHTML = svg;
-    stepIconEl.className = cls;
-}
-
-function updateInstruction(text?: string): void {
-    if (text !== undefined) {
-        instructionEl.textContent = text;
-        return;
+async function sayPointing(count: 2 | 4, parts: { line: VoiceLine; zone?: number }[]): Promise<boolean> {
+    setAnswerLayoutClass(count);
+    introZones = true;
+    updateZones();
+    for (const { line, zone } of parts) {
+        if (zone !== undefined) hostPoint(zone, count, Infinity);
+        if (!await speak(line)) return false;
     }
-    if (introDemoActive) return; // the preview owns the instruction text
-    instructionEl.textContent = introMode && introStep ? INTRO_STEPS[introStep] : "";
+    hostScene?.stopPointing();
+    litZone(null);
+    return true;
 }
 
-/** Re-sync everything the intro shows on screen with the current state. */
-function updateIntroUI(): void {
-    updateInstruction();
-    renderStepIcon();
-    // the assist buttons only make sense while a practice question is open -
-    // and not on the last one: four corners plus buttons is too crowded on a
-    // phone, and by then the player repeats the question by shaking instead
-    const lastPractice = practiceIndex >= PRACTICE.length - 2;
-    practiceAssistEl.hidden = !(introMode && !introDemoActive && phase === "listening" && !lastPractice);
-    // the dashed answer guides only matter while a question can be answered -
-    // or while the preview's host points out where the answers sit
-    const previewZones = introDemoActive && PREVIEW_STEPS[previewIndex]?.zones !== undefined;
-    document.body.classList.toggle("no-zones", startScreenEl.hidden === false || (introDemoActive && !previewZones));
+/** The opening monologue, up to the first practice question. */
+async function runIntroScript(myRun: number): Promise<void> {
+    const alive = () => myRun === runId && introMode;
+    if (!await speak(INTRO_LINES.welcome) || !alive()) return;
+    const explained = await sayPointing(2, [
+        { line: INTRO_LINES.howToAnswer },
+        { line: INTRO_LINES.howLeft, zone: 0 },
+        { line: INTRO_LINES.howRight, zone: 1 },
+    ]);
+    if (!explained || !alive()) return;
+    if (!await speak(INTRO_LINES.shake) || !alive()) return;
+    if (!await speak(INTRO_LINES.letsGo) || !alive()) return;
+    startPractice();
 }
 
-function setIntroStep(step: IntroStep): void {
-    introStep = step;
-    updateIntroUI();
-}
-
-/** Show (and, once the caption has been spoken, play) one preview step. */
-function showPreviewStep(index: number, myRun: number): void {
-    if (myRun !== runId || !introDemoActive) return;
-    silenceEverything();
-    previewIndex = index;
-    const step = PREVIEW_STEPS[index];
-    renderPreviewIcon(step.icon);
-    if (step.zones) setAnswerLayoutClass(step.zones);
-    updateInstruction(step.caption.text);
-    updateIntroUI();
-    renderHud();
-    speakThen(step.caption, () => {
-        if (previewIndex === index) playPreviewStep(myRun);
-    });
-}
-
-/** Herhaal: (re)play the current preview step's sound from the start. Always
- *  safe to call repeatedly - never stacks audio or leaks timers. */
-function playPreviewStep(myRun: number): void {
-    if (myRun !== runId || !introDemoActive || previewIndex >= PREVIEW_STEPS.length) return;
-    silenceEverything();
-    setLitZone(null);
-    setPreviewIconPlaying(true);
-    const ms = PREVIEW_STEPS[previewIndex].play();
-    later(() => setPreviewIconPlaying(false), ms + 200);
-}
-
-/** Volgende: move to the next preview step, or - once every step has been
- *  shown - start the practice questions. */
-function advancePreview(myRun: number): void {
-    if (myRun !== runId || !introDemoActive || previewIndex >= PREVIEW_STEPS.length) return;
-    const nextIndex = previewIndex + 1;
-    if (nextIndex < PREVIEW_STEPS.length) {
-        showPreviewStep(nextIndex, myRun);
-        return;
-    }
-    silenceEverything();
-    previewIndex = PREVIEW_STEPS.length; // ignores further Herhaal/Volgende clicks
-    previewPanelEl.hidden = true;
-    renderPreviewIcon(null);
-    updateInstruction(INTRO_LINES.ready.text);
-    speakThen(INTRO_LINES.ready, () => startPractice(myRun));
-}
-
-function startPractice(myRun: number): void {
+/** After the drums question: point out the four corners, then ask the second question. */
+async function explainFourAnswers(myRun: number): Promise<void> {
     if (myRun !== runId || !introMode) return;
-    introDemoActive = false;
+    const explained = await sayPointing(4, [
+        { line: INTRO_LINES.fourAnswers },
+        ...POSITION_LINES[4].map((line, zone) => ({ line, zone })),
+    ]);
+    if (!explained || myRun !== runId || !introMode) return;
+    practiceIndex++;
+    nextPracticeQuestion();
+    presentQuestion();
+}
+
+function startPractice(): void {
     practiceIndex = 0;
     input.setActive(true);
     input.setQuizEnabled(true);
-    nextPracticeQuestion(true);
+    nextPracticeQuestion();
     presentQuestion();
 }
 
 /** A fresh, easy question for the current practice slot. */
-function nextPracticeQuestion(firstAsk: boolean): void {
-    introQuestion = generateQuestion({
-        playerRatings: {},
-        forcedTraitId: PRACTICE[practiceIndex].traitId,
-        targetRating: PRACTICE_RATING,
-        maxBars: PRACTICE_MAX_BARS,
-    });
-    leadInPending = firstAsk;
+function nextPracticeQuestion(): void {
+    clearAnswerHint();
+    introPair = null;
+    introQuestion = PRACTICE[practiceIndex].make();
 }
 
 function finishIntro(): void {
@@ -543,7 +449,7 @@ function finishIntro(): void {
     const myRun = runId;
     phase = "answered";
     input.setActive(false);
-    setIntroStep("done");
+    instructionEl.textContent = INTRO_DONE_TEXT;
     cue("done");
     later(() => embed ? speak(INTRO_LINES.done) : speak(INTRO_LINES.done, INTRO_LINES.backToStart), 400);
     later(() => {
@@ -573,11 +479,11 @@ function stopGame(): void {
     hideHostScene();
     if (fontPoll !== null) { window.clearInterval(fontPoll); fontPoll = null; }
     loading = false;
+    clearAnswerHint();
     introMode = false;
-    introDemoActive = false;
+    introZones = false;
     introQuestion = null;
-    introStep = null;
-    previewIndex = 0;
+    introPair = null;
     practiceIndex = 0;
     session = null;
     lastResultsSummary = [];
@@ -586,11 +492,9 @@ function stopGame(): void {
     input.setActive(true);
     introBtn.disabled = false;
     gameBtn.disabled = false;
-    previewPanelEl.hidden = true;
-    renderPreviewIcon(null);
     instructionEl.textContent = "";
     showStartScreen();
-    updateIntroUI();
+    updateZones();
     renderHud();
 }
 
@@ -633,23 +537,19 @@ async function startGame(asIntro: boolean): Promise<void> {
     showGameScreen();
 
     if (asIntro) {
-        // player-paced preview: Herhaal/Volgende drive it from here on, and
-        // advancePreview() starts the practice questions once the player has
-        // clicked through every step. Taps/shakes are ignored until then.
+        // the host talks the player through it; taps/shakes are ignored until
+        // the first practice question is asked
         introMode = true;
-        introDemoActive = true;
-        introStep = null;
         input.setQuizEnabled(false);
         input.setActive(false);
-        previewSong = generatePreviewSong();
-        previewPanelEl.hidden = false;
         showHostScene();
-        updateIntroUI();
-        showPreviewStep(0, myRun);
+        updateZones();
+        renderHud();
+        void runIntroScript(myRun);
         return;
     }
 
-    updateIntroUI();
+    updateZones();
     beginQuiz();
 }
 
@@ -663,23 +563,14 @@ function presentQuestion(): void {
     input.setAnswerCount(q.options.length);
     setAnswerLayoutClass(q.options.length);
 
-    const prompt: VoiceLine[] = [questionLine(q.traitId, q.prompt)];
-    let readMs = PROMPT_READ_MS;
-    if (introMode) {
-        const leadIn = leadInPending ? PRACTICE[practiceIndex].leadIn : null;
-        leadInPending = false;
-        if (leadIn) {
-            prompt.unshift(leadIn);
-            readMs += leadIn.text.length * 65;
-        }
-        setIntroStep(practiceIndex === 0 ? "listen" : "corners");
-    }
+    // the intro asks its practice questions in the host's own words
+    const prompt = introMode ? PRACTICE[practiceIndex].prompt : questionLine(q.traitId, q.prompt);
     renderHud();
-    updateIntroUI();
+    updateZones();
 
     // Speech is fire-and-forget status; fixed timers drive the flow so a missing
     // or slow speech-synthesis engine never stalls the quiz.
-    speak(...prompt);
+    speak(prompt);
     const startPiece = () => {
         const ms = playPiece();
         later(readOptions, ms + 700);
@@ -696,7 +587,7 @@ function presentQuestion(): void {
         } else {
             startPiece();
         }
-    }, readMs);
+    }, PROMPT_READ_MS);
 }
 
 /** The player asked to hear the question again. */
@@ -712,7 +603,7 @@ function previewOption(index: AnswerIndex): void {
     clearPending();
     const zone = zonesFor(q.options.length)[index];
     announceOption(index, zone);
-    if (introMode && (introStep === "listen" || introStep === "tap")) setIntroStep("commit");
+    if (introMode) armAnswerHint();
 }
 
 /** Applause/aww + earcon feedback after an answer; a wrong answer also reveals the right one. */
@@ -744,14 +635,16 @@ function commitOption(index: AnswerIndex): void {
 
     if (introMode) {
         const correct = chosen === q.correctAnswer;
-        updateIntroUI();
+        clearAnswerHint();
         giveFeedback(q, correct);
         if (!correct) {
             // same kind of question again, with a fresh song
             later(() => speak(INTRO_LINES.tryAgain), 3600);
-            later(() => { nextPracticeQuestion(false); presentQuestion(); }, 6200);
+            later(() => { nextPracticeQuestion(); presentQuestion(); }, 6200);
         } else if (practiceIndex + 1 < PRACTICE.length) {
-            later(() => { practiceIndex++; nextPracticeQuestion(true); presentQuestion(); }, RESULT_ADVANCE_MS);
+            later(() => speak(INTRO_LINES.wellDone), 300);
+            const myRun = runId;
+            later(() => void explainFourAnswers(myRun), RESULT_ADVANCE_MS);
         } else {
             later(finishIntro, 1200);
         }
@@ -849,18 +742,9 @@ input.onAction((action: QuizAction) => {
 introBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(true); });
 gameBtn.addEventListener("click", () => { startNoteEl.hidden = true; void enterFullscreen(); startGame(false); });
 stopBtn.addEventListener("click", () => stopGame());
-previewRepeatBtn.addEventListener("click", () => playPreviewStep(runId));
-previewNextBtn.addEventListener("click", () => advancePreview(runId));
-repeatQuestionBtn.addEventListener("click", () => { if (phase === "listening") repeatQuestion(); });
-readOptionsBtn.addEventListener("click", () => {
-    if (phase !== "listening") return;
-    clearPending();
-    stopAudio();
-    readOptions();
-});
 
 input.start();
-updateIntroUI();
+updateZones();
 renderHud();
 
 // run by the combined/ shell: skip the menu, start straight into the requested mode
