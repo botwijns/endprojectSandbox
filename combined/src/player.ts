@@ -95,7 +95,13 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
     badge.title = "Sessienummer";
     badge.textContent = "sessie …";
 
-    root.replaceChildren(screen, frame, skipBtn, badge);
+    // black cover over the game / the in-between screens, so players can't look
+    // for hints; pointer-events: none lets taps through to the game underneath
+    const blackout = document.createElement("div");
+    blackout.className = "blackout";
+    blackout.hidden = true;
+
+    root.replaceChildren(screen, frame, blackout, skipBtn, badge);
 
     let index = -1;
     const results: unknown[] = [];
@@ -162,6 +168,9 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         heading.textContent = big;
         sub.textContent = small;
         screen.hidden = false;
+        // black between games (walk, announcement) — not on the first tap screen or at the end
+        blackout.hidden = !(flow.blackoutBetween && index >= 0 && index < flow.segments.length);
+        if (!blackout.hidden) badge.hidden = false;
     }
 
     /** Stop the current game and silence it: its own stopGame(), then cut its audio bus. */
@@ -209,12 +218,14 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         const load = () => {
             screen.hidden = true;
             frame.hidden = false;
+            blackout.hidden = !seg.blackout;
             skipBtn.hidden = !opts.skip;
             stopFrameSpeech();
             frame.src = url;
             segmentStart = Date.now();
             logShell("segment_start", { proto: seg.proto, mode: seg.mode, params: segmentParams(seg, sound, extra) });
-            badge.hidden = true; // the game shows its own badge
+            // the game shows its own badge — unless it's blacked out, then show ours on top
+            badge.hidden = !seg.blackout;
         };
 
         if (shared) {

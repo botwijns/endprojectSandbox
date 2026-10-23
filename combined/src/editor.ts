@@ -57,6 +57,9 @@ export function runEditor(root: HTMLElement): void {
     const sharedBox = el("input", { type: "checkbox", checked: !!flow.sharedAudio });
     sharedBox.addEventListener("change", () => { flow.sharedAudio = sharedBox.checked; save(); });
 
+    const blackoutBox = el("input", { type: "checkbox", checked: !!flow.blackoutBetween });
+    blackoutBox.addEventListener("change", () => { flow.blackoutBetween = blackoutBox.checked; save(); });
+
     // one unexpected sound for the whole session; each game segment switches it on/off
     const gorillaChoices: { value: GorillaChoice; label: string }[] = [
         { value: "random", label: "willekeurig (per speler, ook 'uit' mogelijk)" },
@@ -102,6 +105,8 @@ export function runEditor(root: HTMLElement): void {
         el("label", { className: "row check" }, surveyBox, el("span", { textContent: "Na afloop naar de vragenlijst (/survey/)" })),
         el("label", { className: "row check" }, sharedBox,
             el("span", { textContent: "Geen tik per spel: alleen de eerste tik, daarna starten de spellen vanzelf (gedeelde audio — test op je toestel)" })),
+        el("label", { className: "row check" }, blackoutBox,
+            el("span", { textContent: "Zwart scherm tussen de spellen (lopen + aankondiging); per onderdeel ook tijdens het spel aan te zetten" })),
         el("div", { className: "row" }, presetSelect, loadPresetBtn, importBtn, importInput),
     );
 
@@ -182,6 +187,13 @@ export function runEditor(root: HTMLElement): void {
                 renderSegments();
             });
 
+            const blackoutInput = el("input", { type: "checkbox", checked: !!seg.blackout });
+            blackoutInput.addEventListener("change", () => {
+                if (blackoutInput.checked) seg.blackout = true;
+                else delete seg.blackout;
+                save();
+            });
+
             const params = def.params[seg.mode].map(p => paramField(seg, p));
             list.append(el("li", { className: `segment proto-${seg.proto}` },
                 el("div", { className: "seg-head" },
@@ -189,6 +201,9 @@ export function runEditor(root: HTMLElement): void {
                     el("span", { className: "tools" }, test, up, down, remove),
                 ),
                 el("label", { className: "param wide" }, el("span", { textContent: "Titel (op het startscherm)" }), titleInput),
+                el("label", { className: "param wide check" }, blackoutInput,
+                    el("span", { textContent: "Zwart scherm tijdens dit spel" }),
+                    el("small", { textContent: "tikken werkt gewoon; de speler ziet niets op het scherm" })),
                 el("div", { className: "params" }, ...(params.length ? params : [el("small", { textContent: "geen instellingen" })])),
             ));
         });
@@ -249,6 +264,7 @@ export function runEditor(root: HTMLElement): void {
         surveyBox.checked = !!flow.surveyAtEnd;
         sharedBox.checked = !!flow.sharedAudio;
         gorillaSelect.value = String(flow.gorilla ?? "random");
+        blackoutBox.checked = !!flow.blackoutBetween;
         save();
         renderSegments();
     }
