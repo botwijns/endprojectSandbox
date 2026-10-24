@@ -7,7 +7,7 @@ import { Howl, Howler } from "howler";
 import { generateDrumPattern, type DrumPattern } from "./music.ts";
 import { BRIEFS, briefAt, type Brief, type MelodicInstrument } from "./briefs.ts";
 import { speak, earcon, setSpeechEnabled, stopSpeech } from "./speech.ts";
-import { BRIEF_LINES, GAME_LINES, INSTRUMENT_LINES, STEP_LINES, TRACK_COUNT_LINES, TRACK_NUMBER_LINES, numbered } from "./voiceLines.ts";
+import { BRIEF_LINES, GAME_LINES, INSTRUMENT_LINES, STEP_LINES, TRACK_COUNT_LINES, numbered } from "./voiceLines.ts";
 import { createIntroLevel, type IntroGate, type IntroLevel } from "./intro/introLevel.ts";
 import "webaudiofont";
 import { FONT_VARS } from "./fonts.ts";
@@ -560,8 +560,8 @@ function loadBrief(index: number): void {
     startSequencer();                 // (re)start at composer speed for the new brief
     updateHud();
     renderGrid();
-    const n = mixtape.length + 1;
-    speak(numbered(TRACK_NUMBER_LINES, n, `Nummer ${n}.`), BRIEF_LINES[currentBrief.id].say);
+    // const n = mixtape.length + 1;
+    speak( BRIEF_LINES[currentBrief.id].say);
 }
 
 function finishTrack(): void {

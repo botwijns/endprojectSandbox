@@ -1,4 +1,4 @@
-// Every line this prototype says out loud, in one place. Each line is one audio
+ // Every line this prototype says out loud, in one place. Each line is one audio
 // file (paths are relative to /public, like the other sounds). While `src` is
 // still null the line is read out by the browser's text-to-speech from `text`,
 // so the quiz stays playable before the recordings exist. `text` is also the
@@ -21,30 +21,30 @@ export interface VoiceLine {
 // main.ts). Some sentences are split where a side or corner lights up on a word.
 export const INTRO_LINES = {
     // TODO(speech): record → sounds/quiz_intro_1.mp3
-    welcome:      { text: "Welkom bij de Muziekquiz van vandaag! Ik ben Quintin, jullie quizmaster. We gaan nu testen of je naast muziek maken ook goed kan luisteren naar muziek. Ik laat een audiofragment horen en dan stel ik daar een vraag over.", src: null },
+    welcome:      { text: "Welkom bij de Muziekquiz van vandaag! Ik ben Quintin, jullie quizmaster. We gaan nu testen of je naast muziek maken ook goed kan luisteren naar muziek. Ik laat een audiofragment horen en dan stel ik daar een vraag over.", src: "sounds/quiz_intro_1.mp3" },
     // TODO(speech): record → sounds/quiz_intro_2.mp3, _3 ("links of", left lights up) and _4 ("rechts te klikken", right lights up)
-    howToAnswer:  { text: "Daar geef je antwoord op door twee keer op het antwoord", src: null },
-    howLeft:      { text: "links of", src: null },
-    howRight:     { text: "rechts te klikken.", src: null },
+    howToAnswer:  { text: "Daar geef je antwoord op door twee keer op het antwoord", src: "sounds/quiz_intro_2.mp3" },
+    howLeft:      { text: "links of", src: "sounds/quiz_intro_3.mp3" },
+    howRight:     { text: "rechts te klikken.", src: "sounds/quiz_intro_4.mp3" },
     // TODO(speech): record → sounds/quiz_intro_5.mp3
-    shake:        { text: "Als je de vraag en antwoorden opnieuw wil horen, schud dan met je telefoon!", src: null },
+    shake:        { text: "Als je de vraag en antwoorden opnieuw wil horen, schud dan met je telefoon!", src: "sounds/quiz_intro_5.mp3" },
     // TODO(speech): record → sounds/quiz_intro_6.mp3
-    letsGo:       { text: "Oké, daar gaan we!", src: null },
+    letsGo:       { text: "Oké, daar gaan we!", src: "sounds/quiz_intro_6.mp3" },
     // TODO(speech): record → sounds/quiz_intro_7.mp3 (then a piece plays twice, once with drums and once without)
-    drumsQuestion: { text: "In welk liedje zitten er drums?", src: null },
+    drumsQuestion: { text: "In welk liedje zitten er drums?", src: "sounds/quiz_intro_7.mp3" },
     // TODO(speech): record → sounds/quiz_intro_8.mp3 / _9 (the answers of the drums question)
-    firstSong:    { text: "Eerste liedje", src: null },
-    secondSong:   { text: "Tweede liedje", src: null },
+    firstSong:    { text: "Eerste liedje", src: "sounds/quiz_intro_8.mp3" },
+    secondSong:   { text: "Tweede liedje", src: "sounds/quiz_intro_9.mp3" },
     // TODO(speech): record → sounds/quiz_intro_10.mp3 (after a right practice answer)
-    wellDone:     { text: "Goedzo!", src: null },
+    wellDone:     { text: "Goedzo!", src: "sounds/quiz_intro_10.mp3" },
     // TODO(speech): record → sounds/quiz_intro_11.mp3 (then each corner's name as it lights up: POSITION_LINES)
-    fourAnswers:  { text: "Soms zijn er vier antwoorden:", src: null },
+    fourAnswers:  { text: "Soms zijn er vier antwoorden:", src: "sounds/quiz_intro_11.mp3" },
     // TODO(speech): record → sounds/quiz_intro_12.mp3
-    notesQuestion: { text: "Hoeveel noten zitten er in dit liedje?", src: null },
+    notesQuestion: { text: "Hoeveel noten zitten er in dit liedje?", src: "sounds/quiz_intro_12.mp3" },
     // TODO(speech): record → sounds/quiz_intro_13.mp3 (after a wrong practice answer)
-    tryAgain:     { text: "Probeer het nog eens met een nieuw stukje.", src: null },
+    tryAgain:     { text: "Probeer het nog eens met een nieuw stukje.", src: "sounds/quiz_intro_13.mp3" },
     // TODO(speech): record → sounds/quiz_intro_14.mp3
-    done:         { text: "Goed gedaan! Je kent nu de quiz.", src: null },
+    done:         { text: "Goed gedaan! Je kent nu de quiz.", src: "sounds/quiz_intro_14.mp3" },
     // TODO(speech): record → sounds/quiz_intro_15.mp3 (after "done", only when not in the combined/ shell)
     backToStart:  { text: "Terug naar het startscherm.", src: null },
 } satisfies Record<string, VoiceLine>;
@@ -53,14 +53,14 @@ export const INTRO_LINES = {
 // TODO(speech): record each → sounds/quiz_positie_<name>.mp3
 export const POSITION_LINES: Record<2 | 4, VoiceLine[]> = {
     2: [
-        { text: "links:", src: null },
-        { text: "rechts:", src: null },
+        { text: "links:", src: "sounds/quiz_positie_a.mp3" },
+        { text: "rechts:", src: "sounds/quiz_positie_b2.mp3" },
     ],
     4: [
-        { text: "linksboven:", src: null },
-        { text: "rechtsboven:", src: null },
-        { text: "linksonder:", src: null },
-        { text: "rechtsonder:", src: null },
+        { text: "linksboven:", src: "sounds/quiz_positie_a.mp3" },
+        { text: "rechtsboven:", src: "sounds/quiz_positie_b.mp3" },
+        { text: "linksonder:", src: "sounds/quiz_positie_c.mp3" },
+        { text: "rechtsonder:", src: "sounds/quiz_positie_d.mp3" },
     ],
 };
 
