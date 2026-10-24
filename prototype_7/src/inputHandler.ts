@@ -50,8 +50,8 @@ type Zone =
 export class InputHandler {
     private callbacks: ActionCallback[] = [];
     private quizEnabled = false;
-    // While false every tap and shake is ignored - used while the intro's
-    // preview panel (Herhaal/Volgende) owns the screen.
+    // While false every tap and shake is ignored - used while the intro's quiz
+    // host is still explaining, before the first practice question.
     private active = true;
     private answerCount: number = 4;
 

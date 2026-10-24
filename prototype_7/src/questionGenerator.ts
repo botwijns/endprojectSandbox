@@ -472,16 +472,16 @@ export function generateQuestion(options: GeneratorOptions): Question {
 }
 
 /**
- * A short, sparse song with drums for the intro's "met / zonder drums" preview.
- * The "zonder" half is the same object with `drums` removed, so the player
- * hears the exact same melody both times.
+ * A short, sparse song with drums for the intro's "in welk liedje zitten er
+ * drums?" question. The version without drums is the same object with `drums`
+ * removed, so the player hears the exact same melody both times.
  */
-export function generatePreviewSong(): GeneratedSong {
+export function generatePreviewSong(bars = 4): GeneratedSong {
   // fixed, moderate tempo/metre (generateSongFromParams randomizes both) so
-  // the demo stays short: 4 bars of 4 at 110 bpm is roughly 9 seconds
+  // the demo stays short: each bar of 4 at 110 bpm is roughly 2 seconds
   return generateSong({
     ...resolveGenre("pop"),
-    bars: 4, bpb: 4, bpm: 110, density: 0.5,
+    bars, bpb: 4, bpm: 110, density: 0.5,
     bass: false, chords: false, drums: true,
     genre: "pop",
   });
