@@ -268,7 +268,7 @@ function announceOption(index: AnswerIndex, zone: AnswerZone): void {
     const audio = q.audioOptions?.[index];
     hostPoint(index, q.options.length);
     // the intro names the position ("links: ..."), the quiz its letter ("A. ...")
-    const position = introMode ? positionLine(index, q.options.length) : letterLine(zone.letter);
+    const position =  positionLine(index, q.options.length);
     if (audio) {
         speak(position);
         later(() => {

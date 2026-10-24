@@ -89,15 +89,15 @@ export const LETTER_LINES: Record<string, VoiceLine> = {
 // Keep `text` the same as the trait's `prompt` there: that one is what's logged.
 export const QUESTION_LINES: Record<string, VoiceLine> = {
     // TODO(speech): record each → sounds/quiz_vraag_<trait id>.mp3
-    "has-drums":                { text: "Zitten er drums in dit stuk?", src: null },
-    "motif-repeats":            { text: "Hoor je een stukje muziek dat steeds terugkomt?", src: null },
-    "melody-instrument-family": { text: "Tot welke familie hoort het instrument van de melodie?", src: null },
-    "chords-instrument-family": { text: "Wat speelt de akkoorden eronder?", src: null },
-    "beats-per-bar":            { text: "Hoeveel tellen zitten er in elke maat?", src: null },
-    "melody-note-count":        { text: "Uit hoeveel noten bestaat de melodie?", src: null },
-    "melody-direction-start":   { text: "Gaat de melodie aan het begin omhoog of omlaag?", src: null },
-    "melody-direction-end":     { text: "Gaat de melodie aan het einde omhoog of omlaag?", src: null },
-    "motif-count":              { text: "Hoeveel keer hoor je het stukje dat terugkomt?", src: null },
+    "has-drums":                { text: "Zitten er drums in dit stuk?", src: "sounds/quiz_vraag_1.mp3" },
+    "motif-repeats":            { text: "Hoor je een stukje muziek dat steeds terugkomt?", src: "sounds/quiz_vraag_2.mp3" },
+    "melody-instrument-family": { text: "Tot welke familie hoort het instrument van de melodie?", src: "sounds/quiz_vraag_3.mp3" },
+    "chords-instrument-family": { text: "Wat speelt de akkoorden eronder?", src: "sounds/quiz_vraag_4.mp3" },
+    "beats-per-bar":            { text: "Hoeveel tellen zitten er in elke maat?", src: "sounds/quiz_vraag_5.mp3" },
+    "melody-note-count":        { text: "Uit hoeveel noten bestaat de melodie?", src: "sounds/quiz_vraag_6.mp3" },
+    "melody-direction-start":   { text: "Gaat de melodie aan het begin omhoog of omlaag?", src: "sounds/quiz_vraag_7.mp3" },
+    "melody-direction-end":     { text: "Gaat de melodie aan het einde omhoog of omlaag?", src: "sounds/quiz_vraag_8.mp3" },
+    "motif-count":              { text: "Hoeveel keer hoor je het stukje dat terugkomt?", src: "sounds/quiz_vraag_9.mp3" },
     // traits that are switched off in questionGenerator.ts:
     // "tempo-broad":       { text: "Hoe zou je het tempo omschrijven?", src: null },
     // "density":           { text: "Hoe druk voelt het arrangement?", src: null },
@@ -107,18 +107,18 @@ export const QUESTION_LINES: Record<string, VoiceLine> = {
 // --- answers, keyed by the option text the question generator produces --------
 export const ANSWER_LINES: Record<string, VoiceLine> = {
     // TODO(speech): record each → sounds/quiz_antwoord_<answer>.mp3
-    "ja":     { text: "ja", src: null },
-    "nee":    { text: "nee", src: null },
-    "omhoog": { text: "omhoog", src: null },
-    "omlaag": { text: "omlaag", src: null },
+    "ja":     { text: "ja", src: "sounds/quiz_antwoord_ja.mp3" },
+    "nee":    { text: "nee", src: "sounds/quiz_antwoord_nee.mp3" },
+    "omhoog": { text: "omhoog", src: "sounds/quiz_antwoord_omhoog.mp3" },
+    "omlaag": { text: "omlaag", src: "sounds/quiz_antwoord_omlaag.mp3" },
 
     // instrument families (INSTRUMENT_FAMILY in songGenerator.ts)
-    "Piano/toetsen": { text: "Piano/toetsen", src: null },
-    "Gitaar":        { text: "Gitaar", src: null },
-    "Strijkers":     { text: "Strijkers", src: null },
-    "Koper":         { text: "Koper", src: null },
-    "Hout":          { text: "Hout", src: null },
-    "Synth":         { text: "Synth", src: null },
+    "Piano/toetsen": { text: "Piano/toetsen", src: "sounds/quiz_instrument_1.mp3" },
+    "Gitaar":        { text: "Gitaar", src: "sounds/quiz_instrument_2.mp3" },
+    "Strijkers":     { text: "Strijkers", src: "sounds/quiz_instrument_3.mp3" },
+    "Koper":         { text: "Koper", src: "sounds/quiz_instrument_4.mp3" },
+    "Hout":          { text: "Hout", src: "sounds/quiz_instrument_5.mp3" },
+    "Synth":         { text: "Synth", src: "sounds/quiz_instrument_6.mp3" },
 
     // counts: beats per bar (2–6), repeats (2–5) and melody notes (any number;
     // a count without a line here is read out by text-to-speech)
