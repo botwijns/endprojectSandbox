@@ -209,12 +209,10 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         index++;
         if (index >= flow.segments.length) return finish();
         const seg = flow.segments[index];
-        const title = segmentTitle(seg);
         const extra = seg.proto === "p7" && seg.mode === "game" && seg.params.carryRatings !== false && lastRatings
             ? { ratings: lastRatings }
             : {};
         const url = segmentUrl(seg, session, sound, extra, shared !== null);
-        const lead = index === 0 ? "" : "Goed gedaan! Nu: ";
         const load = () => {
             screen.hidden = true;
             frame.hidden = false;
@@ -228,17 +226,8 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
             badge.hidden = !seg.blackout;
         };
 
-        if (shared) {
-            // no tap screen in the game: announce it here, then load it once that's been said
-            const myIndex = index;
-            show(title, "");
-            skipBtn.hidden = !opts.skip;
-            // speak(`${lead}${title}.`, () => { if (myIndex === index && !walking) load(); });
-            return;
-        }
+        // no spoken announcement: the game introduces itself (with shared audio it starts right away)
         load();
-        // the segment's own page shows the title + "tik om te beginnen"; say it too, eyes-free
-        // speak(`${lead}${title}. Tik op het scherm om te beginnen.`);
     }
 
     function finish(): void {
