@@ -112,6 +112,10 @@ export const ANSWER_LINES: Record<string, VoiceLine> = {
     "omhoog": { text: "omhoog", src: "sounds/quiz_antwoord_omhoog.mp3" },
     "omlaag": { text: "omlaag", src: "sounds/quiz_antwoord_omlaag.mp3" },
 
+    // the intro's drums question
+    [INTRO_LINES.firstSong.text]:  INTRO_LINES.firstSong,
+    [INTRO_LINES.secondSong.text]: INTRO_LINES.secondSong,
+
     // instrument families (INSTRUMENT_FAMILY in songGenerator.ts)
     "Piano/toetsen": { text: "Piano/toetsen", src: "sounds/quiz_instrument_1.mp3" },
     "Gitaar":        { text: "Gitaar", src: "sounds/quiz_instrument_2.mp3" },
