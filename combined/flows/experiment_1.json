@@ -27,45 +27,6 @@
       "mode": "game",
       "params": {
         "days": 1,
-        "fishFirstDay": 3,
-        "maxExtraPerDay": 1,
-        "gorilla": false,
-        "gorillaAt": 2
-      },
-      "blackout": true
-    },
-    {
-      "proto": "p6",
-      "mode": "game",
-      "params": {
-        "songCount": 2,
-        "briefs": [
-          "vrolijk",
-          "slaapliedje"
-        ],
-        "speech": true,
-        "randomNote": false,
-        "gorilla": true,
-        "gorillaAt": 2
-      },
-      "blackout": true
-    },
-    {
-      "proto": "p7",
-      "mode": "game",
-      "params": {
-        "questions": 2,
-        "carryRatings": true,
-        "gorilla": false,
-        "gorillaAt": 2
-      },
-      "blackout": true
-    },
-    {
-      "proto": "p5",
-      "mode": "game",
-      "params": {
-        "days": 1,
         "fishFirstDay": 4,
         "maxExtraPerDay": 1,
         "gorilla": true,
@@ -95,7 +56,7 @@
       "params": {
         "questions": 2,
         "carryRatings": true,
-        "gorilla": true,
+        "gorilla": false,
         "gorillaAt": 2
       },
       "blackout": true
