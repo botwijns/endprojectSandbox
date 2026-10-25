@@ -69,9 +69,9 @@ export const GAME_LINES = {
     // TODO(speech): record → sounds/quiz_prompts_1.mp3 (while the instruments are still loading)
     loading:   { text: "Instrumenten laden, momentje.", src: null },
     // TODO(speech): record → sounds/quiz_prompts_2.mp3
-    quizStart: { text: "Daar gaan we. Luister goed.", src: null },
+    quizStart: { text: "Daar gaan we. Luister goed.", src: "sounds/quiz_prompts_2.mp3" },
     // TODO(speech): record → sounds/quiz_prompts_3.mp3 — after a wrong answer: "Het was" + the right answer
-    itWas:     { text: "Het was", src: null },
+    itWas:     { text: "Het was", src: "sounds/quiz_prompts_3.mp3" },
     // TODO(speech): record → sounds/quiz_prompts_4.mp3 — after a wrong "which note" answer, the note plays after this
     rightNote: { text: "Dit was de juiste noot:", src: null },
 } satisfies Record<string, VoiceLine>;

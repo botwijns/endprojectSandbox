@@ -1,7 +1,9 @@
 {
   "name": "experiment_1",
   "surveyAtEnd": true,
+  "sharedAudio": true,
   "gorilla": "random",
+  "blackoutBetween": true,
   "segments": [
     {
       "proto": "p5",
@@ -29,7 +31,8 @@
         "maxExtraPerDay": 1,
         "gorilla": false,
         "gorillaAt": 2
-      }
+      },
+      "blackout": true
     },
     {
       "proto": "p6",
@@ -44,7 +47,8 @@
         "randomNote": false,
         "gorilla": true,
         "gorillaAt": 2
-      }
+      },
+      "blackout": true
     },
     {
       "proto": "p7",
@@ -54,7 +58,8 @@
         "carryRatings": true,
         "gorilla": false,
         "gorillaAt": 2
-      }
+      },
+      "blackout": true
     },
     {
       "proto": "p5",
@@ -65,7 +70,8 @@
         "maxExtraPerDay": 1,
         "gorilla": true,
         "gorillaAt": 1
-      }
+      },
+      "blackout": true
     },
     {
       "proto": "p6",
@@ -80,7 +86,8 @@
         "randomNote": false,
         "gorilla": false,
         "gorillaAt": 2
-      }
+      },
+      "blackout": true
     },
     {
       "proto": "p7",
@@ -90,7 +97,8 @@
         "carryRatings": true,
         "gorilla": true,
         "gorillaAt": 2
-      }
+      },
+      "blackout": true
     }
   ]
 }

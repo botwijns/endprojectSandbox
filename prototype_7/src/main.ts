@@ -526,7 +526,7 @@ async function startGame(asIntro: boolean): Promise<void> {
         gameBtn.disabled = true;
         startNoteEl.hidden = false;
         startNoteEl.textContent = "Instrumenten laden…";
-        speak(GAME_LINES.loading);
+        // speak(GAME_LINES.loading);
         await waitForFonts();
         if (myRun !== runId) return;
         loading = false;
