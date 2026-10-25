@@ -233,12 +233,12 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
             const myIndex = index;
             show(title, "");
             skipBtn.hidden = !opts.skip;
-            speak(`${lead}${title}.`, () => { if (myIndex === index && !walking) load(); });
+            // speak(`${lead}${title}.`, () => { if (myIndex === index && !walking) load(); });
             return;
         }
         load();
         // the segment's own page shows the title + "tik om te beginnen"; say it too, eyes-free
-        speak(`${lead}${title}. Tik op het scherm om te beginnen.`);
+        // speak(`${lead}${title}. Tik op het scherm om te beginnen.`);
     }
 
     function finish(): void {
@@ -305,7 +305,7 @@ export function runPlayer(root: HTMLElement, flow: Flow, opts: Options): void {
         // unlock audio, speech and motion here, inside the tap, for the games to borrow
         if (flow.sharedAudio) {
             shared = unlockSharedAudio();
-            speak("Daar gaan we.");
+            // speak("Daar gaan we.");
         }
         // the shared fullscreen toggle would sit on top of the game's tap zones
         document.body.classList.add("playing");
