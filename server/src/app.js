@@ -235,11 +235,12 @@ export function createApp() {
 
   // ── Data export (opt-in, token-protected) ─────────────────────────────────
   app.get('/api/export', asyncHandler(async (req, res) => {
-    const token = process.env.EXPORT_TOKEN;
+    // Trimmed so a stray space or CRLF line ending in .env doesn't break the match.
+    const token = process.env.EXPORT_TOKEN?.trim();
     if (!token) {
       return res.status(404).json({ error: 'export_disabled', message: 'Set EXPORT_TOKEN to enable this endpoint.' });
     }
-    if (req.get('authorization') !== `Bearer ${token}`) {
+    if ((req.get('authorization') || '').trim() !== `Bearer ${token}`) {
       return res.status(401).json({ error: 'unauthorized' });
     }
     const { exportAll, toCsv } = await import('./exporter.js');
